@@ -17,13 +17,12 @@ jobs:
       - name: Install Node.js (for Astro build)
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install & Build Astro
         run: |
-          cd src  # Assuming Astro in src/
           npm ci
-          npm run build  # Or your build command
+          npm run build
 
       - name: Deploy Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
