@@ -2,6 +2,7 @@
 from firebase_admin import firestore
 import time
 
+
 def check_and_deduct_credits(uid: str, cost: int = 1):
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
@@ -31,3 +32,18 @@ def check_and_deduct_credits(uid: str, cost: int = 1):
         return success, msg
     except Exception as e:
         return False, f"Transaction failed: {str(e)}"
+
+def refund_credits(uid: str, amount: int = 1):
+    """Refund credits to user (e.g., on generation failure)"""
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+    
+    try:
+        user_ref.update({
+            "credits": firestore.Increment(amount),
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        })
+        return True
+    except Exception as e:
+        print(f"Failed to refund credits: {e}")
+        return False

@@ -1,0 +1,103 @@
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]  # Triggers functions deploy on tags only
+
+jobs:
+  deploy-hosting:
+    name: Deploy Frontend (Hosting)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'  # Only on main pushes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js (for Astro build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install & Build Astro
+        run: |
+          cd src  # Assuming Astro in src/
+          npm ci
+          npm run build  # Or your build command
+
+      - name: Deploy Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          projectId: fennai
+          channelId: live
+
+  deploy-functions:
+    name: Deploy Functions (Proxy + GPU Inference)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')  # Only on tags
+    needs: deploy-hosting  # Run after hosting if on tag
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: fennai
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+
+      - name: Deploy Proxy Function
+        run: |
+          firebase deploy --only functions:proxy
+
+      - name: Build & Push Inference Docker Image
+        run: |
+          cd functions/inference
+          gcloud auth configure-docker
+          docker build -t gcr.io/fennai/fennai-inference:latest .
+          gcloud builds submit --tag gcr.io/fennai/fennai-inference:latest
+
+      - name: Deploy Inference to Cloud Run
+        run: |
+          gcloud run deploy fennai-inference \
+            --image gcr.io/fennai/fennai-inference:latest \
+            --platform managed \
+            --region us-central1 \
+            --allow-unauthenticated=false \
+            --cpu 4 \
+            --memory 16Gi \
+            --gpu nvidia-l4 \
+            --max-instances 1 \
+            --min-instances 0 \
+            --timeout 540s \
+            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }} \
+            --port 8080 \
+            --ingress internal-and-cloud-load-balancing
+            --quiet \
+            --format='value(status.url)')
+          
+          echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $URL"
+
+      # Update INFERENCE_URL secret in Firebase Functions
+      - name: Update INFERENCE_URL Secret
+        run: |
+          npm install -g firebase-tools@12.5.0
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > key.json
+          npx firebase functions:secrets:set INFERENCE_URL \
+            --data "${{ steps.deploy-run.outputs.CLOUD_RUN_URL }}" \
+            --project fennai
+
+      - name: Success
+        run: echo "Full stack deployed! GPU inference live at ${{ steps.deploy-run.outputs.CLOUD_RUN_URL }}"

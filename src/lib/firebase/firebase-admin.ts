@@ -10,7 +10,7 @@ let adminDb: Firestore;
 let adminStorage: Storage;
 
 const USE_EMULATORS = import.meta.env.PUBLIC_USE_FIREBASE_EMULATORS === 'true';
-const PROJECT_ID = import.meta.env.PUBLIC_FIREBASE_PROJECT_ID || 'demo-project';
+const PROJECT_ID = import.meta.env.APP_FIREBASE_PROJECT_ID || 'demo-project';
 const STORAGE_BUCKET = import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET || `${PROJECT_ID}.appspot.com`;
 
 function initializeFirebaseAdmin() {
@@ -39,10 +39,10 @@ function initializeFirebaseAdmin() {
             // For production, use service account
             console.log('🔥 Initializing Firebase Admin for PRODUCTION');
 
-            const serviceAccount = import.meta.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+            const serviceAccount = import.meta.env.APP_FIREBASE_PRIVATE_KEY;
 
             if (!serviceAccount) {
-                throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is required for production');
+                throw new Error('APP_FIREBASE_PRIVATE_KEY environment variable is required for production');
             }
 
             try {
@@ -59,7 +59,7 @@ function initializeFirebaseAdmin() {
                 console.log(`   - Storage Bucket: ${credentials.storage_bucket || `${credentials.project_id}.appspot.com`}`);
             } catch (error) {
                 console.error('Failed to parse service account:', error);
-                throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_KEY format');
+                throw new Error('Invalid APP_FIREBASE_PRIVATE_KEY format');
             }
         }
     }

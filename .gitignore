@@ -40,3 +40,6 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 firebase-export-*
+
+functions/proxy/venv
+functions/inference/venv
