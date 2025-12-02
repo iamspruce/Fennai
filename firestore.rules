@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =========================================================================
+    // HELPER FUNCTIONS
+    // =========================================================================
+    
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Check if the authenticated user matches the provided userId
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Validate that required fields exist in the data
+    function hasRequiredFields(data, fields) {
+      return fields.toSet().difference(data.keys().toSet()).size() == 0;
+    }
+    
+    // Check if field values are of correct type
+    function isValidString(value) {
+      return value is string && value.size() > 0 && value.size() <= 500;
+    }
+    
+    function isValidTimestamp(value) {
+      return value is timestamp;
+    }
+    
+    function isValidNumber(value) {
+      return value is number && value >= 0;
+    }
+    
+    // =========================================================================
+    // USER PROFILES
+    // =========================================================================
+    
+    match /users/{userId} {
+      // Users can only read and write their own profile
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+    
+    // =========================================================================
+    // CHARACTERS
+    // =========================================================================
+    
+    match /characters/{characterId} {
+      
+      // Reads are handled by Admin SDK on the server
+      // Client-side reads are disabled for security
+      allow read: if false;
+      allow list: if false;
+      
+      // Create: Validate data structure and ownership
+      allow create: if isSignedIn() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       hasRequiredFields(request.resource.data, [
+                         'userId', 'name', 'avatarUrl', 
+                         'sampleAudioUrl', 'sampleAudioStoragePath',
+                         'voiceCount', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidString(request.resource.data.name) &&
+                       isValidString(request.resource.data.avatarUrl) &&
+                       isValidString(request.resource.data.sampleAudioUrl) &&
+                       isValidString(request.resource.data.sampleAudioStoragePath) &&
+                       isValidNumber(request.resource.data.voiceCount) &&
+                       isValidTimestamp(request.resource.data.createdAt) &&
+                       isValidTimestamp(request.resource.data.updatedAt) &&
+                       request.resource.data.createdAt == request.time &&
+                       request.resource.data.updatedAt == request.time;
+      
+      // Update: User must own the character, can't change userId or createdAt
+      allow update: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       isValidTimestamp(request.resource.data.updatedAt);
+      
+      // Delete: User must own the character
+      allow delete: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // =========================================================================
+    // VOICES
+    // =========================================================================
+    
+    match /voices/{voiceId} {
+      
+      // Reads are handled by Admin SDK on the server
+      // Client-side reads are disabled for security
+      allow read: if false;
+      allow list: if false;
+      
+      // Create: Validate data structure and ownership
+      allow create: if isSignedIn() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       hasRequiredFields(request.resource.data, [
+                         'userId', 'characterId', 'text', 
+                         'duration', 'createdAt'
+                       ]) &&
+                       isValidString(request.resource.data.characterId) &&
+                       isValidString(request.resource.data.text) &&
+                       isValidNumber(request.resource.data.duration) &&
+                       isValidTimestamp(request.resource.data.createdAt) &&
+                       request.resource.data.createdAt == request.time;
+      
+      // Update: User must own the voice, can't change userId or createdAt
+      allow update: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+      
+      // Delete: User must own the voice
+      allow delete: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid;
+    }
+  }
+}

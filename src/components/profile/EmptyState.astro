@@ -1,0 +1,55 @@
+---
+import Button from "@/components/ui/Button.astro";
+---
+
+<div class="empty-state">
+    <div class="empty-icon">
+        <svg
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+            ></path>
+        </svg>
+    </div>
+    <h3>No characters yet</h3>
+    <p>Create your first character to start cloning voices.</p>
+    <Button href="/create" variant="primary">Create Character</Button>
+</div>
+
+<style>
+    .empty-state {
+        text-align: center;
+        padding: var(--space-2xl) var(--space-lg);
+    }
+
+    .empty-icon {
+        width: 96px;
+        height: 96px;
+        margin: 0 auto var(--space-l);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--mauve-3);
+        border-radius: 50%;
+        color: var(--mauve-12);
+    }
+
+    .empty-state h3 {
+        font-size: var(--mauve-12-2xl);
+        margin-bottom: var(--space-sm);
+        color: var(--mauve-12);
+    }
+
+    .empty-state p {
+        font-size: var(--space-0);
+        color: var(--mauve-11);
+        margin-bottom: var(--space-xl);
+    }
+</style>

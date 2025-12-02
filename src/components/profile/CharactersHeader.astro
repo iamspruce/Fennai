@@ -1,0 +1,112 @@
+---
+
+---
+
+<div class="characters-header">
+    <h2>Your Characters</h2>
+
+    <div class="header-actions" id="header-actions">
+        <button
+            class="icon-btn"
+            id="search-btn"
+            aria-label="Search characters"
+            title="Search characters"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+            >
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+            </svg>
+        </button>
+
+        <button
+            class="icon-btn"
+            id="edit-btn"
+            aria-label="Toggle Edit Mode"
+            title="Toggle Edit Mode"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+            >
+                <path
+                    d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"
+                ></path>
+            </svg>
+        </button>
+
+        <a
+            href="/create"
+            class="icon-btn"
+            aria-label="Create new character"
+            title="Create new character"
+        >
+            <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+            >
+                <path d="M12 5v14M5 12h14"></path>
+            </svg>
+        </a>
+    </div>
+</div>
+
+<style>
+    .characters-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-xs);
+    }
+
+    .characters-header h2 {
+        font-size: calc(var(--step-0) * 0.8);
+        margin: 0;
+        color: var(--mauve-12);
+    }
+
+    .header-actions {
+        display: flex;
+        gap: var(--space-3xs);
+    }
+
+    .icon-btn {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-full);
+        background: var(--mauve-3);
+        border: 1px solid var(--mauve-4);
+        color: var(--mauve-12);
+        transition: all var(--transition-fast);
+        cursor: pointer;
+    }
+
+    .icon-btn:hover {
+        background: var(--mauve-4);
+        color: var(--mauve-12);
+        border-color: var(--mauve-6);
+    }
+
+    .icon-btn.active {
+        background: var(--pink-9);
+        color: var(--pink-1);
+        border-color: var(--pink-6);
+    }
+</style>

@@ -1,0 +1,42 @@
+# build output
+dist/
+# generated types
+.astro/
+.vscode/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# environment variables
+.env
+.env.production
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+
+# Emulator data
+firebase-data/
+.firebase/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Firebase
+.firebaserc
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+firebase-export-*

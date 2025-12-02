@@ -1,0 +1,71 @@
+---
+import Logo from "@/components/ui/Logo.astro";
+
+interface Props {
+    userAvatarUrl: string;
+    userName: string;
+    credits: number;
+}
+
+const { userAvatarUrl, userName, credits } = Astro.props;
+---
+
+<header class="profile-header">
+    <Logo href="/" />
+
+    <a href="/dashboard" class="user-profile">
+        <img
+            src={userAvatarUrl}
+            alt={`${userName}'s avatar`}
+            class="user-avatar"
+        />
+        <span class="credits-badge">{credits} credits</span>
+    </a>
+</header>
+
+<script>
+    import { animate } from "motion";
+
+    animate(
+        ".profile-header",
+        { opacity: [0, 1], y: ["-20px", "0px"] },
+        { duration: 0.6, ease: "easeOut" },
+    );
+</script>
+
+<style>
+    .profile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-2xl);
+    }
+
+    .user-profile {
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        gap: var(--space-3xs);
+        padding: var(--space-3xs);
+        border-radius: var(--radius-full);
+        transition: background var(--transition-fast);
+        text-decoration: none;
+    }
+
+    .user-profile:hover {
+        background: var(--mauve-3);
+    }
+
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 1px solid var(--mauve-6);
+    }
+
+    .credits-badge {
+        font-size: calc(var(--step-0) * 0.7);
+        font-weight: 500;
+        color: var(--mauve-11);
+    }
+</style>

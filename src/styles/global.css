@@ -1,0 +1,295 @@
+@import "./variables.css";
+
+
+:root {
+  /* Modal backdrop */
+  --backdrop: var(--mauve-12);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 100%;
+  height: 100%;
+}
+
+html,
+body {
+  color: var(--mauve-12);
+  background-color: var(--mauve-12);
+}
+
+html.dark {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@font-face {
+  font-family: Labil Grotesk;
+  font-style: normal;
+  font-weight: 400;
+  font-display: fallback;
+  src:
+    url(../assets/fonts/LabilGrotesk-Regular.woff2) format("woff2"),
+    url(../assets/fonts/LabilGrotesk-Regular.woff) format("woff");
+}
+
+@font-face {
+  font-family: Labil Grotesk;
+  font-style: italic;
+  font-weight: 400;
+  font-display: fallback;
+  src:
+    url(../assets/fonts/LabilGrotesk-RegularItalic.woff2) format("woff2"),
+    url(../assets/fonts/LabilGrotesk-RegularItalic.woff) format("woff");
+}
+
+@font-face {
+  font-family: Labil Grotesk;
+  font-style: normal;
+  font-weight: 700;
+  font-display: fallback;
+  src:
+    url(../assets/fonts/LabilGrotesk-Bold.woff2) format("woff2"),
+    url(../assets/fonts/LabilGrotesk-Bold.woff) format("woff");
+}
+
+@font-face {
+  font-family: Labil Grotesk fallback;
+  font-style: normal;
+  font-weight: 400;
+  src: local("Arial");
+  size-adjust: 101%;
+  ascent-override: 102%;
+  descent-override: 23%;
+  line-gap-override: normal;
+}
+
+@font-face {
+  font-family: Labil Grotesk fallback;
+  font-style: normal;
+  font-weight: 700;
+  src: local("Arial Bold");
+  ascent-override: 102%;
+  descent-override: 23%;
+  line-gap-override: normal;
+}
+
+body {
+  min-height: 100%;
+  position: relative;
+  font-size: var(--step-0);
+  font-family: var(--font-sans);
+  line-height: var(--line-height-body);
+  text-rendering: optimizelegibility;
+  font-synthesis: none;
+  font-feature-settings: var(--font-stable);
+}
+
+::selection {
+  background: var(--pink-5);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: var(--font-weight-bold);
+  font-feature-settings: var(--font-unstable);
+}
+
+h1 {
+  font-size: var(--step-5);
+  line-height: var(--line-height-h1);
+  letter-spacing: var(--letter-spacing-condensed);
+}
+
+h2 {
+  font-size: var(--step-4);
+  line-height: var(--line-height-h2);
+  letter-spacing: var(--letter-spacing-condensed);
+}
+
+h3 {
+  font-size: var(--step-3);
+  line-height: var(--line-height-h3);
+}
+
+small {
+  font-size: var(--step--1);
+  line-height: var(--line-height-small);
+  letter-spacing: var(--letter-spacing-loose);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+/* Chrome, Opera, Safari */
+::-webkit-input-placeholder {
+  color: var(--mauve-11);
+}
+
+/* Firefox 19+ */
+::-moz-placeholder {
+  color: var(--mauve-11);
+
+  opacity: 1;
+  /* Explicitly set opacity for Firefox */
+}
+
+/* Internet Explorer 10+ */
+:-ms-input-placeholder {
+  color: var(--mauve-11);
+}
+
+/* Firefox 18- */
+:-moz-placeholder {
+  color: var(--mauve-11);
+}
+
+.page-item {
+  background: var(--mauve-i1);
+  border-radius: var(--radius-l);
+  padding-inline: var(--space-2xs);
+  padding-block: var(--space-2xs);
+  margin: 4px 4px;
+  box-shadow: var(--shadow-m);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2xs);
+  font-weight: 500;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  font-size: var(--step-0);
+  font-weight: var(--font-weight-bold);
+  padding-inline: var(--space-m);
+  padding-block: var(--space-xs);
+  border-radius: var(--radius-full);
+  pointer-events: auto;
+  font-feature-settings: var(--font-unstable);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Sizes */
+.btn-sm {
+  padding-inline: var(--space-m);
+  padding-block: var(--space-xs);
+}
+
+.btn-md {
+  padding: var(--space-s) var(--space-l);
+  font-size: var(--step-1);
+}
+
+.btn-lg {
+  padding: var(--space-m) var(--space-xl);
+  font-size: var(--step-2);
+}
+
+/* Variants */
+.btn-primary {
+  background: var(--mauve-12);
+  color: var(--mauve-1);
+}
+
+.btn-primary:hover:not(:disabled) {
+  translate: 0 2px;
+}
+
+.btn-secondary {
+  background: var(--mauve-3);
+  color: var(--mauve-12);
+  border: 1px solid var(--mauve-6);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  translate: 0 2px;
+  background: var(--mauve-4);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--mauve-12);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--mauve-4);
+  color: var(--mauve-12);
+}
+
+.btn-danger {
+  background: var(--red-9);
+  color: var(--red-1);
+}
+
+.btn-danger:hover:not(:disabled) {
+  translate: 0 2px;
+  background: var(--red-10);
+}
+
+.upload-area {
+  background: linear-gradient(145deg, var(--mauve-2), var(--mauve-3));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(236, 72, 153, 0.1), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.upload-area.drag-over::before,
+.upload-area:hover::before {
+  opacity: 1;
+}

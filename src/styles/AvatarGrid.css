@@ -1,0 +1,35 @@
+.avatar-grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: var(--space-s);
+}
+
+.avatar-wrapper {
+    position: relative;
+    cursor: pointer;
+    aspect-ratio: 1;
+    /* Make sure the highlight doesn't overflow weirdly */
+}
+
+.avatar-highlight {
+    position: absolute;
+    inset: -4px;
+    /* Expand outside */
+    border: 2px solid var(--pink-9);
+    border-radius: var(--radius-m);
+    /* Slightly larger radius */
+    box-shadow: 0 0 0 4px var(--pink-3);
+    pointer-events: none;
+    /* Let clicks pass through */
+    z-index: 0;
+}
+
+.avatar-image {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-m);
+    border: 1px solid var(--mauve-6);
+    z-index: 1;
+    display: block;
+}

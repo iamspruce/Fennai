@@ -1,0 +1,323 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Button from "../components/ui/Button.astro";
+import { getCurrentUser } from "../lib/firebase/auth";
+import LoginModal from "../islands/LoginModal";
+
+const user = await getCurrentUser(Astro);
+if (user) {
+	return Astro.redirect("/profile");
+}
+---
+
+<BaseLayout title="Fennai - Voice Cloning Made Simple">
+	<div class="page-modal">
+		<header class="home-header">
+			<div class="logo">
+				<svg
+					width="40"
+					height="40"
+					viewBox="0 0 40 40"
+					fill="none"
+					xmlns="http://www.w3.org/2000/svg"
+				>
+					<circle cx="20" cy="20" r="20" fill="var(--pink-9)"
+					></circle>
+					<path d="M15 14L25 20L15 26V14Z" fill="white"></path>
+				</svg>
+				<span class="logo-text">Fennai</span>
+			</div>
+
+			<button class="btn btn-primary btn-sm" id="open-login">
+				Login / Sign Up
+			</button>
+		</header>
+
+		<main class="home-main">
+			<h1 class="hero-text">
+				Voice cloning should not be<br />
+				<span class="gradient-text">rocket science.</span>
+			</h1>
+
+			<p class="hero-subtitle">
+				Create realistic voice clones in minutes. Perfect for content
+				creators, game developers, and storytellers.
+			</p>
+
+			<div class="preview-section">
+				<div class="preview-card">
+					<div class="preview-icon">
+						<svg
+							width="48"
+							height="48"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path
+								d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
+							></path>
+							<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+							<line x1="12" x2="12" y1="19" y2="22"></line>
+						</svg>
+					</div>
+					<h3>Upload Sample</h3>
+					<p>Upload a short audio sample of any voice</p>
+				</div>
+
+				<div class="preview-card">
+					<div class="preview-icon">
+						<svg
+							width="48"
+							height="48"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path
+								d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"
+							></path>
+						</svg>
+					</div>
+					<h3>Type Your Text</h3>
+					<p>Write what you want your character to say</p>
+				</div>
+
+				<div class="preview-card">
+					<div class="preview-icon">
+						<svg
+							width="48"
+							height="48"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
+							></polygon>
+							<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+						</svg>
+					</div>
+					<h3>Generate Voice</h3>
+					<p>Get your cloned voice in seconds</p>
+				</div>
+			</div>
+		</main>
+
+		<footer class="home-footer">
+			<div class="footer-content">
+				<p class="copyright">© 2024 Fennai. All rights reserved.</p>
+
+				<div class="footer-links">
+					<a href="#">Privacy</a>
+					<a href="#">Terms</a>
+					<a href="#">Contact</a>
+				</div>
+
+				<div class="social-links">
+					<a href="#" aria-label="Twitter">
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="currentColor"
+						>
+							<path
+								d="M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z"
+							></path>
+						</svg>
+					</a>
+					<a href="#" aria-label="GitHub">
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="currentColor"
+						>
+							<path
+								d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z"
+							></path>
+						</svg>
+					</a>
+				</div>
+			</div>
+		</footer>
+	</div>
+
+	<LoginModal client:load />
+</BaseLayout>
+
+<script>
+	// 3. Dispatch event to open modal
+	const openButton = document.getElementById("open-login");
+	if (openButton) {
+		openButton.addEventListener("click", () => {
+			window.dispatchEvent(new CustomEvent("open-login-modal"));
+		});
+	}
+</script>
+
+<style>
+	.home-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: var(--space-2xl);
+	}
+
+	.logo {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3xs);
+	}
+
+	.logo-text {
+		font-size: var(--step-0);
+		font-weight: 700;
+		color: var(--mauve-12);
+	}
+
+	.home-main {
+		padding: var(--space-2xl) 0;
+		text-align: center;
+	}
+
+	.hero-text {
+		font-size: var(--step-5);
+		font-weight: 700;
+		line-height: 1.1;
+		margin-bottom: var(--space-lg);
+		color: var(--mauve-12);
+	}
+
+	.gradient-text {
+		background: linear-gradient(
+			135deg,
+			var(--pink-9) 0%,
+			var(--pink-11) 100%
+		);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+
+	.hero-subtitle {
+		font-size: var(--step-2);
+		color: var(--mauve-11);
+		max-width: 600px;
+		margin: 0 auto var(--space-2xl);
+		line-height: 1.6;
+	}
+
+	.preview-section {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: var(--space-xl);
+		margin-top: var(--space-2xl);
+	}
+
+	.preview-card {
+		padding: var(--space-m);
+		background: var(--mauve-3);
+		border: 1px solid var(--mauve-6);
+		border-radius: var(--radius-l);
+		transition: all var(--transition-base);
+		text-align: center;
+	}
+
+	.preview-card:hover {
+		border-color: var(--pink-9);
+		box-shadow: var(--shadow-box-m);
+		transform: translateY(-2px);
+	}
+
+	.preview-icon {
+		width: 64px;
+		height: 64px;
+		margin: 0 auto var(--space-l);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--mauve-1);
+		border-radius: var(--radius-l);
+		color: var(--pink-9);
+	}
+
+	.preview-card h3 {
+		font-size: var(--step-1);
+		margin-bottom: var(--space-2xs);
+		color: var(--mauve-12);
+	}
+
+	.preview-card p {
+		font-size: var(--step-0);
+		color: var(--mauve-11);
+		margin: 0;
+	}
+
+	.home-footer {
+		margin-top: var(--space-xl);
+	}
+
+	.footer-content {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2xs);
+	}
+
+	.copyright {
+		color: var(--mauve-11);
+		font-size: var(--step-0);
+		margin: 0;
+	}
+
+	.footer-links {
+		display: flex;
+		gap: var(--space-3xs);
+	}
+
+	.footer-links a {
+		color: var(--mauve-11);
+		font-size: var(--step-0);
+		transition: color var(--transition-fast);
+	}
+
+	.footer-links a:hover {
+		color: var(--pink-9);
+	}
+
+	.social-links {
+		display: flex;
+		gap: var(--space-md);
+	}
+
+	.social-links a {
+		width: 36px;
+		height: 36px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-m);
+		color: var(--mauve-12);
+		transition: all var(--transition-fast);
+	}
+
+	.social-links a:hover {
+		background: var(--mauve-3);
+		color: var(--pink-9);
+	}
+
+	@media (max-width: 768px) {
+		.footer-content {
+			flex-direction: column;
+			text-align: center;
+		}
+
+		.preview-section {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

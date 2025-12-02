@@ -1,0 +1,247 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { getCurrentUser } from "@/lib/firebase/auth";
+import {
+  getCharacter,
+  getVoices,
+  getCharacters,
+} from "@/lib/firebase/firestore";
+
+// UI Components
+import CharacterHeader from "@/components/character/CharacterHeader.astro";
+import Pagination from "@/components/character/Pagination.astro";
+import StorageWarning from "@/components/character/StorageWarning.astro";
+
+// React Islands
+import VoiceCard from "@/islands/VoiceCard";
+import CloningModal from "@/islands/CloningModal";
+import PreviewEditModal from "@/islands/PreviewEditModal";
+import VoiceInputSection from "@/islands/VoiceInputSection";
+import VoicesHeader from "@/islands/VoicesHeader";
+import MigrationBanner from "@/islands/MigrationBanner"; // NEW
+
+const { id } = Astro.params;
+const user = await getCurrentUser(Astro);
+
+if (!user || !id) return Astro.redirect("/profile");
+
+const character = await getCharacter(id, user.uid);
+if (!character) return Astro.redirect("/profile");
+
+// Pagination & Data Fetching
+const url = new URL(Astro.request.url);
+const page = parseInt(url.searchParams.get("page") || "1");
+const limit = 20;
+
+const { characters: allCharacters } = await getCharacters(user.uid);
+
+// Fetch ALL voices (both cloud and local-only metadata)
+const { voices: allVoices } = await getVoices(id, user.uid, {
+  limit: limit * page,
+  storageType: "all", // Get both cloud and local-only
+});
+
+const startIndex = (page - 1) * limit;
+const voices = allVoices.slice(startIndex, startIndex + limit);
+const hasMore = allVoices.length === limit * page;
+const hasPrevious = page > 1;
+---
+
+<BaseLayout title={`${character.name} - Fennai`}>
+  <StorageWarning />
+  <!-- Migration Banner: Show if Pro + saveAcrossBrowsers enabled -->
+  <MigrationBanner
+    client:load
+    characterId={character.id}
+    isPro={user.isPro}
+    saveAcrossBrowsers={true}
+  />
+  <div class="page-modal">
+    <CharacterHeader character={character} voiceCount={character.voiceCount} />
+
+    <main class="character-main">
+      {
+        voices.length > 0 && (
+          <>
+            <VoicesHeader client:only totalVoices={character.voiceCount} />
+
+            <div class="voices-list">
+              {voices.map((voice) => (
+                <VoiceCard
+                  client:visible
+                  voice={voice}
+                  mainCharacter={character}
+                  allCharacters={allCharacters}
+                />
+              ))}
+            </div>
+
+            <Pagination
+              page={page}
+              hasMore={hasMore}
+              hasPrevious={hasPrevious}
+              baseUrl={`/character/${id}`}
+            />
+          </>
+        )
+      }
+      <div style="height: 200px;"></div>
+    </main>
+  </div>
+
+  <VoiceInputSection
+    client:load
+    character={character}
+    allCharacters={allCharacters}
+  />
+  <CloningModal client:load />
+  <PreviewEditModal client:load />
+</BaseLayout>
+
+<script>
+  import { saveVoiceToIndexedDB } from "@/lib/db/indexdb";
+
+  let pendingVoiceData: any = null;
+
+  // Handle Preview Modal - Store character dialogue data
+  window.addEventListener("open-preview-modal", (e: any) => {
+    if (e.detail.characterId && e.detail.text) {
+      pendingVoiceData = {
+        ...e.detail,
+        dialogues:
+          e.detail.isMultiCharacter && e.detail.characterIds
+            ? e.detail.characterIds.map((charId: string, idx: number) => ({
+                characterId: charId,
+                text: e.detail.texts ? e.detail.texts[idx] : e.detail.text,
+              }))
+            : [{ characterId: e.detail.characterId, text: e.detail.text }],
+      };
+    }
+  });
+
+  // Handle Save Logic with Hybrid Storage + storageType
+  window.addEventListener("voice-edited", async (e: any) => {
+    if (!pendingVoiceData) {
+      console.error("No pending voice data");
+      return;
+    }
+
+    const { blob } = e.detail;
+
+    if (!blob || !(blob instanceof Blob)) {
+      console.error("Invalid audio blob");
+      alert("Failed to save: Invalid audio data");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("characterId", pendingVoiceData.characterId);
+      formData.append("text", pendingVoiceData.text);
+      formData.append("audioBlob", blob);
+      formData.append("duration", String(blob.size / 16000));
+      formData.append(
+        "isMultiCharacter",
+        String(pendingVoiceData.isMultiCharacter || false),
+      );
+
+      if (pendingVoiceData.characterIds) {
+        formData.append(
+          "characterIds",
+          JSON.stringify(pendingVoiceData.characterIds),
+        );
+      }
+
+      if (pendingVoiceData.dialogues) {
+        formData.append(
+          "dialogues",
+          JSON.stringify(pendingVoiceData.dialogues),
+        );
+      }
+
+      // Save to server
+      const response = await fetch("/api/voices/save", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save voice");
+      }
+
+      const data = await response.json();
+
+      // Handle storage based on storageType
+      if (data.storageType === "cloud") {
+        console.log("Voice saved to cloud storage");
+      } else if (
+        data.storageType === "local-only" &&
+        data.audioData &&
+        data.voiceId
+      ) {
+        console.log("Saving voice to IndexedDB...");
+
+        try {
+          const base64Response = await fetch(data.audioData);
+          const audioBlob = await base64Response.blob();
+
+          if (audioBlob.size === 0) {
+            throw new Error("Received empty audio blob");
+          }
+
+          await saveVoiceToIndexedDB({
+            id: data.voiceId,
+            characterId: pendingVoiceData.characterId,
+            text: pendingVoiceData.text,
+            audioBlob,
+            isMultiCharacter: pendingVoiceData.isMultiCharacter || false,
+            characterIds: pendingVoiceData.characterIds,
+            dialogues: pendingVoiceData.dialogues,
+            duration: audioBlob.size / 16000,
+            createdAt: Date.now(),
+            isInCloudStorage: false,
+          });
+
+          console.log("Voice saved to IndexedDB successfully");
+        } catch (idbError) {
+          console.error("Failed to save to IndexedDB:", idbError);
+          alert(
+            "Voice metadata saved but failed to cache locally. Refresh to see it in the list.",
+          );
+        }
+      }
+
+      // Success - reload to show new voice
+      window.location.reload();
+    } catch (error) {
+      console.error("Save failed:", error);
+      alert(error instanceof Error ? error.message : "Failed to save voice");
+    }
+  });
+
+  // Initialize IndexedDB on page load
+  import { initDB, getStorageStats } from "@/lib/db/indexdb";
+
+  (async () => {
+    try {
+      await initDB();
+      const stats = await getStorageStats();
+      console.log("IndexedDB Stats:", {
+        voices: stats.voiceCount,
+        size: stats.totalSize,
+        cloudVoices: stats.cloudStorageCount,
+      });
+    } catch (error) {
+      console.error("Failed to initialize IndexedDB:", error);
+    }
+  })();
+</script>
+
+<style>
+  .character-main {
+    max-width: 800px;
+    margin: 0 auto;
+    padding-bottom: var(--space-l);
+  }
+</style>

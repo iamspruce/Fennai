@@ -1,0 +1,194 @@
+---
+import AudioPlayer from "@/islands/AudioPlayer";
+import { formatDate } from "@/lib/utils/time";
+
+interface Props {
+    character: any;
+    index: number;
+}
+
+const { character, index } = Astro.props;
+---
+
+<a
+    href={`/character/${character.id}`}
+    class="character-card"
+    data-character-id={character.id}
+    data-index={index}
+    aria-label={`View ${character.name} character details`}
+>
+    <div class="character-content">
+        <img
+            src={character.avatarUrl}
+            alt={`${character.name} avatar`}
+            class="character-avatar"
+            loading="lazy"
+        />
+
+        <div class="character-info">
+            <h3 class="character-name">{character.name}</h3>
+            <p class="character-meta">
+                Created {formatDate(character.createdAt)} • {
+                    character.voiceCount
+                } voices
+            </p>
+        </div>
+    </div>
+
+    <div
+        class="audio-player-wrapper"
+        onclick="event.preventDefault(); event.stopPropagation();"
+    >
+        <AudioPlayer
+            client:load
+            audioUrl={character.sampleAudioUrl}
+            className="character-audio-player"
+            waveColor="#A1A1AA"
+            progressColor="#EC4899"
+        />
+    </div>
+
+    <button
+        class="delete-btn"
+        data-character-id={character.id}
+        style="display: none;"
+        aria-label={`Delete ${character.name}`}
+    >
+        <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path d="M3 6h18"></path>
+            <path
+                d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            ></path>
+        </svg>
+    </button>
+</a>
+
+<style>
+    .character-card {
+        position: relative;
+        padding: var(--space-s);
+        background: var(--mauve-3);
+        border: 1px solid var(--mauve-4);
+        border-radius: var(--radius-m);
+        box-shadow: var(--shadow-box-m);
+        transition: all var(--transition-base);
+        display: block;
+        text-decoration: none;
+    }
+
+    .character-card:hover:not(.edit-mode) {
+        border-color: var(--mauve-6);
+        box-shadow: var(--shadow-box-l);
+        transform: translateY(-2px);
+    }
+
+    .character-card.edit-mode {
+        cursor: default;
+    }
+
+    .character-card.edit-mode:hover {
+        transform: none;
+        border-color: var(--mauve-4);
+        box-shadow: none;
+    }
+
+    .character-content {
+        display: flex;
+        gap: var(--space-2xs);
+        margin-bottom: var(--space-xs);
+    }
+
+    .character-avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: var(--radius-full);
+        border: 1px solid var(--mauve-6);
+        flex-shrink: 0;
+        object-fit: cover;
+    }
+
+    .character-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .character-name {
+        font-size: var(--step-0);
+        font-weight: 600;
+        color: var(--mauve-12);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .character-meta {
+        font-size: calc(var(--step-0) * 0.9);
+        color: var(--mauve-11);
+        margin: 0;
+    }
+
+    .audio-player-wrapper {
+        width: 100%;
+        margin-top: auto;
+        position: relative;
+        z-index: 5;
+    }
+
+    .audio-player-wrapper :global(.audio-player-container) {
+        background: var(--mauve-2);
+        border: 1px solid var(--mauve-5);
+        border-radius: var(--radius-m);
+        padding: 8px 12px;
+    }
+
+    .audio-player-wrapper :global(.audio-player-container:hover) {
+        background: var(--mauve-3);
+        border-color: var(--mauve-6);
+    }
+
+    .audio-player-wrapper :global(.control-button) {
+        background: var(--pink-9) !important;
+        width: 32px !important;
+        height: 32px !important;
+    }
+
+    .audio-player-wrapper :global(.control-button:hover) {
+        background: var(--pink-10) !important;
+        transform: scale(1.05);
+    }
+
+    .audio-player-wrapper :global(.time-display) {
+        font-size: var(--mauve-12-xs);
+        color: var(--mauve-11);
+        min-width: 60px;
+    }
+
+    .delete-btn {
+        position: absolute;
+        top: var(--space-s);
+        right: var(--space-s);
+        width: 32px;
+        height: 32px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--red-9, rgba(239, 68, 68, 0.9));
+        color: white;
+        border: none;
+        border-radius: var(--radius-full);
+        cursor: pointer;
+        transition: background var(--transition-fast);
+        z-index: 10;
+    }
+
+    .delete-btn:hover {
+        background: var(--red-10, #dc2626);
+    }
+</style>

@@ -1,0 +1,35 @@
+---
+interface Props {
+    greeting: string;
+}
+
+const { greeting } = Astro.props;
+---
+
+<h1 class="greeting">{greeting}</h1>
+
+<script>
+    import { animate } from "motion";
+
+    animate(
+        ".greeting",
+        { opacity: [0, 1], y: ["20px", "0px"] },
+        { duration: 0.6, delay: 0.1, ease: "easeOut" },
+    );
+</script>
+
+<style>
+    .greeting {
+        font-size: var(--step-5);
+        font-weight: 700;
+        margin-bottom: var(--space-xl);
+        color: var(--mauve-12);
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+        .greeting {
+            font-size: var(--step-4);
+        }
+    }
+</style>

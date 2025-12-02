@@ -1,0 +1,63 @@
+<div class="search-container" id="search-container" style="display: none;">
+    <input
+        type="search"
+        id="search-input"
+        placeholder="Search characters by name..."
+        class="search-input"
+        aria-label="Search characters"
+    />
+    <button
+        class="icon-btn"
+        id="close-search"
+        aria-label="Close search"
+        title="Close search"
+    >
+        <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+        >
+            <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+    </button>
+</div>
+
+<style>
+    .search-container {
+        display: none;
+        gap: var(--space-s);
+        margin-bottom: var(--space-xl);
+    }
+
+    .search-input {
+        flex: 1;
+        padding: var(--space-s) var(--space-m);
+        font-size: var(--step-0);
+        background: var(--mauve-3);
+        color: var(--mauve-12);
+        border: 1px solid var(--mauve-4);
+        border-radius: var(--radius-l);
+    }
+
+    .icon-btn {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-full);
+        background: var(--mauve-3);
+        border: 1px solid var(--mauve-4);
+        color: var(--mauve-12);
+        transition: all var(--transition-fast);
+        cursor: pointer;
+    }
+
+    .icon-btn:hover {
+        background: var(--mauve-4);
+        border-color: var(--mauve-6);
+    }
+</style>

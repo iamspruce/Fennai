@@ -1,0 +1,157 @@
+---
+interface Props {
+    type?: "text" | "email" | "password" | "search" | "number";
+    name: string;
+    label?: string;
+    placeholder?: string;
+    value?: string;
+    required?: boolean;
+    error?: string;
+    class?: string;
+    id?: string;
+    minlength?: number;
+    maxlength?: number;
+}
+
+const {
+    type = "text",
+    name,
+    label,
+    placeholder,
+    value,
+    required = false,
+    error,
+    class: className,
+    id,
+    ...rest
+} = Astro.props;
+---
+
+<div class:list={["input-wrapper", className]}>
+    {
+        label && (
+            <label for={name} class="input-label">
+                {label}
+                {required && <span class="required">*</span>}
+            </label>
+        )
+    }
+
+    <div class="input-container">
+        <input
+            type={type}
+            id={id || name}
+            name={name}
+            placeholder={placeholder}
+            value={value}
+            required={required}
+            class:list={["input", { "input-error": error }]}
+            {...rest}
+        />
+        {/* Animated border overlay */}
+        <div class="focus-ring"></div>
+    </div>
+
+    {error && <span class="error-message">{error}</span>}
+</div>
+
+<style>
+    .input-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        width: 100%;
+    }
+
+    .input-label {
+        font-size: var(--space-0);
+        font-weight: 500;
+        color: var(--mauve-12);
+        margin-left: var(--space-xs);
+    }
+
+    .required {
+        color: #ef4444;
+        margin-left: var(--space-xs);
+    }
+
+    .input-container {
+        position: relative;
+    }
+
+    .input {
+        background: var(--mauve-3);
+        border-radius: var(--radius-full);
+        padding-block: var(--space-s);
+        padding-inline: var(--space-m);
+        border: 1px solid var(--mauve-4);
+        color: var(--mauve-12);
+        font-size: var(--step-0);
+        /* Simple transition for color */
+        transition:
+            border-color 0.2s ease,
+            background-color 0.2s ease;
+        outline: none;
+        width: 100%;
+    }
+
+    /* Spring-like expansion on focus using bezier */
+    .input:focus {
+        border-color: var(--pink-9);
+        transform: scale(1.01);
+        transition:
+            transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+            border-color 0.2s ease;
+    }
+
+    .input::placeholder {
+        color: var(--mauve-11);
+    }
+
+    .input-error {
+        border-color: #ef4444;
+    }
+
+    /* Error Shake Animation */
+    .input-error:focus {
+        animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    }
+
+    .error-message {
+        font-size: var(--space-0);
+        color: #ef4444;
+        margin-left: var(--space-m);
+        animation: slideDown 0.3s ease-out forwards;
+    }
+
+    @keyframes shake {
+        10%,
+        90% {
+            transform: translate3d(-1px, 0, 0);
+        }
+        20%,
+        80% {
+            transform: translate3d(2px, 0, 0);
+        }
+        30%,
+        50%,
+        70% {
+            transform: translate3d(-4px, 0, 0);
+        }
+        40%,
+        60% {
+            transform: translate3d(4px, 0, 0);
+        }
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-5px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+</style>
