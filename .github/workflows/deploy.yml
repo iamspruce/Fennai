@@ -19,10 +19,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install & Build Astro
+      - name: Install dependencies
+        run: npm install
+
+      # Create .env from one combined secret
+      - name: Create .env file
         run: |
-          npm ci
-          npm run build
+          echo "${{ secrets.ENV_FILE }}" > .env
+          echo ".env generated:"
+          cat .env
+
+      - name: Build Astro
+        run: npm run build
 
       - name: Deploy Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -31,6 +39,8 @@ jobs:
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
           projectId: fennai
           channelId: live
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
 
   deploy-functions:
     name: Deploy Functions (Proxy + GPU Inference)
