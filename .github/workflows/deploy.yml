@@ -103,7 +103,7 @@ jobs:
           echo "CLOUD_RUN_URL=$URL"
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
 
-      - name: Update Functions Secret: INFERENCE_URL
+      - name: Update Functions Secret INFERENCE_URL
         run: |
           echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > key.json
           firebase functions:secrets:set INFERENCE_URL \
