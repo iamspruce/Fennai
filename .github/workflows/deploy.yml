@@ -81,11 +81,6 @@ jobs:
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
-      - name: Deploy Proxy Function
-        run: firebase deploy --only functions:proxy --project fennai --non-interactive
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-        
       - name: Configure Docker authentication
         run: gcloud auth configure-docker gcr.io
         
