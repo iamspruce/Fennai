@@ -67,6 +67,19 @@ jobs:
           
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Setup Python virtual environment for proxy function
+        run: |
+          cd functions/proxy
+          python3.10 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
       - name: Deploy Proxy Function
         run: firebase deploy --only functions:proxy --project fennai --non-interactive
