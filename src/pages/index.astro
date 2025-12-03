@@ -3,6 +3,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import Button from "../components/ui/Button.astro";
 import { getCurrentUser } from "../lib/firebase/auth";
 import LoginModal from "../islands/LoginModal";
+import ProfilePreview from "@/components/ui/ProfilePreview.astro";
 
 const user = await getCurrentUser(Astro);
 if (user) {
@@ -44,71 +45,14 @@ if (user) {
 				creators, game developers, and storytellers.
 			</p>
 
-			<div class="preview-section">
-				<div class="preview-card">
-					<div class="preview-icon">
-						<svg
-							width="48"
-							height="48"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<path
-								d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
-							></path>
-							<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-							<line x1="12" x2="12" y1="19" y2="22"></line>
-						</svg>
-					</div>
-					<h3>Upload Sample</h3>
-					<p>Upload a short audio sample of any voice</p>
-				</div>
-
-				<div class="preview-card">
-					<div class="preview-icon">
-						<svg
-							width="48"
-							height="48"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<path
-								d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"
-							></path>
-						</svg>
-					</div>
-					<h3>Type Your Text</h3>
-					<p>Write what you want your character to say</p>
-				</div>
-
-				<div class="preview-card">
-					<div class="preview-icon">
-						<svg
-							width="48"
-							height="48"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
-							></polygon>
-							<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-						</svg>
-					</div>
-					<h3>Generate Voice</h3>
-					<p>Get your cloned voice in seconds</p>
-				</div>
+			<div class="demo-wrapper">
+				<ProfilePreview />
 			</div>
 		</main>
 
 		<footer class="home-footer">
 			<div class="footer-content">
-				<p class="copyright">© 2024 Fennai. All rights reserved.</p>
+				<p class="copyright">© 2025 Fennai. All rights reserved.</p>
 
 				<div class="footer-links">
 					<a href="#">Privacy</a>
@@ -210,51 +154,11 @@ if (user) {
 		margin: 0 auto var(--space-2xl);
 		line-height: 1.6;
 	}
-
-	.preview-section {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: var(--space-xl);
-		margin-top: var(--space-2xl);
-	}
-
-	.preview-card {
-		padding: var(--space-m);
-		background: var(--mauve-3);
-		border: 1px solid var(--mauve-6);
-		border-radius: var(--radius-l);
-		transition: all var(--transition-base);
-		text-align: center;
-	}
-
-	.preview-card:hover {
-		border-color: var(--pink-9);
-		box-shadow: var(--shadow-box-m);
-		transform: translateY(-2px);
-	}
-
-	.preview-icon {
-		width: 64px;
-		height: 64px;
-		margin: 0 auto var(--space-l);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: var(--mauve-1);
-		border-radius: var(--radius-l);
-		color: var(--pink-9);
-	}
-
-	.preview-card h3 {
-		font-size: var(--step-1);
-		margin-bottom: var(--space-2xs);
-		color: var(--mauve-12);
-	}
-
-	.preview-card p {
-		font-size: var(--step-0);
-		color: var(--mauve-11);
-		margin: 0;
+	.demo-wrapper {
+		margin-top: 3rem;
+		/* Add a tilt or transform for 3D effect */
+		transform: rotateX(10deg);
+		perspective: 1000px;
 	}
 
 	.home-footer {
