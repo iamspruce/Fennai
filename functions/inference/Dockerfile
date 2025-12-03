@@ -37,8 +37,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Pre-download model
-RUN python download_model.py
+# Create model cache directory
+RUN mkdir -p /workspace/models
 
 # Expose port
 EXPOSE 8080
