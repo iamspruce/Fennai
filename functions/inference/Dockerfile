@@ -31,9 +31,6 @@ COPY requirements.txt .
 # Install PyTorch with CUDA support FIRST
 RUN pip install --no-cache-dir torch>=2.1.0 torchaudio>=2.1.0 --index-url https://download.pytorch.org/whl/cu121
 
-# Install flash-attn (requires torch to be installed first)
-RUN pip install --no-cache-dir flash-attn --no-build-isolation
-
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
