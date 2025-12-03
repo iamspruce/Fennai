@@ -2,10 +2,17 @@
 interface Props {
     title: string;
     description?: string;
+    image?: string; // Added for social sharing cards
 }
 
-const { title, description = "Voice cloning should not be rocket science" } =
-    Astro.props;
+const {
+    title,
+    description = "Voice cloning should not be rocket science. Create realistic text-to-speech models instantly.",
+    image = "/og-image.png", // You should have a default image in your public folder
+} = Astro.props;
+
+// specific to Astro - generates the full URL for the current page
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
 import StorageManager from "@/islands/StorageManager";
 import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
@@ -16,14 +23,58 @@ import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="description" content={description} />
+
         <title>{title}</title>
+        <meta name="description" content={description} />
+        <link rel="canonical" href={canonicalURL} />
+        <meta name="robots" content="index, follow" />
+        <meta name="author" content="Your App Name" />
+
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={canonicalURL} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:image" content={new URL(image, Astro.url)} />
+
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content={canonicalURL} />
+        <meta property="twitter:title" content={title} />
+        <meta property="twitter:description" content={description} />
+        <meta property="twitter:image" content={new URL(image, Astro.url)} />
+
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta
+            name="apple-mobile-web-app-status-bar-style"
+            content="black-translucent"
+        />
     </head>
     <body>
         <slot />
         <StorageManager client:load />
         <DeleteConfirmationModal client:load />
+
+        <script is:inline>
+            if ("serviceWorker" in navigator) {
+                window.addEventListener("load", () => {
+                    navigator.serviceWorker
+                        .register("/sw.js")
+                        .then((registration) => {
+                            console.log("SW registered: ", registration);
+                        })
+                        .catch((registrationError) => {
+                            console.log(
+                                "SW registration failed: ",
+                                registrationError,
+                            );
+                        });
+                });
+            }
+        </script>
     </body>
 </html>
 

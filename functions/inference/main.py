@@ -44,12 +44,32 @@ def load_model():
     logger.info(f"Loading VibeVoice on {device} with {attention_mode}...")
     
     try:
-        # Check if model is already cached
-        if not os.path.exists(MODEL_PATH):
-            logger.info(f"Model not found at {MODEL_PATH}, downloading from HuggingFace...")
-            os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+        os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+        
+        # Check if cache exists and is valid
+        cache_valid = False
+        if os.path.exists(MODEL_PATH):
+            # Check for essential model files
+            required_files = ['config.json', 'tokenizer_config.json']
+            cache_valid = all(
+                os.path.exists(os.path.join(MODEL_PATH, f)) 
+                for f in required_files
+            )
             
-            # Download from HuggingFace
+            if not cache_valid:
+                logger.warning(f"Cache at {MODEL_PATH} is invalid, clearing...")
+                import shutil
+                shutil.rmtree(MODEL_PATH, ignore_errors=True)
+        
+        if cache_valid:
+            logger.info(f"Loading cached model from {MODEL_PATH}")
+            processor = VibeVoiceProcessor.from_pretrained(MODEL_PATH)
+            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+                MODEL_PATH,
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32
+            )
+        else:
+            logger.info(f"Downloading model from HuggingFace: {MODEL_ID}")
             processor = VibeVoiceProcessor.from_pretrained(
                 MODEL_ID,
                 cache_dir=MODEL_CACHE_DIR
@@ -59,14 +79,8 @@ def load_model():
                 cache_dir=MODEL_CACHE_DIR,
                 torch_dtype=torch.float16 if device == "cuda" else torch.float32
             )
-            logger.info(f"✓ Model downloaded and cached to {MODEL_PATH}")
-        else:
-            logger.info(f"Loading cached model from {MODEL_PATH}")
-            processor = VibeVoiceProcessor.from_pretrained(MODEL_PATH)
-            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                MODEL_PATH,
-                torch_dtype=torch.float16 if device == "cuda" else torch.float32
-            )
+        
+        logger.info(f"✓ Model loaded successfully")
         
         # Configure attention mode
         if hasattr(model.config, "attention_type"):
