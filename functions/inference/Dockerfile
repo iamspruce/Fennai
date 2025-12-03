@@ -40,11 +40,15 @@ RUN pip install --no-cache-dir \
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
-
-# Create model cache directory with proper permissions
+# Create model cache directory BEFORE downloading
 RUN mkdir -p /workspace/models && chmod -R 777 /workspace/models
+
+# Copy download script and download model during build
+COPY download_model.py .
+RUN python download_model.py
+
+# Copy application code AFTER model download (better layer caching)
+COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -55,7 +59,7 @@ ENV CUDA_VISIBLE_DEVICES=0
 EXPOSE 8080
 
 # Health check - more lenient for model loading
-HEALTHCHECK --interval=60s --timeout=10s --start-period=300s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:8080/ || exit 1
 
 # Run with functions-framework
