@@ -24,8 +24,7 @@ if (user) {
 
 		<main class="home-main">
 			<h1 class="hero-title">
-				<span class="text-avatars">Voice cloning should not be</span>
-				<span class="text-video">rocket science.</span>
+				Voice cloning should not be rocket science.
 			</h1>
 
 			<p class="hero-subtitle">
@@ -137,7 +136,7 @@ if (user) {
 	}
 
 	.hero-title {
-		font-size: calc(var(--step-5) * 1.5); /* Very large text */
+		font-size: calc(var(--step-5) * 1.9); /* Very large text */
 		font-weight: 800;
 		line-height: 1.1;
 		letter-spacing: -0.04em;
@@ -247,6 +246,12 @@ if (user) {
 	}
 
 	@media (max-width: 768px) {
+		.hero-title {
+			font-size: calc(var(--step-5) * 1.5);
+		}
+		.hero-subtitle {
+			font-size: var(--step-1);
+		}
 		.footer-content {
 			flex-direction: column;
 			gap: var(--space-xs);
@@ -254,11 +259,6 @@ if (user) {
 		.demo-tilt-container {
 			/* Less tilt on mobile to preserve readability */
 			transform: rotateX(10deg);
-		}
-	}
-	@media (max-width: 425px) {
-		.hero-title {
-			font-size: var(--step-4);
 		}
 	}
 </style>

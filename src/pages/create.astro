@@ -7,6 +7,7 @@ import VoiceDropzone from "../components/create/VoiceDropzone.tsx";
 import PreviewEditModal from "../islands/PreviewEditModal";
 import { getCurrentUser, checkProStatus } from "../lib/firebase/auth";
 import { generateAvatarUrl } from "../lib/utils/avatar";
+import Logo from "@/components/ui/Logo.astro";
 
 const user = await getCurrentUser(Astro);
 if (!user) return Astro.redirect("/");
@@ -19,20 +20,17 @@ const userAvatarUrl =
 <BaseLayout title="Create Character - Fennai">
     <div class="page-modal">
         <header class="create-header">
-            <a href="/profile" class="logo">
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                    <circle cx="20" cy="20" r="20" fill="var(--pink-9)"
-                    ></circle>
-                    <path d="M15 14L25 20L15 26V14Z" fill="white"></path>
-                </svg>
-            </a>
-            <a href="/dashboard" class="user-profile">
-                <img
-                    src={userAvatarUrl}
-                    alt={user.displayName}
-                    class="user-avatar"
-                />
-            </a>
+            <div class="logo">
+                <Logo size={49}>
+                    <a href="/dashboard" class="user-profile">
+                        <img
+                            src={userAvatarUrl}
+                            alt={user.displayName}
+                            class="user-avatar"
+                        />
+                    </a>
+                </Logo>
+            </div>
         </header>
 
         <main class="create-main">
@@ -221,283 +219,283 @@ const userAvatarUrl =
                 </div>
             </form>
         </main>
+
+        <PreviewEditModal client:load />
     </div>
 
-    <PreviewEditModal client:load />
-</BaseLayout>
+    <script>
+        const form = document.getElementById("create-form") as HTMLFormElement;
+        const errorMessage = document.getElementById("error-message")!;
+        let selectedFile: File | null = null;
 
-<script>
-    const form = document.getElementById("create-form") as HTMLFormElement;
-    const errorMessage = document.getElementById("error-message")!;
-    let selectedFile: File | null = null;
+        // 1. Listen for File Updates from React Component
+        window.addEventListener("voice-file-updated", ((e: CustomEvent) => {
+            selectedFile = e.detail;
 
-    // 1. Listen for File Updates from React Component
-    window.addEventListener("voice-file-updated", ((e: CustomEvent) => {
-        selectedFile = e.detail;
-
-        // Also trigger your validation logic immediately here if needed
-        if (selectedFile) {
-            const validTypes = [
-                "audio/mpeg",
-                "audio/wav",
-                "audio/ogg",
-                "audio/mp3",
-            ];
-            const maxSize = 10 * 1024 * 1024;
-            if (
-                !validTypes.includes(selectedFile.type) &&
-                !selectedFile.type.startsWith("audio/")
-            ) {
-                showError("Please upload a valid audio file");
-                selectedFile = null; // Reset
-            } else if (selectedFile.size > maxSize) {
-                showError("File size must be less than 10MB");
-                selectedFile = null;
-            } else {
-                errorMessage.style.display = "none";
-                // Trigger Preview Logic
-                window.dispatchEvent(
-                    new CustomEvent("open-preview-modal", {
-                        detail: {
-                            audioBlob: selectedFile,
-                            source: "create-upload",
-                        },
-                    }),
-                );
+            // Also trigger your validation logic immediately here if needed
+            if (selectedFile) {
+                const validTypes = [
+                    "audio/mpeg",
+                    "audio/wav",
+                    "audio/ogg",
+                    "audio/mp3",
+                ];
+                const maxSize = 10 * 1024 * 1024;
+                if (
+                    !validTypes.includes(selectedFile.type) &&
+                    !selectedFile.type.startsWith("audio/")
+                ) {
+                    showError("Please upload a valid audio file");
+                    selectedFile = null; // Reset
+                } else if (selectedFile.size > maxSize) {
+                    showError("File size must be less than 10MB");
+                    selectedFile = null;
+                } else {
+                    errorMessage.style.display = "none";
+                    // Trigger Preview Logic
+                    window.dispatchEvent(
+                        new CustomEvent("open-preview-modal", {
+                            detail: {
+                                audioBlob: selectedFile,
+                                source: "create-upload",
+                            },
+                        }),
+                    );
+                }
             }
-        }
-    }) as EventListener);
+        }) as EventListener);
 
-    // 2. Listen for 'Edited' file coming back from the Modal
-    window.addEventListener("voice-edited", ((e: CustomEvent) => {
-        if (e.detail.source === "create-upload") {
-            selectedFile = new File([e.detail.blob], "voice_sample.wav", {
-                type: "audio/wav",
-            });
-            // Note: We don't need to update UI here manually because the React VoiceDropzone
-            // handles its own state. But we could dispatch an event back to React if we wanted the preview to update.
-            // For now, let's assume the user is happy with the flow.
-        }
-    }) as EventListener);
+        // 2. Listen for 'Edited' file coming back from the Modal
+        window.addEventListener("voice-edited", ((e: CustomEvent) => {
+            if (e.detail.source === "create-upload") {
+                selectedFile = new File([e.detail.blob], "voice_sample.wav", {
+                    type: "audio/wav",
+                });
+                // Note: We don't need to update UI here manually because the React VoiceDropzone
+                // handles its own state. But we could dispatch an event back to React if we wanted the preview to update.
+                // For now, let's assume the user is happy with the flow.
+            }
+        }) as EventListener);
 
-    function showError(message: string) {
-        errorMessage.textContent = message;
-        errorMessage.style.display = "block";
-    }
-
-    // 3. Form Submission
-    form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-
-        if (!selectedFile) {
-            showError("Please upload a voice sample");
-            return;
+        function showError(message: string) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = "block";
         }
 
-        const formData = new FormData(form);
-        // Manually append the file because it lives in JS memory, not the form DOM
-        formData.append("voiceFile", selectedFile);
-        // Rename characterName to match API expectation if needed
-        formData.append("name", formData.get("characterName") as string);
+        // 3. Form Submission
+        form.addEventListener("submit", async (e) => {
+            e.preventDefault();
 
-        const submitBtn = form.querySelector(
-            'button[type="submit"]',
-        ) as HTMLButtonElement;
-        const originalText = submitBtn.innerText;
-        submitBtn.disabled = true;
-        submitBtn.innerText = "Creating...";
+            if (!selectedFile) {
+                showError("Please upload a voice sample");
+                return;
+            }
 
-        try {
-            const response = await fetch("/api/characters/create", {
-                method: "POST",
-                body: formData,
-            });
-            const data = await response.json();
+            const formData = new FormData(form);
+            // Manually append the file because it lives in JS memory, not the form DOM
+            formData.append("voiceFile", selectedFile);
+            // Rename characterName to match API expectation if needed
+            formData.append("name", formData.get("characterName") as string);
 
-            if (response.ok) {
-                window.location.href = "/profile";
-            } else {
-                showError(data.error || "Failed to create character");
+            const submitBtn = form.querySelector(
+                'button[type="submit"]',
+            ) as HTMLButtonElement;
+            const originalText = submitBtn.innerText;
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Creating...";
+
+            try {
+                const response = await fetch("/api/characters/create", {
+                    method: "POST",
+                    body: formData,
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = "/profile";
+                } else {
+                    showError(data.error || "Failed to create character");
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = originalText;
+                }
+            } catch (error) {
+                showError("An error occurred. Please try again.");
                 submitBtn.disabled = false;
                 submitBtn.innerText = originalText;
             }
-        } catch (error) {
-            showError("An error occurred. Please try again.");
-            submitBtn.disabled = false;
-            submitBtn.innerText = originalText;
+        });
+    </script>
+
+    <style>
+        .create-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: var(--space-2xl);
         }
-    });
-</script>
 
-<style>
-    .create-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: var(--space-2xl);
-    }
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid var(--mauve-6);
+        }
 
-    .user-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        border: 1px solid var(--mauve-6);
-    }
+        .create-main {
+            max-width: 700px;
+            margin: 0 auto;
+        }
 
-    .create-main {
-        max-width: 700px;
-        margin: 0 auto;
-    }
+        .page-title {
+            font-size: var(--step-4);
+            font-weight: 700;
+            margin-bottom: var(--space-2xl);
+            color: var(--mauve-12);
+            text-align: center;
+        }
 
-    .page-title {
-        font-size: var(--step-4);
-        font-weight: 700;
-        margin-bottom: var(--space-2xl);
-        color: var(--mauve-12);
-        text-align: center;
-    }
+        .create-form {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-xl);
+        }
 
-    .create-form {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-xl);
-    }
+        .section-label {
+            font-size: var(--step-0);
+            font-weight: 600;
+            color: var(--mauve-12);
+            margin-bottom: var(--space-s);
+            display: flex;
+            align-items: center;
+        }
 
-    .section-label {
-        font-size: var(--step-0);
-        font-weight: 600;
-        color: var(--mauve-12);
-        margin-bottom: var(--space-s);
-        display: flex;
-        align-items: center;
-    }
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 8px;
+            cursor: help;
+        }
 
-    .tooltip-container {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        margin-left: 8px;
-        cursor: help;
-    }
+        .tooltip-icon {
+            width: 16px;
+            height: 16px;
+            color: var(--mauve-11);
+            transition: color 0.2s;
+        }
 
-    .tooltip-icon {
-        width: 16px;
-        height: 16px;
-        color: var(--mauve-11);
-        transition: color 0.2s;
-    }
+        .tooltip-container:hover .tooltip-icon {
+            color: var(--pink-9);
+        }
 
-    .tooltip-container:hover .tooltip-icon {
-        color: var(--pink-9);
-    }
-
-    .tooltip-text {
-        visibility: hidden;
-        width: 220px;
-        background-color: var(--mauve-12);
-        color: var(--mauve-1);
-        text-align: center;
-        border-radius: 6px;
-        padding: 8px 12px;
-        position: absolute;
-        z-index: 10;
-        bottom: 135%;
-        left: 50%;
-        margin-left: -110px;
-        opacity: 0;
-        transition:
-            opacity 0.3s,
-            transform 0.3s;
-        transform: translateY(5px);
-        font-size: 0.8rem;
-        font-weight: normal;
-        pointer-events: none;
-        box-shadow: var(--shadow-box-m);
-        line-height: 1.4;
-    }
-
-    .tooltip-text::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border-width: 5px;
-        border-style: solid;
-        border-color: var(--mauve-12) transparent transparent transparent;
-    }
-
-    .tooltip-container:hover .tooltip-text {
-        visibility: visible;
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    /* Simple Entry Animation for Astro components */
-    .fade-in {
-        opacity: 0;
-        animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-
-    @keyframes fadeInUp {
-        from {
+        .tooltip-text {
+            visibility: hidden;
+            width: 220px;
+            background-color: var(--mauve-12);
+            color: var(--mauve-1);
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px 12px;
+            position: absolute;
+            z-index: 10;
+            bottom: 135%;
+            left: 50%;
+            margin-left: -110px;
             opacity: 0;
-            transform: translateY(20px);
+            transition:
+                opacity 0.3s,
+                transform 0.3s;
+            transform: translateY(5px);
+            font-size: 0.8rem;
+            font-weight: normal;
+            pointer-events: none;
+            box-shadow: var(--shadow-box-m);
+            line-height: 1.4;
         }
-        to {
+
+        .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--mauve-12) transparent transparent transparent;
+        }
+
+        .tooltip-container:hover .tooltip-text {
+            visibility: visible;
             opacity: 1;
             transform: translateY(0);
         }
-    }
 
-    /* Toggle Switch Styles (Kept as vanilla CSS) */
-    .toggle-label {
-        display: flex;
-        align-items: center;
-        gap: var(--space-m);
-        cursor: pointer;
-    }
-    .toggle-input {
-        display: none;
-    }
-    .toggle-switch {
-        position: relative;
-        width: 48px;
-        height: 24px;
-        background: var(--mauve-7);
-        border-radius: 12px;
-        transition: background 0.3s ease;
-    }
-    .toggle-switch::after {
-        content: "";
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 20px;
-        height: 20px;
-        background: white;
-        border-radius: 50%;
-        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .toggle-input:checked + .toggle-switch {
-        background: var(--pink-9);
-    }
-    .toggle-input:checked + .toggle-switch::after {
-        transform: translateX(24px);
-    }
-    .toggle-text {
-        color: var(--mauve-12);
-        font-size: var(--space-0);
-    }
+        /* Simple Entry Animation for Astro components */
+        .fade-in {
+            opacity: 0;
+            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
 
-    .error-display {
-        padding: var(--space-m);
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid #ef4444;
-        border-radius: var(--radius-m);
-        color: #dc2626;
-    }
-    .submit-btn {
-        width: 100%;
-    }
-</style>
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Toggle Switch Styles (Kept as vanilla CSS) */
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: var(--space-m);
+            cursor: pointer;
+        }
+        .toggle-input {
+            display: none;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: var(--mauve-7);
+            border-radius: 12px;
+            transition: background 0.3s ease;
+        }
+        .toggle-switch::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .toggle-input:checked + .toggle-switch {
+            background: var(--pink-9);
+        }
+        .toggle-input:checked + .toggle-switch::after {
+            transform: translateX(24px);
+        }
+        .toggle-text {
+            color: var(--mauve-12);
+            font-size: var(--space-0);
+        }
+
+        .error-display {
+            padding: var(--space-m);
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid #ef4444;
+            border-radius: var(--radius-m);
+            color: #dc2626;
+        }
+        .submit-btn {
+            width: 100%;
+        }
+    </style>
+</BaseLayout>

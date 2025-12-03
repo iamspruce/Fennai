@@ -8,6 +8,7 @@ from io import BytesIO
 import os
 import logging
 from pathlib import Path
+from huggingface_hub import snapshot_download
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,26 +33,46 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 attention_mode = get_optimal_attention_mode()
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 
-# Model configuration - must match download_model.py
-MODEL_NAME = "vibevoice/VibeVoice-1.5B"
+# Model configuration
+MODEL_NAME = os.getenv("MODEL_NAME", "vibevoice/VibeVoice-1.5B")
 MODEL_CACHE_DIR = Path("/workspace/models")
-MODEL_PATH = MODEL_CACHE_DIR / "VibeVoice-1.5B"
+MODEL_PATH = MODEL_CACHE_DIR / MODEL_NAME.split("/")[-1]
 
 # === Globals ===
 processor = None
 model = None
 
+def download_model_if_needed():
+    """Download model from HuggingFace if not already cached"""
+    if MODEL_PATH.exists():
+        logger.info(f"Model already cached at {MODEL_PATH}")
+        return
+    
+    logger.info(f"Downloading {MODEL_NAME} to {MODEL_PATH}...")
+    try:
+        MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
+        snapshot_download(
+            repo_id=MODEL_NAME,
+            local_dir=str(MODEL_PATH),
+            local_dir_use_symlinks=False,
+            resume_download=True,
+            token=os.getenv("HF_TOKEN")  # Optional: for gated models
+        )
+        logger.info("✓ Model download complete")
+        
+    except Exception as e:
+        logger.error(f"Model download failed: {e}", exc_info=True)
+        raise
+
 def load_model():
-    """Load the pre-downloaded VibeVoice model from Docker image"""
+    """Load the VibeVoice model - download if needed"""
     global processor, model
     logger.info(f"Loading VibeVoice on {device} with {attention_mode}...")
     
     try:
-        # Model should already exist from Docker build
-        if not MODEL_PATH.exists():
-            logger.error(f"Model not found at {MODEL_PATH}!")
-            logger.error("Model should have been downloaded during Docker build")
-            raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
+        # Download if not present
+        download_model_if_needed()
         
         # Verify essential files exist
         required_files = ['config.json', 'tokenizer_config.json']
@@ -64,7 +85,7 @@ def load_model():
             logger.error(f"Missing required files: {missing_files}")
             raise FileNotFoundError(f"Incomplete model cache: missing {missing_files}")
         
-        logger.info(f"Loading cached model from {MODEL_PATH}")
+        logger.info(f"Loading model from {MODEL_PATH}")
         
         # Load processor
         processor = VibeVoiceProcessor.from_pretrained(str(MODEL_PATH))
