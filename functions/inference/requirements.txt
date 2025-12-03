@@ -1,6 +1,12 @@
-# PyTorch and ML dependencies
+# Cloud Run framework
+functions-framework==3.5.0
+
+# Core ML dependencies
 transformers==4.51.3
-diffusers
+accelerate>=0.25.0
+safetensors>=0.4.0
+
+# HuggingFace
 huggingface-hub>=0.17.0
 tokenizers>=0.14.0
 
@@ -10,5 +16,10 @@ soundfile>=0.12.1
 noisereduce>=3.0.0
 scipy>=1.11.0
 
-python-dotenv
-requests
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+numpy>=1.24.0
+
+# Optional but recommended for performance
+einops>=0.7.0
