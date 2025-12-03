@@ -1,15 +1,17 @@
-torch==2.3.0+cu122  # CUDA 12.2 variant
-torchaudio==2.3.0+cu122
-flash-attn==2.6.3  # For your original script's flash attention
-soundfile
-librosa
-huggingface-hub
-noisereduce
+# PyTorch and ML dependencies
+torch>=2.1.0
+torchaudio>=2.1.0
+transformers==4.51.3
+diffusers
+huggingface-hub>=0.17.0
+tokenizers>=0.14.0
+
+# Audio processing
+librosa>=0.10.1
+soundfile>=0.12.1
+noisereduce>=3.0.0
+scipy>=1.11.0
+
+python-dotenv
 requests
-python-dotenv  # For .env loading
-# VibeVoice deps (from your speak.py)
-transformers==4.44.0
-accelerate==0.33.0
-sentencepiece
-protobuf
-# Add if needed: flash-attn (already above)
+flash_attn
