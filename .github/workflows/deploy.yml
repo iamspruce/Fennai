@@ -55,6 +55,7 @@ jobs:
           node-version: 20
           
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -66,12 +67,6 @@ jobs:
           
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
-        
-      - name: Set Firebase credentials
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > $HOME/gcloud-key.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud-key.json
-          gcloud auth activate-service-account --key-file=$HOME/gcloud-key.json
           
       - name: Deploy Proxy Function
         run: firebase deploy --only functions:proxy --project fennai --non-interactive
