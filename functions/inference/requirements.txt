@@ -5,6 +5,7 @@ functions-framework==3.5.0
 transformers==4.51.3
 accelerate>=0.25.0
 safetensors>=0.4.0
+diffusers
 
 # HuggingFace
 huggingface-hub>=0.17.0

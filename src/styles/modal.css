@@ -18,15 +18,21 @@
   }
 }
 
-/* Modal overlay for popups */
+/* modal.css */
+
+/* --- Overlay & Animation --- */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(26, 21, 35, 0.8);
-  backdrop-filter: blur(4px);
+  background: rgba(26, 21, 35, 0.6);
+  /* Slightly lighter for iOS feel */
+  backdrop-filter: blur(8px);
+  /* Stronger blur */
+  -webkit-backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
   align-items: center;
+  /* Center on Desktop */
   justify-content: center;
   opacity: 0;
   animation: fadeIn var(--transition-base) forwards;
@@ -38,53 +44,124 @@
   }
 }
 
+/* --- Modal Content Base --- */
 .modal-content {
-  width: 100%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow-y: auto;
   background: var(--mauve-1);
   border: 1px solid var(--mauve-6);
-  box-shadow: var(--shadow-box-m);
-  padding: var(--space-m);
-  transform: scale(0.95);
-  animation: scaleIn var(--transition-base) forwards;
+  box-shadow: var(--shadow-box-l);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  /* Important for border radius */
 }
 
-@media (max-width: 768px) {
-  .modal-content {
-    position: absolute;
-    bottom: 0px;
-    border-top-left-radius: var(--radius-l);
-    border-top-right-radius: var(--radius-l);
-  }
-}
-
+/* --- Desktop Styles (>= 768px) --- */
 @media (min-width: 768px) {
   .modal-content {
-    position: relative;
+    max-width: 480px;
+    /* Standard width */
+    max-height: 85vh;
     border-radius: var(--radius-l);
+    transform: scale(0.96);
+    animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    /* Spring-like */
+  }
+
+  .modal-content.modal-wide {
+    max-width: 700px;
   }
 }
 
 @keyframes scaleIn {
   to {
     transform: scale(1);
+    opacity: 1;
   }
 }
 
-/* Modal header */
+/* --- Mobile Styles (iOS Sheet Look) (< 768px) --- */
+@media (max-width: 767px) {
+  .modal-overlay {
+    align-items: flex-end;
+    /* Push to bottom */
+  }
+
+  .modal-content {
+    max-width: 100%;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-left-radius: 24px;
+    /* Large iOS radius */
+    border-top-right-radius: 24px;
+    border-bottom: none;
+    max-height: 92vh;
+    /* Leave a gap at top */
+
+    /* Animation: Slide Up */
+    transform: translateY(100%);
+    animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* The "Handle" indicator */
+  .modal-handle-bar {
+    width: 100%;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: grab;
+  }
+
+  .modal-handle-pill {
+    width: 40px;
+    height: 5px;
+    background-color: var(--mauve-6);
+    border-radius: 100px;
+  }
+
+  .modal-header {
+    padding-top: 0;
+    /* Handle takes the space */
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* --- Header & Layout --- */
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2xs);
-  margin-bottom: var(--space-2xs);
+  padding: var(--space-s) var(--space-m);
+  border-bottom: 1px solid var(--mauve-3);
+  background: var(--mauve-1);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.modal-logo {
-  width: 32px;
-  height: 32px;
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.modal-title {
+  font-size: var(--step-0);
+  font-weight: 600;
+  color: var(--mauve-12);
+  margin: 0;
 }
 
 .modal-close {
@@ -93,196 +170,163 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-m);
-  color: var(--mauve-12);
-  transition: all var(--transition-fast);
+  border-radius: 50%;
+  background: var(--mauve-3);
+  color: var(--mauve-11);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .modal-close:hover {
-  background: var(--mauve-4);
+  background: var(--mauve-5);
   color: var(--mauve-12);
 }
 
-/* Wide modal variant */
-.modal-content.modal-wide {
-  max-width: 800px;
-}
-
-/* Tall modal variant */
-.modal-content.modal-tall {
-  max-height: 95vh;
-}
-
-/* Audio Player Styles */
-.audio-player {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-sm);
-  background: var(--mauve-3);
-  border: 1px solid var(--mauve-6);
-  border-radius: var(--radius-m);
-}
-
-.play-button {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--pink-9);
-  color: var(--pink-1);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  flex-shrink: 0;
-}
-
-.play-button:hover {
-  background: var(--pink-10);
-}
-
-.waveform-container {
-  position: relative;
+.modal-body {
+  padding: var(--space-m);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1;
 }
 
-.seek-bar {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 2;
+/* --- Audio Editor Specifics --- */
+.waveform-container {
+  background: var(--mauve-2);
+  border-radius: var(--radius-m);
+  border: 1px solid var(--mauve-4);
+  padding: var(--space-xs);
+  margin: var(--space-m) 0;
+  position: relative;
+  overflow: hidden;
 }
 
-.progress-bar {
-  position: absolute;
-  height: 100%;
-  background: var(--pink-9);
-  border-radius: var(--radius-s);
-  transition: width 0.1s linear;
-  pointer-events: none;
+.control-deck {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-m);
+  margin-bottom: var(--space-l);
 }
 
-.time-display {
-  font-size: var(--space-0);
-  color: var(--mauve-12);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Cloning Modal Styles */
-.cloning-modal {
-  max-width: 400px;
-}
-
-.cloning-body {
+.trim-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-xl);
-  padding: var(--space-2xs) 0;
+  gap: 8px;
+}
+
+.trim-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mauve-9);
+  font-weight: 600;
   text-align: center;
 }
 
-.progress-circle {
-  position: relative;
-  width: 120px;
-  height: 120px;
+.nudge-controls {
+  display: flex;
+  align-items: center;
+  background: var(--mauve-3);
+  border-radius: var(--radius-m);
+  padding: 2px;
 }
 
-.progress-content {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+.btn-nudge {
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.progress-text {
-  font-size: var(--step-0);
-  font-weight: 700;
-  color: var(--pink-9);
-}
-
-.cloning-title {
-  font-size: var(--step-0);
-  font-weight: 600;
-  color: var(--mauve-12);
-  margin: 0;
-}
-
-.cloning-message {
-  font-size: var(--step-2);
+  border: none;
+  background: transparent;
   color: var(--mauve-11);
-  margin: 0;
+  cursor: pointer;
 }
 
-/* Preview Edit Modal Styles */
-
-.preview-title {
-  font-size: var(--step-0);
-  font-weight: 600;
-  margin-bottom: var(--space-xl);
+.btn-nudge:hover {
   color: var(--mauve-12);
-  text-align: center;
+  background: var(--mauve-4);
+  border-radius: 6px;
 }
 
+.time-readout {
+  flex: 1;
+  text-align: center;
+  font-family: monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  color: var(--pink-9);
+  font-weight: 600;
+}
 
-.control-btn {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.play-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   background: var(--pink-9);
   color: white;
   border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  flex-shrink: 0;
-}
-
-.control-btn:hover {
-  background: var(--pink-10);
-}
-
-.timeline {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--space-m);
+  justify-content: center;
+  box-shadow: var(--shadow-box-m);
+  cursor: pointer;
+  transition: transform 0.1s;
 }
 
-.time-label {
-  font-size: var(--step-2);
-  color: var(--mauve-11);
-  font-variant-numeric: tabular-nums;
-  min-width: 40px;
+.play-fab:active {
+  transform: scale(0.95);
 }
 
-
-
-.trim-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-l);
-  margin-bottom: var(--space-xl);
-  padding-block: var(--space-l);
+/* Range Slider Styling */
+.range-stack {
+  position: relative;
+  height: 24px;
+  margin-top: 8px;
 }
 
-
-.modal-actions {
-  display: flex;
-  gap: var(--space-xs);
-  justify-content: flex-end;
+.range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  position: absolute;
+  background: transparent;
+  pointer-events: none;
+  /* Let clicks pass through to bottom slider if needed */
+  top: 0;
 }
 
-.modal-actions .btn {
-  min-width: 120px;
+.range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  /* Re-enable pointer on the thumb */
+  height: 24px;
+  width: 16px;
+  border-radius: 4px;
+  background: var(--mauve-12);
+  border: 2px solid white;
+  cursor: col-resize;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  margin-top: -10px;
+  /* Align vertical */
+}
+
+/* Firefox support */
+.range-input::-moz-range-thumb {
+  pointer-events: auto;
+  height: 24px;
+  width: 16px;
+  border-radius: 4px;
+  background: var(--mauve-12);
+  border: 2px solid white;
+  cursor: col-resize;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.range-input::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: transparent;
 }

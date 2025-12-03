@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { AuthService } from '@/lib/firebase/authService';
 import { Icon } from '@iconify/react';
 import "@/styles/login-modal.css";
+// Ensure modal.css is imported globally or here
+import "@/styles/modal.css";
 
 export default function LoginModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,7 +12,7 @@ export default function LoginModal() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   useEffect(() => {
     const handleOpen = () => setIsOpen(true);
     window.addEventListener('open-login-modal', handleOpen);
@@ -22,8 +24,6 @@ export default function LoginModal() {
     setError('');
   };
 
-  if (!isOpen) return null;
-
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -31,21 +31,15 @@ export default function LoginModal() {
 
     try {
       let userCredential;
-      
       if (mode === 'signin') {
         userCredential = await AuthService.signInWithEmail(email, password);
       } else {
         userCredential = await AuthService.signUpWithEmail(email, password);
       }
 
-      // Get ID token from Firebase
       const idToken = await AuthService.getIdToken();
-      
-      if (!idToken) {
-        throw new Error('Failed to get authentication token');
-      }
+      if (!idToken) throw new Error('Failed to get authentication token');
 
-      // Create session cookie on server
       const response = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -56,7 +50,7 @@ export default function LoginModal() {
         const data = await response.json();
         throw new Error(data.error || 'Failed to create session');
       }
-      
+
       window.location.href = '/profile';
     } catch (err: any) {
       console.error('Authentication error:', err);
@@ -69,18 +63,11 @@ export default function LoginModal() {
   const handleGoogleAuth = async () => {
     setError('');
     setLoading(true);
-
     try {
-      const userCredential = await AuthService.signInWithGoogle();
-      
-      // Get ID token from Firebase
+      await AuthService.signInWithGoogle();
       const idToken = await AuthService.getIdToken();
-      
-      if (!idToken) {
-        throw new Error('Failed to get authentication token');
-      }
+      if (!idToken) throw new Error('Failed to get authentication token');
 
-      // Create session cookie on server
       const response = await fetch('/api/auth/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,9 +78,7 @@ export default function LoginModal() {
         const data = await response.json();
         throw new Error(data.error || 'Failed to create session');
       }
-      
       window.location.href = '/profile';
-
     } catch (err: any) {
       console.error('Google sign-in error:', err);
       setError(err.message || 'Google sign-in failed');
@@ -102,11 +87,21 @@ export default function LoginModal() {
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content auth-modal-content" onClick={(e) => e.stopPropagation()}>
+
+        {/* Mobile Drag Handle */}
+        <div className="modal-handle-bar">
+          <div className="modal-handle-pill"></div>
+        </div>
+
         <div className="modal-header">
-          <Icon icon="lucide:sparkles" width={24} height={24} style={{ color: 'var(--pink-9)' }} />
+          <div className="modal-title-group">
+            <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+          </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             <Icon icon="lucide:x" width={20} height={20} />
           </button>
@@ -130,6 +125,8 @@ export default function LoginModal() {
                 placeholder="name@example.com"
                 required
                 disabled={loading}
+                // Important for preventing iOS zoom
+                style={{ fontSize: '16px' }}
               />
             </div>
 
@@ -144,6 +141,7 @@ export default function LoginModal() {
                 required
                 minLength={6}
                 disabled={loading}
+                style={{ fontSize: '16px' }}
               />
             </div>
 
@@ -164,17 +162,17 @@ export default function LoginModal() {
           </form>
 
           <div className="divider">
-            <span>or continue with</span>
+            <span>or</span>
           </div>
 
           <button
             type="button"
-            className="btn btn-full btn-social" 
+            className="btn btn-full btn-social"
             onClick={handleGoogleAuth}
             disabled={loading}
           >
-            <Icon icon="logos:google-icon" width={20} height={20} />
-            <span>Google</span>
+            <Icon icon="logos:google-icon" width={20} height={20} style={{ marginRight: '8px' }} />
+            <span>Continue with Google</span>
           </button>
 
           <p className="toggle-mode">

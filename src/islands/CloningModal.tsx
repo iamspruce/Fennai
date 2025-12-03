@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import { cloneSingleVoice, cloneMultiVoice, checkUserCanClone, type CloneVoiceResponse } from '@/lib/api/voiceClone';
+import '@/styles/modal.css';
 
 interface CloningEventDetail {
   characterId: string;
@@ -8,7 +9,7 @@ interface CloningEventDetail {
   audioFile: File;
   isMultiCharacter?: boolean;
   characterIds?: string[];
-  texts?: string[]; // Individual text for each character
+  texts?: string[];
   additionalCharacters?: Array<{ characterId: string; text: string; audioFile: File }>;
 }
 
@@ -48,25 +49,17 @@ export default function CloningModal() {
     if (!data) return;
 
     try {
-      // Step 1: Check authorization
       setStatus('checking');
       setMessage('Checking authorization...');
       setProgress(10);
-
       const { canClone, reason } = await checkUserCanClone();
-
-      if (!canClone) {
-        throw new Error(reason || 'Unable to clone voice');
-      }
+      if (!canClone) throw new Error(reason || 'Unable to clone voice');
 
       setProgress(30);
-      setMessage('Cloning voice...');
-
-      // Step 2: Clone voice
+      setMessage('Processing audio...');
       setStatus('cloning');
 
       let result: CloneVoiceResponse;
-
       if (data.isMultiCharacter) {
         result = await cloneMultiVoice({
           characters: [
@@ -83,19 +76,15 @@ export default function CloningModal() {
       }
 
       setProgress(90);
-      setMessage('Processing...');
+      setMessage('Finalizing...');
 
-      // Step 3: Complete
       setTimeout(() => {
         setProgress(100);
         setStatus('complete');
-        setMessage('Voice cloned successfully!');
+        setMessage('Done!');
 
-        // Auto-transition to Preview Modal after success
         setTimeout(() => {
           setIsOpen(false);
-
-          // Dispatch event with full dialogue data
           window.dispatchEvent(new CustomEvent('open-preview-modal', {
             detail: {
               audioBlob: result.audioBlob,
@@ -104,7 +93,7 @@ export default function CloningModal() {
               text: data.text,
               isMultiCharacter: data.isMultiCharacter,
               characterIds: data.characterIds,
-              texts: data.texts, // Pass individual texts
+              texts: data.texts,
             }
           }));
         }, 500);
@@ -121,8 +110,16 @@ export default function CloningModal() {
   return (
     <div className="modal-overlay">
       <div className="modal-content cloning-modal">
+        {/* Mobile Handle */}
+        <div className="modal-handle-bar">
+          <div className="modal-handle-pill"></div>
+        </div>
+
         <div className="modal-header">
-          <Icon icon="lucide:sparkles" width={32} height={32} style={{ color: 'var(--pink-9)' }} />
+          <div className="modal-title-group">
+            <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+            <span className="modal-title">Cloning</span>
+          </div>
           {status === 'error' && (
             <button className="modal-close" onClick={onClose} aria-label="Close">
               <Icon icon="lucide:x" width={20} height={20} />
@@ -130,43 +127,55 @@ export default function CloningModal() {
           )}
         </div>
 
-        <div className="cloning-body">
-          <div className="progress-circle">
+        <div className="modal-body" style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '250px',
+          textAlign: 'center'
+        }}>
+          <div className="progress-circle" style={{ position: 'relative', width: 120, height: 120, marginBottom: '24px' }}>
             <svg width="120" height="120" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r="54" fill="none" stroke="var(--mauve-4)" strokeWidth="8" />
+              <circle cx="60" cy="60" r="54" fill="none" stroke="var(--mauve-3)" strokeWidth="6" />
               <circle
                 cx="60" cy="60" r="54" fill="none"
-                stroke={status === 'error' ? '#ef4444' : 'var(--pink-9)'}
-                strokeWidth="8"
+                stroke={status === 'error' ? 'var(--red-9)' : 'var(--pink-9)'}
+                strokeWidth="6"
                 strokeLinecap="round"
                 strokeDasharray={`${2 * Math.PI * 54}`}
                 strokeDashoffset={`${2 * Math.PI * 54 * (1 - progress / 100)}`}
                 transform="rotate(-90 60 60)"
-                style={{ transition: 'stroke-dashoffset 0.3s ease' }}
+                style={{ transition: 'stroke-dashoffset 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}
               />
             </svg>
-            <div className="progress-content">
+            <div className="progress-content" style={{
+              position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
               {status === 'error' ? (
-                <Icon icon="lucide:alert-circle" width={40} height={40} style={{ color: '#ef4444' }} />
+                <Icon icon="lucide:alert-circle" width={40} style={{ color: 'var(--red-9)' }} />
               ) : status === 'complete' ? (
-                <Icon icon="lucide:check" width={40} height={40} style={{ color: 'var(--pink-9)' }} />
+                <Icon icon="lucide:check" width={40} style={{ color: 'var(--pink-9)' }} />
               ) : (
-                <span className="progress-text">{progress}%</span>
+                <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--pink-9)', fontVariantNumeric: 'tabular-nums' }}>
+                  {progress}%
+                </span>
               )}
             </div>
           </div>
 
-          <h3 className="cloning-title">
+          <h3 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 8px', color: 'var(--mauve-12)' }}>
             {status === 'checking' && 'Authorizing...'}
-            {status === 'cloning' && 'Cloning Voice...'}
+            {status === 'cloning' && 'Generating Voice...'}
             {status === 'complete' && 'Complete!'}
-            {status === 'error' && 'Error'}
+            {status === 'error' && 'Something went wrong'}
           </h3>
 
-          <p className="cloning-message">{message}</p>
+          <p style={{ color: 'var(--mauve-11)', margin: 0, fontSize: '15px' }}>{message}</p>
 
           {status === 'error' && (
-            <button className="btn btn-primary" onClick={onClose}>
+            <button className="btn btn-primary" onClick={onClose} style={{ marginTop: '24px' }}>
               Close
             </button>
           )}

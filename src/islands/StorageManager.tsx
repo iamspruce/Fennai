@@ -9,7 +9,8 @@ import {
     formatBytes,
     type VoiceRecord,
 } from '@/lib/db/indexdb';
-import '@/styles/modal.css'; // ← your beautiful modal styles
+import { Icon } from '@iconify/react';
+import '@/styles/modal.css';
 
 export default function StorageManager() {
     const [isOpen, setIsOpen] = useState(false);
@@ -61,7 +62,6 @@ export default function StorageManager() {
     const handleCleanup = async (voices: VoiceRecord[], label: string) => {
         if (voices.length === 0) return;
         if (!confirm(`Delete ${voices.length} ${label} voices?\n\nThis cannot be undone.`)) return;
-
         setCleaning(true);
         try {
             const deleted = await deleteVoicesBatch(voices.map(v => v.id));
@@ -79,136 +79,159 @@ export default function StorageManager() {
     return (
         <div className="modal-overlay" onClick={() => setIsOpen(false)}>
             <div
-                className="modal-content modal-wide modal-tall"
+                className="modal-content modal-wide"
                 onClick={(e) => e.stopPropagation()}
-                style={{ maxWidth: '900px' }}
             >
+                {/* Mobile Drag Handle */}
+                <div className="modal-handle-bar">
+                    <div className="modal-handle-pill"></div>
+                </div>
+
                 {/* Header */}
                 <div className="modal-header">
-                    <h2 style={{ fontSize: 'var(--step-2)', fontWeight: 600, margin: 0 }}>
-                        Storage Manager
-                    </h2>
-                    <button
-                        className="modal-close"
-                        onClick={() => setIsOpen(false)}
-                        aria-label="Close"
-                    >
-                        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                    <div className="modal-title-group">
+                        <Icon icon="lucide:hard-drive" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+                        <h2 className="modal-title">Storage Manager</h2>
+                    </div>
+                    <button className="modal-close" onClick={() => setIsOpen(false)} aria-label="Close">
+                        <Icon icon="lucide:x" width={20} height={20} />
                     </button>
                 </div>
 
-                {/* Tabs */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--mauve-6)', marginBottom: 'var(--space-m)' }}>
-                    {(['overview', 'cleanup'] as const).map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setSelectedTab(tab)}
-                            style={{
-                                padding: 'var(--space-s) var(--space-l)',
-                                fontWeight: selectedTab === tab ? 600 : 500,
-                                color: selectedTab === tab ? 'var(--pink-11)' : 'var(--mauve-11)',
-                                borderBottom: selectedTab === tab ? '2px solid var(--pink-9)' : 'none',
-                                background: 'none',
-                                cursor: 'pointer',
-                                fontSize: 'var(--step-0)',
-                            }}
-                        >
-                            {tab === 'overview' ? 'Overview' : 'Free Up Space'}
-                        </button>
-                    ))}
-                </div>
+                <div className="modal-body">
+                    {/* iOS Style Segmented Control */}
+                    <div style={{
+                        display: 'flex',
+                        background: 'var(--mauve-3)',
+                        padding: '4px',
+                        borderRadius: '8px',
+                        marginBottom: 'var(--space-l)',
+                        position: 'relative'
+                    }}>
+                        {(['overview', 'cleanup'] as const).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setSelectedTab(tab)}
+                                style={{
+                                    flex: 1,
+                                    padding: '8px 16px',
+                                    borderRadius: '6px',
+                                    border: 'none',
+                                    fontSize: '14px',
+                                    fontWeight: selectedTab === tab ? 600 : 500,
+                                    background: selectedTab === tab ? 'var(--mauve-1)' : 'transparent',
+                                    color: selectedTab === tab ? 'var(--mauve-12)' : 'var(--mauve-11)',
+                                    boxShadow: selectedTab === tab ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                {tab === 'overview' ? 'Overview' : 'Free Up Space'}
+                            </button>
+                        ))}
+                    </div>
 
-                {/* Content */}
-                <div style={{ padding: '0 var(--space-m) var(--space-m)' }}>
                     {loading ? (
                         <div style={{ textAlign: 'center', padding: 'var(--space-2xl)' }}>
-                            <div className="btn btn-primary btn-sm" style={{ width: 48, height: 48, margin: '0 auto var(--space-m)' }}>
-                                <svg className="animate-spin" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" opacity="0.3" />
-                                    <path fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z" />
-                                </svg>
-                            </div>
-                            <p style={{ color: 'var(--mauve-11)' }}>Loading storage info...</p>
+                            <Icon icon="lucide:loader-2" className="animate-spin" width={32} height={32} style={{ color: 'var(--pink-9)', margin: '0 auto' }} />
+                            <p style={{ color: 'var(--mauve-11)', marginTop: 'var(--space-m)' }}>Analyzing storage...</p>
                         </div>
                     ) : selectedTab === 'overview' ? (
                         <div style={{ display: 'grid', gap: 'var(--space-l)' }}>
                             {/* Quota Bar */}
                             <div style={{
-                                background: 'var(--mauve-3)',
+                                background: 'var(--mauve-2)',
                                 padding: 'var(--space-m)',
                                 borderRadius: 'var(--radius-m)',
-                                border: '1px solid var(--mauve-6)',
+                                border: '1px solid var(--mauve-4)',
                             }}>
-                                <div style={{ marginBottom: 'var(--space-s)', fontWeight: 600 }}>Browser Storage Used</div>
-                                <div style={{ fontSize: 'var(--step-1)', marginBottom: 'var(--space-xs)' }}>
-                                    {formatBytes(stats!.quota.usage)} of ~{formatBytes(stats!.quota.quota)}
-                                    <span style={{ float: 'right', color: stats!.quota.percentUsed >= 80 ? 'var(--red-11)' : 'var(--mauve-11)' }}>
-                                        {stats!.quota.percentUsed.toFixed(1)}%
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
+                                    <span>Browser Storage</span>
+                                    <span style={{ color: stats!.quota.percentUsed >= 80 ? 'var(--red-9)' : 'var(--mauve-11)' }}>
+                                        {stats!.quota.percentUsed.toFixed(1)}% Used
                                     </span>
                                 </div>
-                                <div style={{ height: 12, background: 'var(--mauve-5)', borderRadius: 'var(--radius-s)', overflow: 'hidden' }}>
+
+                                <div style={{ height: 16, background: 'var(--mauve-4)', borderRadius: '100px', overflow: 'hidden', marginBottom: '8px' }}>
                                     <div
                                         style={{
                                             height: '100%',
                                             width: `${Math.min(stats!.quota.percentUsed, 100)}%`,
-                                            background: stats!.quota.percentUsed >= 95 ? 'var(--red-9)' :
-                                                stats!.quota.percentUsed >= 80 ? 'var(--yellow-9)' : 'var(--green-9)',
-                                            transition: 'width 0.6s ease',
+                                            background: stats!.quota.percentUsed >= 90 ? 'var(--red-9)' :
+                                                stats!.quota.percentUsed >= 75 ? 'var(--orange-9)' : 'var(--green-9)',
+                                            transition: 'width 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
                                         }}
                                     />
                                 </div>
-                                <div style={{ fontSize: 'var(--step--1)', color: 'var(--mauve-11)', marginTop: 'var(--space-xs)' }}>
-                                    {formatBytes(stats!.quota.available)} available
+                                <div style={{ fontSize: '12px', color: 'var(--mauve-11)', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>{formatBytes(stats!.quota.usage)} used</span>
+                                    <span>{formatBytes(stats!.quota.available)} free</span>
                                 </div>
                             </div>
 
                             {/* Stats Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-m)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-s)' }}>
                                 {[
-                                    { label: 'Total Voices', value: stats!.voiceCount },
-                                    { label: 'Total Size', value: formatBytes(stats!.totalSize) },
-                                    { label: 'Average Size', value: formatBytes(stats!.averageSize) },
-                                    { label: 'Cloud Voices', value: stats!.cloudStorageCount },
+                                    { label: 'Voices', value: stats!.voiceCount, icon: 'lucide:mic' },
+                                    { label: 'Total Size', value: formatBytes(stats!.totalSize), icon: 'lucide:hard-drive' },
+                                    { label: 'Avg Size', value: formatBytes(stats!.averageSize), icon: 'lucide:bar-chart-2' },
+                                    { label: 'Synced', value: stats!.cloudStorageCount, icon: 'lucide:cloud' },
                                 ].map(item => (
                                     <div key={item.label} style={{
-                                        background: 'var(--mauve-3)',
+                                        background: 'var(--mauve-2)',
                                         padding: 'var(--space-m)',
                                         borderRadius: 'var(--radius-m)',
-                                        textAlign: 'center',
-                                        border: '1px solid var(--mauve-6)',
+                                        border: '1px solid var(--mauve-4)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: '4px'
                                     }}>
-                                        <div style={{ fontSize: 'var(--step-2)', fontWeight: 700, color: 'var(--mauve-12)' }}>
+                                        <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--mauve-12)' }}>
                                             {item.value}
                                         </div>
-                                        <div style={{ fontSize: 'var(--step--1)', color: 'var(--mauve-11)' }}>
-                                            {item.label}
+                                        <div style={{ fontSize: '12px', color: 'var(--mauve-11)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <Icon icon={item.icon} width={12} /> {item.label}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     ) : (
-                        <div style={{ display: 'grid', gap: 'var(--space-l)' }}>
-                            {/* Auto Cleanup */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-m)' }}>
+                            {/* Auto Cleanup Hero */}
                             <div style={{
                                 background: 'linear-gradient(135deg, var(--green-3), var(--emerald-3))',
-                                padding: 'var(--space-l)',
-                                borderRadius: 'var(--radius-l)',
-                                border: '1px solid var(--green-7)',
+                                padding: 'var(--space-m)',
+                                borderRadius: 'var(--radius-m)',
+                                border: '1px solid var(--green-6)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
                                 textAlign: 'center',
+                                gap: 'var(--space-s)'
                             }}>
-                                <h3 style={{ margin: '0 0 var(--space-s)', fontSize: 'var(--step-1)' }}>Smart Auto Cleanup</h3>
-                                <p style={{ margin: '0 0 var(--space-m)', fontSize: 'var(--step--1)', color: 'var(--mauve-11)' }}>
-                                    Removes voices older than 30 days (keeps your 10 newest)
-                                </p>
+                                <div style={{ background: 'var(--green-4)', padding: '8px', borderRadius: '50%' }}>
+                                    <Icon icon="lucide:sparkles" width={24} style={{ color: 'var(--green-11)' }} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--green-12)' }}>Smart Cleanup</h3>
+                                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--green-11)' }}>
+                                        Keep 10 newest voices, delete the rest.
+                                    </p>
+                                </div>
                                 <button
                                     onClick={handleAutoCleanup}
                                     disabled={cleaning}
-                                    className="btn btn-primary btn-sm"
+                                    className="btn"
+                                    style={{
+                                        width: '100%',
+                                        background: 'var(--green-9)',
+                                        color: 'white',
+                                        border: 'none'
+                                    }}
                                 >
-                                    {cleaning ? 'Cleaning...' : 'Run Auto Cleanup'}
+                                    {cleaning ? 'Running...' : 'Run Auto Cleanup'}
                                 </button>
                             </div>
 
@@ -216,30 +239,33 @@ export default function StorageManager() {
                             {candidates && (
                                 <>
                                     {candidates.old.length > 0 && (
-                                        <CleanupCard
+                                        <CleanupRow
                                             title="Old Voices"
+                                            meta="> 30 days"
                                             count={candidates.old.length}
-                                            desc="Older than 30 days"
+                                            icon="lucide:calendar-clock"
                                             color="var(--yellow-9)"
                                             onClick={() => handleCleanup(candidates.old, 'old')}
                                             disabled={cleaning}
                                         />
                                     )}
                                     {candidates.unused.length > 0 && (
-                                        <CleanupCard
-                                            title="Unused Voices"
+                                        <CleanupRow
+                                            title="Unused"
+                                            meta="Not played > 7 days"
                                             count={candidates.unused.length}
-                                            desc="Not played in 7+ days"
+                                            icon="lucide:ghost"
                                             color="var(--orange-9)"
                                             onClick={() => handleCleanup(candidates.unused, 'unused')}
                                             disabled={cleaning}
                                         />
                                     )}
                                     {candidates.large.length > 0 && (
-                                        <CleanupCard
+                                        <CleanupRow
                                             title="Large Files"
+                                            meta="Heavy audio files"
                                             count={candidates.large.length}
-                                            desc="Significantly bigger than average"
+                                            icon="lucide:weight"
                                             color="var(--red-9)"
                                             onClick={() => handleCleanup(candidates.large, 'large')}
                                             disabled={cleaning}
@@ -249,14 +275,9 @@ export default function StorageManager() {
                             )}
 
                             {candidates && candidates.old.length === 0 && candidates.unused.length === 0 && candidates.large.length === 0 && (
-                                <div style={{ textAlign: 'center', padding: 'var(--space-2xl)' }}>
-                                    <div style={{ width: 80, height: 80, background: 'var(--green-4)', borderRadius: '50%', margin: '0 auto var(--space-l)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <svg width="40" height="40" fill="none" stroke="var(--green-11)" strokeWidth="3" viewBox="0 0 24 24">
-                                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
-                                    <p style={{ fontSize: 'var(--step-1)', fontWeight: 600 }}>All clear!</p>
-                                    <p style={{ color: 'var(--mauve-11)' }}>Your storage is perfectly organized.</p>
+                                <div style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--mauve-10)' }}>
+                                    <Icon icon="lucide:check-circle-2" width={48} style={{ margin: '0 auto var(--space-s)', opacity: 0.5 }} />
+                                    <p>Your storage is optimized!</p>
                                 </div>
                             )}
                         </div>
@@ -267,30 +288,40 @@ export default function StorageManager() {
     );
 }
 
-// Reusable card
-function CleanupCard({ title, count, desc, color, onClick, disabled }: {
-    title: string; count: number; desc: string; color: string; onClick: () => void; disabled: boolean;
-}) {
+// Reusable Row Component for Cleaner UI
+function CleanupRow({ title, meta, count, icon, color, onClick, disabled }: any) {
     return (
         <div style={{
-            background: 'var(--mauve-2)',
-            border: '1px solid var(--mauve-6)',
-            borderRadius: 'var(--radius-l)',
-            padding: 'var(--space-l)',
             display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-s)',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--mauve-2)',
+            border: '1px solid var(--mauve-5)',
+            borderRadius: 'var(--radius-m)',
+            padding: 'var(--space-m)',
         }}>
-            <div style={{ fontWeight: 600, fontSize: 'var(--step-0)' }}>{title}</div>
-            <div style={{ fontSize: 'var(--step--1)', color: 'var(--mauve-11)' }}>
-                {count} voices • {desc}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-m)' }}>
+                <div style={{
+                    width: 40, height: 40,
+                    borderRadius: '8px',
+                    background: 'var(--mauve-4)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: color
+                }}>
+                    <Icon icon={icon} width={20} />
+                </div>
+                <div>
+                    <div style={{ fontWeight: 600, fontSize: '15px' }}>{title}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--mauve-10)' }}>{count} items • {meta}</div>
+                </div>
             </div>
             <button
                 onClick={onClick}
                 disabled={disabled}
-                className="btn btn-primary btn-sm"
+                className="btn btn-sm"
+                style={{ background: 'var(--mauve-4)', color: 'var(--mauve-12)', border: 'none' }}
             >
-                {disabled ? 'Deleting...' : 'Delete These Voices'}
+                Clear
             </button>
         </div>
     );

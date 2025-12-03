@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { Icon } from '@iconify/react';
+import '@/styles/modal.css';
 
 interface DeleteConfirmationProps {
     voiceId: string;
@@ -25,7 +27,6 @@ export default function DeleteConfirmationModal() {
 
     const handleConfirm = async () => {
         if (!data) return;
-
         setIsDeleting(true);
         try {
             await data.onConfirm();
@@ -37,9 +38,7 @@ export default function DeleteConfirmationModal() {
     };
 
     const handleCancel = () => {
-        if (data?.onCancel) {
-            data.onCancel();
-        }
+        if (data?.onCancel) data.onCancel();
         setIsOpen(false);
     };
 
@@ -47,48 +46,71 @@ export default function DeleteConfirmationModal() {
 
     return (
         <div className="modal-overlay" onClick={handleCancel}>
-            <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-content auth-modal-content" onClick={e => e.stopPropagation()}>
+
+                {/* Mobile Handle */}
+                <div className="modal-handle-bar">
+                    <div className="modal-handle-pill"></div>
+                </div>
+
                 <div className="modal-header">
-                    <h3 style={{ margin: 0, fontSize: 'var(--step-1)', fontWeight: 600 }}>
-                        Delete Voice
-                    </h3>
+                    <h3 className="modal-title" style={{ color: 'var(--red-9)' }}>Delete Voice</h3>
                     <button className="modal-close" onClick={handleCancel}>
-                        ×
+                        <Icon icon="lucide:x" width={20} height={20} />
                     </button>
                 </div>
 
-                <div style={{ padding: 'var(--space-m)', textAlign: 'center' }}>
-                    <div style={{ marginBottom: 'var(--space-l)' }}>
-                        <div style={{
-                            width: 64, height: 64, margin: '0 auto var(--space-m)',
-                            background: 'var(--red-4)', borderRadius: '50%',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>
-                            <svg width="32" height="32" fill="none" stroke="var(--red-11)" strokeWidth="2.5" viewBox="0 0 24 24">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="8" x2="12" y2="12" />
-                                <line x1="12" y1="16" x2="12.01" y2="16" />
-                            </svg>
-                        </div>
-                        <p style={{ fontSize: 'var(--step-0)', marginBottom: 'var(--space-s)' }}>
-                            Are you sure you want to delete this voice?
-                        </p>
-                        <p style={{ fontSize: 'var(--step--1)', color: 'var(--mauve-11)', fontStyle: 'italic' }}>
-                            "{data.voiceText}"
-                        </p>
+                <div className="modal-body" style={{ textAlign: 'center', paddingBottom: 'var(--space-xl)' }}>
+                    <div style={{
+                        width: 72, height: 72,
+                        margin: 'var(--space-m) auto',
+                        background: 'var(--red-3)',
+                        borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'var(--red-9)'
+                    }}>
+                        <Icon icon="lucide:trash-2" width={36} height={36} />
                     </div>
 
-                    <div className="modal-actions">
-                        <button onClick={handleCancel} disabled={isDeleting} className="btn">
-                            Cancel
-                        </button>
+                    <h4 style={{ fontSize: 'var(--step-0)', fontWeight: 600, margin: '0 0 var(--space-xs)' }}>
+                        Are you sure?
+                    </h4>
+                    <p style={{ fontSize: '14px', color: 'var(--mauve-11)', margin: '0 0 var(--space-l)', padding: '0 var(--space-m)' }}>
+                        This action cannot be undone. <br />
+                        <span style={{ color: 'var(--mauve-12)', fontStyle: 'italic', display: 'block', marginTop: '8px' }}>
+                            "{data.voiceText.length > 40 ? data.voiceText.substring(0, 40) + '...' : data.voiceText}"
+                        </span>
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <button
                             onClick={handleConfirm}
                             disabled={isDeleting}
-                            style={{ background: 'var(--red-9)', color: 'white' }}
-                            className="btn"
+                            className="btn btn-full"
+                            style={{
+                                background: 'var(--red-9)',
+                                color: 'white',
+                                border: 'none',
+                                justifyContent: 'center',
+                                padding: '14px'
+                            }}
                         >
                             {isDeleting ? 'Deleting...' : 'Delete Voice'}
+                        </button>
+
+                        <button
+                            onClick={handleCancel}
+                            disabled={isDeleting}
+                            className="btn btn-full"
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid var(--mauve-6)',
+                                color: 'var(--mauve-11)',
+                                justifyContent: 'center',
+                                padding: '14px'
+                            }}
+                        >
+                            Cancel
                         </button>
                     </div>
                 </div>
