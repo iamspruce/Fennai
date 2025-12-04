@@ -2,13 +2,13 @@
 .page-modal {
   position: relative;
   max-width: 1200px;
-  margin: var(--space-s) auto;
+  margin: var(--space-l) auto;
   padding: var(--space-2xs);
   background: var(--mauve-1);
   border: 1px solid var(--mauve-3);
   border-top-left-radius: var(--radius-l);
   border-top-right-radius: var(--radius-l);
-  box-shadow: var(--shadow-box-m);
+  box-shadow: var(--shadow-box-l);
   min-height: 100vh;
 }
 
