@@ -64,7 +64,6 @@ export async function initDB(): Promise<IDBPDatabase> {
 
     dbPromise = openDB(DB_NAME, DB_VERSION, {
         async upgrade(db, oldVersion, newVersion, transaction) {
-            console.log(`Upgrading IndexedDB from v${oldVersion} → v${newVersion}`);
 
             // Create stores
             if (!db.objectStoreNames.contains(VOICE_STORE)) {
@@ -80,7 +79,7 @@ export async function initDB(): Promise<IDBPDatabase> {
 
             // MIGRATION: v3 → v4 (convert audioBlob → audioData + audioType)
             if (oldVersion < 4) {
-                console.log('Migrating voices to Safari-safe ArrayBuffer format...');
+
                 const allKeys = await store.getAllKeys();
 
                 for (const key of allKeys) {
@@ -97,7 +96,6 @@ export async function initDB(): Promise<IDBPDatabase> {
                             };
                             delete migrated.audioBlob;
                             await store.put(migrated);
-                            console.log(`Migrated voice ${old.id}`);
                         } catch (err) {
                             console.error(`Failed to migrate ${old.id}:`, err);
                             // Keep old format — will fail in Safari, but won't corrupt DB
@@ -188,7 +186,6 @@ export async function saveVoiceToIndexedDB(voiceInput: {
 
     await db.put(VOICE_STORE, record);
     await updateStorageMetadata();
-    console.log(`Saved voice ${voiceInput.id} (${formatBytes(size)}) — Safari-safe`);
 }
 
 // Get single voice — returns fresh Blob
@@ -270,7 +267,6 @@ export async function deleteVoiceFromIndexedDB(id: string): Promise<boolean> {
     const db = await initDB();
     await db.delete(VOICE_STORE, id);
     await updateStorageMetadata();
-    console.log(`Deleted voice ${id}`);
     return true;
 }
 
@@ -444,6 +440,5 @@ export async function deleteVoicesBatch(ids: string[]): Promise<number> {
     await tx.done;
     await updateStorageMetadata();
 
-    console.log(`Batch deleted ${deletedCount} voices`);
     return deletedCount;
 }

@@ -174,14 +174,11 @@ const hasPrevious = page > 1;
 
       // Handle storage based on storageType
       if (data.storageType === "cloud") {
-        console.log("Voice saved to cloud storage");
       } else if (
         data.storageType === "local-only" &&
         data.audioData &&
         data.voiceId
       ) {
-        console.log("Saving voice to IndexedDB...");
-
         try {
           const base64Response = await fetch(data.audioData);
           const audioBlob = await base64Response.blob();
@@ -202,8 +199,6 @@ const hasPrevious = page > 1;
             createdAt: Date.now(),
             isInCloudStorage: false,
           });
-
-          console.log("Voice saved to IndexedDB successfully");
         } catch (idbError) {
           console.error("Failed to save to IndexedDB:", idbError);
           alert(
@@ -227,11 +222,6 @@ const hasPrevious = page > 1;
     try {
       await initDB();
       const stats = await getStorageStats();
-      console.log("IndexedDB Stats:", {
-        voices: stats.voiceCount,
-        size: stats.totalSize,
-        cloudVoices: stats.cloudStorageCount,
-      });
     } catch (error) {
       console.error("Failed to initialize IndexedDB:", error);
     }

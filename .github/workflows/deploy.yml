@@ -111,7 +111,7 @@ jobs:
             --min-instances 0 \
             --timeout 600s \
             --port 8080 \
-            --startup-cpu-boost \
+            --cpu-boost \
             --cpu-throttling \
             --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B \
             --ingress internal-and-cloud-load-balancing \

@@ -60,13 +60,11 @@ export default function VoiceCard({ voice, mainCharacter, allCharacters }: Voice
     // Load Audio from appropriate source based on storageType
     useEffect(() => {
         const loadAudio = async () => {
-            console.log(`[VoiceCard ${voice.id}] Loading audio (storageType: ${storageType})...`);
             setIsLoading(true);
             setError(null);
 
             // CLOUD: Always prioritize cloud storage if available
             if (storageType === 'cloud' && voice.audioUrl) {
-                console.log(`[VoiceCard ${voice.id}] Using cloud storage: ${voice.audioUrl}`);
                 setAudioSource({ audioUrl: voice.audioUrl });
                 setIsLoading(false);
                 return;
@@ -74,22 +72,18 @@ export default function VoiceCard({ voice, mainCharacter, allCharacters }: Voice
 
             // LOCAL-ONLY: Try to load from IndexedDB
             if (storageType === 'local-only') {
-                console.log(`[VoiceCard ${voice.id}] Trying IndexedDB...`);
                 try {
                     const record = await getVoiceFromIndexedDB(voice.id);
 
                     if (!record?.audioBlob) {
-                        console.log(`[VoiceCard ${voice.id}] No local audio found - hiding card`);
                         setError('local-only-missing');
                         setIsLoading(false);
                         return;
                     }
 
-                    console.log(`[VoiceCard ${voice.id}] Loaded from IndexedDB (${record.audioBlob.size} bytes)`);
                     setAudioSource({ audioBlob: record.audioBlob });
                     setIsLoading(false);
                 } catch (err) {
-                    console.error(`[VoiceCard ${voice.id}] IndexedDB error:`, err);
                     setError('local-only-missing');
                     setIsLoading(false);
                 }
@@ -164,7 +158,6 @@ export default function VoiceCard({ voice, mainCharacter, allCharacters }: Voice
                     }
                 },
                 onCancel: () => {
-                    console.log("Delete cancelled");
                 }
             }
         }));
@@ -172,7 +165,6 @@ export default function VoiceCard({ voice, mainCharacter, allCharacters }: Voice
 
     // CRITICAL: Hide card if local-only but no audio available
     if (error === 'local-only-missing') {
-        console.log(`[VoiceCard ${voice.id}] Hidden – local-only with no audio`);
         return null;
     }
 

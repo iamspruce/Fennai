@@ -23,7 +23,6 @@ function initializeFirebaseAdmin() {
     } else {
         if (USE_EMULATORS) {
             // --- EMULATOR CONFIG ---
-            console.log('🔥 Initializing Firebase Admin for EMULATORS');
 
             // Set emulator environment variables BEFORE initialization
             process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
@@ -35,10 +34,8 @@ function initializeFirebaseAdmin() {
                 storageBucket: STORAGE_BUCKET,
             });
 
-            console.log('✅ Firebase Admin connected to emulators');
         } else {
             // --- PRODUCTION CONFIG ---
-            console.log('🔥 Initializing Firebase Admin for PRODUCTION');
 
             if (!SERVICE_ACCOUNT_RAW) {
                 throw new Error('APP_FIREBASE_PRIVATE_KEY is missing.');
@@ -73,7 +70,6 @@ function initializeFirebaseAdmin() {
                 storageBucket: STORAGE_BUCKET,
             });
 
-            console.log('✅ Firebase Admin initialized');
         }
     }
 

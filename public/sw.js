@@ -23,7 +23,7 @@ self.addEventListener('install', event => {
             await cache.put(url, response);
           }
         } catch (error) {
-          console.log(`Failed to cache ${url}:`, error);
+          console.error(`Failed to cache ${url}:`, error);
         }
       });
       

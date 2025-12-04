@@ -8,7 +8,6 @@ export function setupSearch() {
     const headerActions = document.getElementById("header-actions");
     const charactersGrid = document.getElementById("characters-grid");
 
-    console.log(searchBtn, searchContainer, searchInput, closeSearch, headerActions);
 
     if (!searchBtn || !searchContainer || !searchInput || !closeSearch || !headerActions) {
         return;
@@ -50,7 +49,6 @@ export function setupSearch() {
     });
 
     closeSearch.addEventListener("click", () => {
-        console.log("close search clicked");
         animate(
             searchContainer,
             { opacity: [1, 0], y: ["0px", "-10px"] },

@@ -12,13 +12,10 @@ export const onRequest = defineMiddleware(async ({ request, redirect, url, local
     const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
 
     if (isProtectedRoute) {
-        console.log('🔒 Protected route accessed:', pathname);
 
         const sessionCookie = getSessionCookie(request);
-        console.log('🍪 Session cookie present:', !!sessionCookie);
 
         if (!sessionCookie) {
-            console.log('❌ No session cookie - redirecting to home');
             return redirect('/?error=auth-required');
         }
 
@@ -27,11 +24,8 @@ export const onRequest = defineMiddleware(async ({ request, redirect, url, local
             const decodedClaims = await verifySessionCookie(sessionCookie);
 
             if (!decodedClaims) {
-                console.log('❌ Invalid session cookie - redirecting to home');
                 return redirect('/?error=session-expired');
             }
-
-            console.log('✅ Session verified for user:', decodedClaims.uid);
 
             // Store user info in locals for use in pages
             locals.user = decodedClaims;

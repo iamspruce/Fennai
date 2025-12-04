@@ -48,7 +48,6 @@ export const DELETE: APIRoute = async ({ request }) => {
             try {
                 await deleteVoiceAudio(voice.audioStoragePath);
                 deletedFromStorage = true;
-                console.log(`Deleted audio from cloud storage: ${voice.audioStoragePath}`);
             } catch (storageError: any) {
                 // Only log error if it's not "file not found"
                 if (storageError.code !== 'storage/object-not-found') {

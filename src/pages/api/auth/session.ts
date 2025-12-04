@@ -8,7 +8,6 @@ const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 14; // 14 days
 export const POST: APIRoute = async ({ request }) => {
     try {
         const body = await request.json();
-        console.log('📥 Session request received:', { hasIdToken: !!body.idToken });
 
         const { idToken } = body;
 
@@ -20,22 +19,15 @@ export const POST: APIRoute = async ({ request }) => {
             });
         }
 
-        console.log('🔍 Verifying ID token...');
-
         // Verify the ID token first
         const decodedToken = await adminAuth.verifyIdToken(idToken);
-        console.log('✅ Token verified for user:', decodedToken.uid);
-
-        console.log('🍪 Creating session cookie...');
 
         // Create session cookie with the ID token
         const sessionCookie = await adminAuth.createSessionCookie(idToken, {
             expiresIn: SESSION_COOKIE_MAX_AGE * 1000, // Convert to milliseconds
         });
 
-        console.log('✅ Session cookie created');
 
-        console.log('💾 Creating/updating user document...');
 
         // Create or update user document in Firestore
         await createOrUpdateUserDocument(decodedToken.uid, {
@@ -44,7 +36,6 @@ export const POST: APIRoute = async ({ request }) => {
             photoURL: decodedToken.picture,
         });
 
-        console.log('✅ User document updated');
 
         return new Response(JSON.stringify({ success: true }), {
             status: 200,

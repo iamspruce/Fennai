@@ -35,32 +35,20 @@ export default function AudioPlayer({
     const loadAudio = async () => {
       try {
         if (audioUrl) {
-          console.log('Using direct URL');
           if (mounted) setAudioSrc(audioUrl);
         } else if (audioBlob) {
-          console.log('Processing blob...', {
-            size: audioBlob.size,
-            type: audioBlob.type
-          });
-
-          // Safari fix: Create a new Blob from the blob's array buffer
-          // This breaks the IndexedDB connection that causes the error
           try {
             const arrayBuffer = await audioBlob.arrayBuffer();
-            console.log('Got array buffer:', arrayBuffer.byteLength, 'bytes');
 
             const newBlob = new Blob([arrayBuffer], { type: audioBlob.type || 'audio/mpeg' });
-            console.log('Created new blob:', newBlob.size, 'bytes');
 
             const reader = new FileReader();
             reader.onloadend = () => {
               if (mounted && reader.result && typeof reader.result === 'string') {
-                console.log('Successfully converted to data URL');
                 setAudioSrc(reader.result);
               }
             };
             reader.onerror = () => {
-              console.error('FileReader error:', reader.error);
               if (mounted) setError('Failed to load audio');
             };
             reader.readAsDataURL(newBlob);
@@ -84,12 +72,10 @@ export default function AudioPlayer({
     const audioEl = audioRef.current;
     if (!audioEl || !audioSrc) return;
 
-    console.log('Setting audio source...');
     audioEl.src = audioSrc;
     audioEl.preload = 'metadata';
 
     const handleLoadedMetadata = () => {
-      console.log('Audio loaded successfully, duration:', audioEl.duration);
       setDuration(audioEl.duration);
       setError(null);
     };
@@ -103,7 +89,6 @@ export default function AudioPlayer({
     const handleEnded = () => setIsPlaying(false);
 
     const handleError = () => {
-      console.error("Audio playback error:", audioEl.error);
       setError("Playback failed");
     };
 
@@ -130,9 +115,6 @@ export default function AudioPlayer({
 
     const generateWaveform = async () => {
       try {
-        console.log('Generating waveform...');
-
-        // Get ArrayBuffer from source
         let arrayBuffer: ArrayBuffer;
         if (audioUrl) {
           const response = await fetch(audioUrl);
@@ -144,11 +126,9 @@ export default function AudioPlayer({
           return;
         }
 
-        console.log('Decoding audio data...');
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        console.log('Audio decoded, extracting waveform...');
         const rawData = audioBuffer.getChannelData(0);
         const samples = 100;
         const blockSize = Math.floor(rawData.length / samples);
@@ -166,13 +146,10 @@ export default function AudioPlayer({
         const max = Math.max(...filteredData);
         const normalized = filteredData.map(n => n / max);
 
-        console.log('Waveform generated successfully');
         setWaveformData(normalized);
 
         audioContext.close();
       } catch (err) {
-        console.error('Waveform generation error:', err);
-        // Fallback waveform
         const fallback = Array(100).fill(0).map(() => Math.random() * 0.5 + 0.3);
         setWaveformData(fallback);
       }
@@ -181,7 +158,6 @@ export default function AudioPlayer({
     generateWaveform();
   }, [audioUrl, audioBlob]);
 
-  // Step 4: Draw waveform on canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || waveformData.length === 0) return;

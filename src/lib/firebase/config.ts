@@ -47,7 +47,6 @@ if (USE_EMULATORS && !emulatorsConnected) {
         connectStorageEmulator(storage, '127.0.0.1', 9199);
 
         emulatorsConnected = true;
-        console.log('🔥 Connected to Firebase Emulators');
     } catch (error: any) {
         // Ignore "already connected" errors
         if (!error.message?.includes('already')) {
