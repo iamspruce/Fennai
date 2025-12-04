@@ -1,37 +1,18 @@
-from firebase_functions import https_fn
-from firebase_functions.core import init
-from firebase_admin import initialize_app
+from firebase_functions import https_fn, logger # Import logger
 import requests
 import os
-import sys
+from dotenv import load_dotenv
 
-# Add parent directory to path for shared modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Load environment variables
+load_dotenv()
+
+# Import from local shared directory (copied into proxy/)
+from shared.firebase import get_current_user
+from shared.credits import check_and_deduct_credits
 
 # Environment variables
 INFERENCE_URL = os.environ.get("INFERENCE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
-
-# Global variables (will be initialized in onInit)
-get_current_user = None
-check_and_deduct_credits = None
-
-@init
-def initialize():
-    """Initialize Firebase Admin and import shared modules during first invocation"""
-    global get_current_user, check_and_deduct_credits
-    
-    # Initialize Firebase Admin
-    initialize_app()
-    
-    # Import shared modules (deferred to avoid deployment timeout)
-    from shared.firebase import get_current_user as _get_current_user
-    from shared.credits import check_and_deduct_credits as _check_and_deduct_credits
-    
-    get_current_user = _get_current_user
-    check_and_deduct_credits = _check_and_deduct_credits
-    
-    print("Firebase Admin and shared modules initialized")
 
 @https_fn.on_request()
 def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
@@ -39,7 +20,9 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     Voice cloning proxy endpoint.
     Handles authentication, credit deduction, and forwards to inference service.
     """
-    
+    # 1. Log entry
+    logger.info(f"Request received. Method: {req.method}")
+
     # Handle CORS preflight
     if req.method == "OPTIONS":
         return https_fn.Response(
@@ -55,6 +38,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     
     # Only allow POST requests
     if req.method != "POST":
+        logger.warn(f"Method not allowed: {req.method}")
         return https_fn.Response(
             {"error": "Method not allowed"},
             status=405,
@@ -62,18 +46,27 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
     
     # Authenticate user
+    # 2. Log before Auth
+    logger.info("Attempting to authenticate user...")
     user = get_current_user(req)
+    
     if not user:
+        # NOTE: The specific reason was already logged in shared/firebase.py
+        logger.warn("Returning 401 Unauthorized")
         return https_fn.Response(
             {"error": "Unauthorized"},
             status=401,
             headers={"Access-Control-Allow-Origin": "*"}
         )
     
+    uid = user.get("uid")
+    logger.info(f"User authenticated successfully: {uid}")
+
     # Parse request data
     try:
         data = req.get_json(silent=True) or {}
-    except Exception:
+    except Exception as e:
+        logger.error(f"JSON Parse error: {str(e)}")
         return https_fn.Response(
             {"error": "Invalid JSON"},
             status=400,
@@ -86,6 +79,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     
     # Validate required fields
     if not text or not voice_samples:
+        logger.warn(f"Missing fields for user {uid}. Text len: {len(text)}, Samples: {len(voice_samples)}")
         return https_fn.Response(
             {"error": "Missing text or voice_samples"},
             status=400,
@@ -94,6 +88,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     
     # Check if inference service is configured
     if not INFERENCE_URL or not INTERNAL_TOKEN:
+        logger.error("Environment Configuration Error: Missing INFERENCE_URL or INTERNAL_TOKEN")
         return https_fn.Response(
             {"error": "Inference service not configured"},
             status=500,
@@ -101,11 +96,17 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
     
     # Calculate cost (multi-character costs more)
-    cost = 5 if character_texts else 1
+    if character_texts:
+        cost = len(character_texts)  # 1 credit per character
+    else:
+        cost = 1  # Single character
     
     # Check and deduct credits
-    can_proceed, error_msg = check_and_deduct_credits(user["uid"], cost)
+    logger.info(f"Deducting {cost} credits for user {uid}")
+    can_proceed, error_msg = check_and_deduct_credits(uid, cost)
+    
     if not can_proceed:
+        logger.warn(f"Credit deduction failed for {uid}: {error_msg}")
         return https_fn.Response(
             {"error": error_msg or "Insufficient credits"},
             status=402,
@@ -123,6 +124,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     
     # Call inference service
     try:
+        logger.info(f"Forwarding request to Inference URL: {INFERENCE_URL}")
         response = requests.post(
             INFERENCE_URL,
             json=payload,
@@ -131,6 +133,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
         if response.status_code != 200:
+            logger.error(f"Inference Service Error: Status {response.status_code}, Body: {response.text}")
             return https_fn.Response(
                 {"error": f"Inference failed with status {response.status_code}"},
                 status=500,
@@ -138,6 +141,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
             )
         
         # Return audio file
+        logger.info(f"Generation successful for {uid}")
         return https_fn.Response(
             response.content,
             status=200,
@@ -150,6 +154,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except requests.exceptions.Timeout:
+        logger.error(f"Inference Timeout for {uid}")
         return https_fn.Response(
             {"error": "Generation timeout - please try again"},
             status=504,
@@ -157,6 +162,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except requests.exceptions.RequestException as e:
+        logger.error(f"Network Error contacting inference service: {str(e)}")
         return https_fn.Response(
             {"error": f"Network error: {str(e)}"},
             status=500,
@@ -164,6 +170,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except Exception as e:
+        logger.error(f"Unexpected error in proxy: {str(e)}")
         return https_fn.Response(
             {"error": f"Unexpected error: {str(e)}"},
             status=500,

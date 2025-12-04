@@ -54,7 +54,7 @@ const hasPrevious = page > 1;
     client:load
     characterId={character.id}
     isPro={user.isPro}
-    saveAcrossBrowsers={true}
+    saveAcrossBrowsers={character.saveAcrossBrowsers || false}
   />
   <div class="page-modal">
     <CharacterHeader character={character} voiceCount={character.voiceCount} />

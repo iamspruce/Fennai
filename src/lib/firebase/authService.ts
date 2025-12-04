@@ -6,6 +6,7 @@ import {
     GoogleAuthProvider,
     signOut as firebaseSignOut,
     onAuthStateChanged,
+    sendPasswordResetEmail,
     type User as FirebaseUser,
 } from 'firebase/auth';
 
@@ -48,6 +49,10 @@ export class AuthService {
     // Sign out
     static async signOut(): Promise<void> {
         await firebaseSignOut(auth);
+    }
+
+    static async sendPasswordResetEmail(email: string): Promise<void> {
+        await sendPasswordResetEmail(auth, email);
     }
 
     // Get current user

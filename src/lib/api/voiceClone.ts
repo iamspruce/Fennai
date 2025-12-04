@@ -1,6 +1,7 @@
+import { auth } from "../firebase/config";
+
 const USE_MOCK_API = import.meta.env.PUBLIC_USE_MOCK_VOICE_API === 'true';
-const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.VOICE_CLONE_API_URL;
-const API_KEY = import.meta.env.VOICE_CLONE_API_KEY;
+const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_VOICE_CLONE_API_URL;
 
 export interface CloneVoiceParams {
     characterId: string;
@@ -21,48 +22,72 @@ export interface CloneVoiceResponse {
     duration: number;
 }
 
-// Get auth token for API calls
+// Get Firebase ID token for API calls
 async function getAuthToken(): Promise<string | null> {
     try {
-        const response = await fetch('/api/auth/token');
-        const data = await response.json();
-        return data.sessionCookie;
+        const user = auth.currentUser;
+
+
+        if (!user) {
+            throw new Error('No authenticated user');
+        }
+
+
+
+        // Get fresh ID token
+        return await user.getIdToken();
     } catch (error) {
         console.error('Error getting auth token:', error);
         return null;
     }
 }
 
-// Clone single voice
-export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneVoiceResponse> {
-    const token = await getAuthToken();
+// Convert audio file to base64
+async function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1]; // Remove data:audio/...;base64, prefix
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 
+// Clone single voice using the new API
+export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneVoiceResponse> {
+    if (USE_MOCK_API) {
+        return cloneSingleVoiceMock(params);
+    }
+
+    const token = await getAuthToken();
     if (!token) {
         throw new Error('Not authenticated');
     }
 
-    const formData = new FormData();
-    formData.append('character_id', params.characterId);
-    formData.append('text', params.text);
-    formData.append('audio', params.audioFile);
+    // Convert audio file to base64
+    const voiceBase64 = await fileToBase64(params.audioFile);
 
-    const response = await fetch(`${API_BASE_URL}/mock-voice-clone`, {
+    // Call the Firebase proxy function
+    const response = await fetch(`${API_BASE_URL}/voice_clone_proxy`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'X-API-Key': API_KEY,
+            'Content-Type': 'application/json',
         },
-        body: formData,
+        body: JSON.stringify({
+            text: params.text,
+            voice_samples: [voiceBase64],
+        }),
     });
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Voice cloning failed' }));
-        throw new Error(error.message || 'Voice cloning failed');
+        const error = await response.json().catch(() => ({ error: 'Voice cloning failed' }));
+        throw new Error(error.error || 'Voice cloning failed');
     }
 
     const audioBlob = await response.blob();
-
-    // Get duration from audio
     const duration = await getAudioDuration(audioBlob);
 
     return {
@@ -71,34 +96,44 @@ export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneV
     };
 }
 
-// Clone multi-character voice
+// Clone multi-character voice using the new API
 export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<CloneVoiceResponse> {
-    const token = await getAuthToken();
+    if (USE_MOCK_API) {
+        return cloneMultiVoiceMock(params);
+    }
 
+    const token = await getAuthToken();
     if (!token) {
         throw new Error('Not authenticated');
     }
 
-    const formData = new FormData();
+    // Convert all audio files to base64
+    const voiceSamples = await Promise.all(
+        params.characters.map(char => fileToBase64(char.audioFile))
+    );
 
-    params.characters.forEach((char, index) => {
-        formData.append(`character_${index}_id`, char.characterId);
-        formData.append(`character_${index}_text`, char.text);
-        formData.append(`character_${index}_audio`, char.audioFile);
-    });
+    // Format text with speaker labels
+    const text = params.characters
+        .map((char, index) => `Speaker ${index + 1}: ${char.text}`)
+        .join('\n');
 
-    const response = await fetch(`${API_BASE_URL}/multi-voice-clone`, {
+    // Call the Firebase proxy function
+    const response = await fetch(`${API_BASE_URL}/voice_clone_proxy`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
-            'X-API-Key': API_KEY,
+            'Content-Type': 'application/json',
         },
-        body: formData,
+        body: JSON.stringify({
+            text: text,
+            voice_samples: voiceSamples,
+            character_texts: params.characters.map(c => c.text), // For credit calculation
+        }),
     });
 
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Voice cloning failed' }));
-        throw new Error(error.message || 'Voice cloning failed');
+        const error = await response.json().catch(() => ({ error: 'Voice cloning failed' }));
+        throw new Error(error.error || 'Voice cloning failed');
     }
 
     const audioBlob = await response.blob();
@@ -139,4 +174,37 @@ export async function checkUserCanClone(): Promise<{ canClone: boolean; reason?:
     } catch (error) {
         return { canClone: false, reason: 'Failed to check credits' };
     }
+}
+
+// ==================== MOCK IMPLEMENTATIONS ====================
+// These are fallbacks for development/testing
+
+async function cloneSingleVoiceMock(params: CloneVoiceParams): Promise<CloneVoiceResponse> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Create a mock audio blob (1 second of silence)
+    const audioContext = new AudioContext();
+    const buffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
+    const mockBlob = new Blob([buffer.getChannelData(0)], { type: 'audio/wav' });
+
+    return {
+        audioBlob: mockBlob,
+        duration: 1.0,
+    };
+}
+
+async function cloneMultiVoiceMock(params: MultiCloneVoiceParams): Promise<CloneVoiceResponse> {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Create a mock audio blob (2 seconds of silence)
+    const audioContext = new AudioContext();
+    const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 2, audioContext.sampleRate);
+    const mockBlob = new Blob([buffer.getChannelData(0)], { type: 'audio/wav' });
+
+    return {
+        audioBlob: mockBlob,
+        duration: 2.0,
+    };
 }

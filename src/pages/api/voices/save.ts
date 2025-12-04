@@ -97,16 +97,7 @@ export const POST: APIRoute = async ({ request }) => {
                 duration,
             });
 
-            // Deduct credits for non-pro users
-            if (!isPro) {
-                const success = await deductCredits(uid, 1);
-                if (!success) {
-                    return new Response(JSON.stringify({ error: 'Failed to deduct credits' }), {
-                        status: 500,
-                        headers: { 'Content-Type': 'application/json' },
-                    });
-                }
-            }
+
         }
 
         // Always increment voice count (includes both cloud and local-only)

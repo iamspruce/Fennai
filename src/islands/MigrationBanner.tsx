@@ -1,19 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
-import { getVoiceFromIndexedDB, getStorageQuota } from '@/lib/db/indexdb'; //
+import { getVoiceFromIndexedDB, getStorageQuota } from '@/lib/db/indexdb';
 
 interface MigrationBannerProps {
     characterId: string;
     isPro: boolean;
-    saveAcrossBrowsers: boolean; // This comes from [id].astro props
+    saveAcrossBrowsers: boolean; // Per-character setting from Character type
 }
 
 export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers }: MigrationBannerProps) {
     const [localVoicesWithAudio, setLocalVoicesWithAudio] = useState<any[]>([]);
     const [remoteLocalOnlyCount, setRemoteLocalOnlyCount] = useState(0);
+    const [totalLocalVoices, setTotalLocalVoices] = useState(0);
     const [isMigrating, setIsMigrating] = useState(false);
-    const [isEnablingCloud, setIsEnablingCloud] = useState(false); // NEW
-    const [storagePressure, setStoragePressure] = useState(0); // NEW
+    const [isEnablingCloud, setIsEnablingCloud] = useState(false);
+    const [storagePressure, setStoragePressure] = useState(0);
     const [progress, setProgress] = useState(0);
     const [currentVoice, setCurrentVoice] = useState(0);
     const [error, setError] = useState<string | null>(null);
@@ -22,23 +23,30 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
     // Effect 1: Check Local Storage & Quota
     useEffect(() => {
         const checkLocalAndQuota = async () => {
-            // Check quota for marketing state
-            const quota = await getStorageQuota();
-            setStoragePressure(quota.percentUsed);
+            try {
+                // Check quota for marketing state
+                const quota = await getStorageQuota();
+                setStoragePressure(quota.percentUsed);
 
-            // Get local voices specifically for this character logic...
-            // (Logic inferred from your existing code structure)
+                // Get ALL local voices for this character
+                const { getAllVoices } = await import('@/lib/db/indexdb');
+                const allLocal = await getAllVoices();
+                const characterVoices = allLocal.filter(v => v.characterId === characterId);
+                setTotalLocalVoices(characterVoices.length);
+            } catch (err) {
+                console.error('Error checking local storage:', err);
+            }
         };
         checkLocalAndQuota();
-    }, []);
+    }, [characterId]);
 
-    // Effect 2: Check Remote Migration Status (Only if cloud is ON)
+    // Effect 2: Check Remote Migration Status (Only if cloud is ON for this character)
     useEffect(() => {
         if (!saveAcrossBrowsers) return;
 
         const checkMigration = async () => {
             try {
-                const response = await fetch(`/api/voices/check-migration?characterId=${characterId}`); //
+                const response = await fetch(`/api/voices/check-migration?characterId=${characterId}`);
                 if (!response.ok) return;
 
                 const { localOnlyIds, count } = await response.json();
@@ -47,7 +55,7 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                 // Only keep voices that actually have audio on THIS device
                 const voicesWithAudio = [];
                 for (const voiceId of localOnlyIds) {
-                    const record = await getVoiceFromIndexedDB(voiceId); //
+                    const record = await getVoiceFromIndexedDB(voiceId);
                     if (record?.audioBlob) {
                         voicesWithAudio.push(record);
                     }
@@ -61,7 +69,7 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
         checkMigration();
     }, [characterId, saveAcrossBrowsers]);
 
-    // NEW: Handle turning on Cloud Mode
+    // Handle turning on Cloud Mode for this character
     const handleEnableCloud = async () => {
         setIsEnablingCloud(true);
         try {
@@ -84,7 +92,6 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
     };
 
     const handleMigrate = async () => {
-        // ... (Keep your existing migration logic exactly as is) ...
         if (localVoicesWithAudio.length === 0) return;
 
         setIsMigrating(true);
@@ -104,7 +111,7 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                 formData.append('voiceId', voice.id);
                 formData.append('audioBlob', record.audioBlob);
 
-                const res = await fetch('/api/voices/migrate-upload', { //
+                const res = await fetch('/api/voices/migrate-upload', {
                     method: 'POST',
                     body: formData,
                 });
@@ -137,24 +144,37 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
     const hasLocalAudioHere = localVoicesWithAudio.length > 0;
     const hasRemoteOnly = remoteLocalOnlyCount > localVoicesWithAudio.length;
 
-    // NEW: Check if user has voices locally but cloud is OFF
-    // Note: We need to check if ANY voices exist locally for this character. 
-    // Assuming you can pass `totalVoices` or similar prop, or we infer from the fact 
-    // that this component is mounted on a character page.
-    // For now, I will assume if `saveAcrossBrowsers` is false, we want to show the banner
-    // if the user is Pro.
+    // Determine which state to show (priority order)
+    const shouldShow = (() => {
+        // Pro user states
+        if (isPro) {
+            if (!saveAcrossBrowsers && totalLocalVoices > 0) return 'pro-cloud-off-with-voices';
+            if (saveAcrossBrowsers && hasLocalAudioHere) return 'pro-ready-to-sync';
+            if (saveAcrossBrowsers && hasRemoteOnly) return 'pro-remote-only';
+            return null; // Pro user with nothing to show
+        }
 
-    // Fallback logic for display conditions
-    if (isDismissed) return null;
+        // Free user states
+        if (storagePressure > 80) return 'free-storage-critical';
+        if (storagePressure > 60) return 'free-storage-warning';
+        if (hasRemoteOnly) return 'free-remote-locked';
+        if (totalLocalVoices > 5) return 'free-many-voices-upsell';
+
+        return null; // Nothing to show
+    })();
+
+    if (isDismissed || !shouldShow) return null;
 
     return (
         <div className="migration-banner">
             <div className="banner-icon">
                 {/* Dynamic Icon based on state */}
-                {!saveAcrossBrowsers && isPro ? (
+                {shouldShow === 'pro-cloud-off-with-voices' ? (
                     <Icon icon="lucide:ghost" width={32} height={32} />
-                ) : !isPro && storagePressure > 70 ? (
+                ) : shouldShow === 'free-storage-critical' || shouldShow === 'free-storage-warning' ? (
                     <Icon icon="lucide:hard-drive" width={32} height={32} />
+                ) : shouldShow === 'free-remote-locked' ? (
+                    <Icon icon="lucide:lock" width={32} height={32} />
                 ) : (
                     <Icon icon="lucide:cloud-upload" width={32} height={32} />
                 )}
@@ -162,13 +182,13 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
 
             <div className="banner-content">
                 {/* =========================================================
-                    NEW STATE: Pro User + Cloud OFF (Living Dangerously)
+                    PRO: Cloud OFF + Has Local Voices (Living Dangerously)
                    ========================================================= */}
-                {isPro && !saveAcrossBrowsers && (
+                {shouldShow === 'pro-cloud-off-with-voices' && (
                     <>
                         <h3>
                             <Icon icon="lucide:alert-triangle" width={20} height={20} />
-                            These voices are living dangerously!
+                            These {totalLocalVoices} voice{totalLocalVoices > 1 ? 's are' : ' is'} living dangerously!
                         </h3>
                         <p>
                             Right now, your voices only exist in this browser. If you clear your cache or switch to your phone, they'll vanish like a ghost! 👻
@@ -178,72 +198,99 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                 )}
 
                 {/* =========================================================
-                    EXISTING STATE: Pro + Cloud ON + Local Audio (Ready to Sync)
+                    PRO: Cloud ON + Local Audio (Ready to Sync)
                    ========================================================= */}
-                {isPro && saveAcrossBrowsers && hasLocalAudioHere && (
+                {shouldShow === 'pro-ready-to-sync' && (
                     <>
                         <h3>
                             <Icon icon="lucide:sparkles" width={20} height={20} />
                             {localVoicesWithAudio.length} voice{localVoicesWithAudio.length > 1 ? 's' : ''} ready to fly to the cloud!
                         </h3>
                         <p>
-                            Send them up now and they’ll be waiting for you on every device. One-time trip, no baggage fees.
+                            Send them up now and they'll be waiting for you on every device. One-time trip, no baggage fees.
                         </p>
                     </>
                 )}
 
                 {/* =========================================================
-                    EXISTING STATE: Pro + Remote Only (Sync on other device)
+                    PRO: Remote Only (Sync on other device)
                    ========================================================= */}
-                {isPro && saveAcrossBrowsers && !hasLocalAudioHere && hasRemoteOnly && (
+                {shouldShow === 'pro-remote-only' && (
                     <>
                         <h3>
                             <Icon icon="lucide:globe" width={20} height={20} />
                             {remoteLocalOnlyCount} voice{remoteLocalOnlyCount > 1 ? 's are' : ' is'} chilling on another device
                         </h3>
                         <p>
-                            They’re already marked for cloud sync! Just open this character on that device and hit “Sync to Cloud” whenever you feel like it.
+                            They're already marked for cloud sync! Just open this character on that device and hit "Sync to Cloud" whenever you feel like it.
                         </p>
                     </>
                 )}
 
                 {/* =========================================================
-                    NEW MARKETING STATE: Free + Storage Getting Full
+                    FREE: Storage Critical (>80%)
                    ========================================================= */}
-                {!isPro && storagePressure > 70 && (
+                {shouldShow === 'free-storage-critical' && (
                     <>
                         <h3>
-                            <Icon icon="lucide:weight" width={20} height={20} />
-                            Your browser is getting a bit heavy...
+                            <Icon icon="lucide:alert-octagon" width={20} height={20} />
+                            Houston, we have a storage problem! 🚨
                         </h3>
                         <p>
-                            You've used {Math.round(storagePressure)}% of your browser's allocated storage.
-                            If it gets full, the browser might start deleting your oldest voices!
-                            Upgrade to Pro to upload them to the cloud and keep them safe forever.
+                            You've used {Math.round(storagePressure)}% of your browser's storage limit.
+                            Your browser might start auto-deleting your oldest voices to make room!
+                            Upgrade to Pro and we'll move everything to the cloud where they'll be safe forever.
                         </p>
-                        <a href="/pricing" className="btn btn-primary" style={{ marginTop: '12px', display: 'inline-flex' }}>
-                            <Icon icon="lucide:rocket" width={18} height={18} />
-                            Go Pro & Save Space
-                        </a>
                     </>
                 )}
 
                 {/* =========================================================
-                    EXISTING STATE: Free + Remote Only (Upsell)
+                    FREE: Storage Warning (60-80%)
                    ========================================================= */}
-                {!isPro && hasRemoteOnly && storagePressure <= 70 && (
+                {shouldShow === 'free-storage-warning' && (
+                    <>
+                        <h3>
+                            <Icon icon="lucide:hard-drive" width={20} height={20} />
+                            Your browser's getting a bit full... 📦
+                        </h3>
+                        <p>
+                            You've used {Math.round(storagePressure)}% of your browser's storage.
+                            If it fills up, the browser might start deleting your oldest voices automatically.
+                            Go Pro to upload them to the cloud and never worry about running out of space!
+                        </p>
+                    </>
+                )}
+
+                {/* =========================================================
+                    FREE: Remote Voices Locked (Other Device)
+                   ========================================================= */}
+                {shouldShow === 'free-remote-locked' && (
                     <>
                         <h3>
                             <Icon icon="lucide:lock" width={20} height={20} />
-                            {remoteLocalOnlyCount} voice{remoteLocalOnlyCount > 1 ? 's are' : ' is'} trapped on another device
+                            {remoteLocalOnlyCount} voice{remoteLocalOnlyCount > 1 ? 's are' : ' is'} trapped on another device! 🔒
                         </h3>
                         <p>
-                            Your voices want to travel the world with you! Upgrade to Pro and they’ll magically appear everywhere you log in.
+                            Your voices want to travel with you, but they're stuck in browser jail.
+                            Upgrade to Pro and they'll magically appear everywhere you log in—phone, tablet, laptop, you name it!
                         </p>
-                        <a href="/pricing" className="btn btn-primary" style={{ marginTop: '12px', display: 'inline-flex' }}>
-                            <Icon icon="lucide:rocket" width={18} height={18} />
-                            Upgrade to Pro & Free Your Voices
-                        </a>
+                    </>
+                )}
+
+                {/* =========================================================
+                    FREE: Many Local Voices (Upsell)
+                   ========================================================= */}
+                {shouldShow === 'free-many-voices-upsell' && (
+                    <>
+                        <h3>
+                            <Icon icon="lucide:sparkles" width={20} height={20} />
+                            Look at you, voice collecting champion! 🏆
+                        </h3>
+                        <p>
+                            You've got {totalLocalVoices} voices saved locally. That's awesome!
+                            But what if you want to use them on your phone? Or your laptop crashes? 😱
+                            Go Pro and we'll back them all up to the cloud so you can access them anywhere, anytime.
+                        </p>
                     </>
                 )}
 
@@ -265,12 +312,21 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                         </span>
                     </div>
                 )}
+
+                {/* Pro CTA Buttons for Free Users */}
+                {!isPro && (shouldShow === 'free-storage-critical' || shouldShow === 'free-storage-warning' || shouldShow === 'free-remote-locked' || shouldShow === 'free-many-voices-upsell') && (
+                    <a href="/pricing" className="btn btn-primary" style={{ marginTop: '12px', display: 'inline-flex' }}>
+                        <Icon icon="lucide:rocket" width={18} height={18} />
+                        {shouldShow === 'free-storage-critical' || shouldShow === 'free-storage-warning'
+                            ? 'Go Pro & Save Space'
+                            : 'Upgrade to Pro'}
+                    </a>
+                )}
             </div>
 
             <div className="banner-actions">
-
-                {/* ACTION: Turn On Cloud (New) */}
-                {isPro && !saveAcrossBrowsers && !isEnablingCloud && (
+                {/* ACTION: Turn On Cloud (Pro user with cloud off) */}
+                {shouldShow === 'pro-cloud-off-with-voices' && !isEnablingCloud && (
                     <>
                         <button onClick={handleEnableCloud} className="btn btn-primary">
                             <Icon icon="lucide:zap" width={18} height={18} />
@@ -283,9 +339,8 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                 )}
                 {isEnablingCloud && <div className="spinner" />}
 
-
-                {/* ACTION: Sync (Existing) */}
-                {isPro && saveAcrossBrowsers && hasLocalAudioHere && !isMigrating && (
+                {/* ACTION: Sync to Cloud (Pro user ready to sync) */}
+                {shouldShow === 'pro-ready-to-sync' && !isMigrating && (
                     <>
                         <button onClick={handleMigrate} className="btn btn-primary">
                             <Icon icon="lucide:cloud-upload" width={18} height={18} />
@@ -296,20 +351,17 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                         </button>
                     </>
                 )}
-
                 {isMigrating && <div className="spinner" />}
 
-                {/* Dismiss logic for others */}
-                {!isMigrating && !isEnablingCloud && (
-                    (!isPro || (isPro && saveAcrossBrowsers && !hasLocalAudioHere)) && (
-                        <button onClick={handleDismiss} className="btn btn-ghost" title="Dismiss">
-                            <Icon icon="lucide:x" width={18} height={18} />
-                        </button>
-                    )
+                {/* Dismiss button for informational states */}
+                {(shouldShow === 'pro-remote-only' || !isPro) && !isMigrating && !isEnablingCloud && (
+                    <button onClick={handleDismiss} className="btn btn-ghost" title="Dismiss">
+                        <Icon icon="lucide:x" width={18} height={18} />
+                    </button>
                 )}
             </div>
 
-            {/* Styles remain exactly the same as your provided file */}
+            {/* Styles */}
             <style>{`
                 .migration-banner {
                     display: flex;
