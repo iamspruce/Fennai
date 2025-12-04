@@ -111,7 +111,9 @@ jobs:
             --min-instances 0 \
             --timeout 600s \
             --port 8080 \
-            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }} \
+            --startup-cpu-boost \
+            --cpu-throttling \
+            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B \
             --ingress internal-and-cloud-load-balancing \
             --format='value(status.url)' \
             --quiet)
@@ -133,3 +135,7 @@ jobs:
         run: |
           echo "✅ GPU Cloud Run deployed → ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
           echo "✅ Proxy function deployed with INFERENCE_URL and INTERNAL_TOKEN"
+          echo "✅ Model: microsoft/VibeVoice-1.5B"
+          echo "✅ GPU: NVIDIA L4"
+          echo "✅ Memory: 16GB"
+          echo "✅ Timeout: 600s"

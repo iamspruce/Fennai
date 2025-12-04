@@ -52,9 +52,6 @@ ENV PORT=8080
 ENV CUDA_VISIBLE_DEVICES=0
 ENV MODEL_NAME=microsoft/VibeVoice-1.5B
 
-# Optional: Attempt to download model during build
-# This will not fail the build if it times out - model will download at runtime instead
-RUN python download_model.py || echo "⚠️ Model download during build failed or timed out. Model will be downloaded at runtime on first request."
 
 # Expose port
 EXPOSE 8080
