@@ -71,20 +71,18 @@ const mockGreeting = "Good Afternoon, Fennai";
 </div>
 
 <style is:global>
-    /* 1. THE SCENE - Holds the 3D space */
     .preview-scene {
         display: flex;
         justify-content: center;
         align-items: center;
         padding: 4rem 2rem;
-        perspective: 1200px; /* Controls how "deep" the 3D effect looks */
+        perspective: 1200px;
         overflow: visible;
     }
 
-    /* 2. THE DEVICE - The slanted phone */
     .mobile-device {
-        width: 375px; /* Standard mobile width */
-        height: 700px; /* Fixed height for the preview */
+        width: 375px;
+        height: 700px;
         background: var(--background-color, #ffffff); /* Matches your theme */
         border-radius: 40px;
 
