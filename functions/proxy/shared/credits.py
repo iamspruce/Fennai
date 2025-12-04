@@ -2,6 +2,38 @@
 from firebase_admin import firestore
 from typing import Tuple
 
+def check_credits_available(uid: str, cost: int = 1) -> Tuple[bool, str | None]:
+    """
+    Check if user has enough credits WITHOUT deducting them.
+    Returns (has_credits: bool, error_message: str | None)
+    """
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+    
+    try:
+        doc = user_ref.get()
+        
+        if not doc.exists:
+            return False, "User document not found"
+        
+        data = doc.to_dict() or {}
+        is_pro = data.get("isPro", False)
+        
+        # Pro users always have credits
+        if is_pro:
+            return True, None
+        
+        # Check if free user has enough credits
+        credits = data.get("credits", 0)
+        if credits < cost:
+            return False, "Insufficient credits"
+        
+        return True, None
+        
+    except Exception as e:
+        return False, f"Credit check failed: {str(e)}"
+
+
 def check_and_deduct_credits(uid: str, cost: int = 1) -> Tuple[bool, str | None]:
     """
     Check if user has enough credits and deduct them in a transaction.

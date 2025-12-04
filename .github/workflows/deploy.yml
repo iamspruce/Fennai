@@ -122,7 +122,7 @@ jobs:
       - name: Deploy Proxy Function with Environment Variables
         run: |
           firebase deploy \
-            --only functions:voice_clone_proxy \
+            --only functions:proxy \
             --project fennai \
             --non-interactive
         env:

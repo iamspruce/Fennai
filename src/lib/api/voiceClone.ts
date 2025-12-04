@@ -70,7 +70,7 @@ export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneV
     const voiceBase64 = await fileToBase64(params.audioFile);
 
     // Call the Firebase proxy function
-    const response = await fetch(`${API_BASE_URL}/voice_clone_proxy`, {
+    const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -118,7 +118,7 @@ export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<Cl
         .join('\n');
 
     // Call the Firebase proxy function
-    const response = await fetch(`${API_BASE_URL}/voice_clone_proxy`, {
+    const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,

@@ -8,7 +8,9 @@ from io import BytesIO
 import os
 import logging
 from pathlib import Path
-from huggingface_hub import snapshot_download
+
+# Import the download function from download_model.py
+from download_model import download_if_missing
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +36,7 @@ attention_mode = get_optimal_attention_mode()
 INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 
 # Model configuration
-MODEL_NAME = os.getenv("MODEL_NAME", "vibevoice/VibeVoice-1.5B")
+MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
 MODEL_CACHE_DIR = Path("/workspace/models")
 MODEL_PATH = MODEL_CACHE_DIR / MODEL_NAME.split("/")[-1]
 
@@ -42,37 +44,14 @@ MODEL_PATH = MODEL_CACHE_DIR / MODEL_NAME.split("/")[-1]
 processor = None
 model = None
 
-def download_model_if_needed():
-    """Download model from HuggingFace if not already cached"""
-    if MODEL_PATH.exists():
-        logger.info(f"Model already cached at {MODEL_PATH}")
-        return
-    
-    logger.info(f"Downloading {MODEL_NAME} to {MODEL_PATH}...")
-    try:
-        MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        
-        snapshot_download(
-            repo_id=MODEL_NAME,
-            local_dir=str(MODEL_PATH),
-            local_dir_use_symlinks=False,
-            resume_download=True,
-            token=os.getenv("HF_TOKEN")  # Optional: for gated models
-        )
-        logger.info("✓ Model download complete")
-        
-    except Exception as e:
-        logger.error(f"Model download failed: {e}", exc_info=True)
-        raise
-
 def load_model():
     """Load the VibeVoice model - download if needed"""
     global processor, model
     logger.info(f"Loading VibeVoice on {device} with {attention_mode}...")
     
     try:
-        # Download if not present
-        download_model_if_needed()
+        # Use the download function from download_model.py
+        download_if_missing()
         
         # Verify essential files exist
         required_files = ['config.json', 'tokenizer_config.json']

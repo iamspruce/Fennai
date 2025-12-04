@@ -50,13 +50,18 @@ RUN mkdir -p /workspace/models && chmod -R 777 /workspace/models
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
 ENV CUDA_VISIBLE_DEVICES=0
+ENV MODEL_NAME=microsoft/VibeVoice-1.5B
+
+# Optional: Attempt to download model during build
+# This will not fail the build if it times out - model will download at runtime instead
+RUN python download_model.py || echo "⚠️ Model download during build failed or timed out. Model will be downloaded at runtime on first request."
 
 # Expose port
 EXPOSE 8080
 
 # Health check - longer start period for model download
 HEALTHCHECK --interval=60s --timeout=10s --start-period=600s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
+CMD curl -f http://localhost:8080/ || exit 1
 
 # Run with functions-framework
 CMD exec functions-framework --target=inference --port=8080 --host=0.0.0.0

@@ -1,4 +1,4 @@
-from firebase_functions import https_fn, logger # Import logger
+from firebase_functions import https_fn, logger
 import requests
 import os
 from dotenv import load_dotenv
@@ -15,11 +15,23 @@ INFERENCE_URL = os.environ.get("INFERENCE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
 @https_fn.on_request()
-def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
+def voice_clone(req: https_fn.Request) -> https_fn.Response:
     """
     Voice cloning proxy endpoint.
     Handles authentication, credit deduction, and forwards to inference service.
     """
+    # Health check endpoint
+    if req.path == "/health" or req.path.endswith("/health"):
+        logger.info("Health check requested")
+        return https_fn.Response(
+            {"status": "healthy", "service": "voice-clone-proxy"},
+            status=200,
+            headers={
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    
     # 1. Log entry
     logger.info(f"Request received. Method: {req.method}")
 
@@ -101,12 +113,13 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     else:
         cost = 1  # Single character
     
-    # Check and deduct credits
-    logger.info(f"Deducting {cost} credits for user {uid}")
-    can_proceed, error_msg = check_and_deduct_credits(uid, cost)
+    # IMPORTANT: Check credits availability first, but DON'T deduct yet
+    logger.info(f"Checking credit availability for user {uid} (cost: {cost})")
+    from shared.credits import check_credits_available
+    has_credits, error_msg = check_credits_available(uid, cost)
     
-    if not can_proceed:
-        logger.warn(f"Credit deduction failed for {uid}: {error_msg}")
+    if not has_credits:
+        logger.warn(f"Insufficient credits for {uid}: {error_msg}")
         return https_fn.Response(
             {"error": error_msg or "Insufficient credits"},
             status=402,
@@ -122,7 +135,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
     if character_texts:
         payload["character_texts"] = character_texts
     
-    # Call inference service
+    # Call inference service FIRST
     try:
         logger.info(f"Forwarding request to Inference URL: {INFERENCE_URL}")
         response = requests.post(
@@ -140,8 +153,18 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
                 headers={"Access-Control-Allow-Origin": "*"}
             )
         
+        # SUCCESS! Now deduct credits
+        logger.info(f"Generation successful, deducting {cost} credits for user {uid}")
+        can_proceed, deduct_error = check_and_deduct_credits(uid, cost)
+        
+        if not can_proceed:
+            # This shouldn't happen since we checked above, but log it
+            logger.error(f"Credit deduction failed after successful generation for {uid}: {deduct_error}")
+            # Still return the audio since generation succeeded
+            # You might want to track this for reconciliation
+        
         # Return audio file
-        logger.info(f"Generation successful for {uid}")
+        logger.info(f"Returning audio to {uid}")
         return https_fn.Response(
             response.content,
             status=200,
@@ -154,7 +177,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except requests.exceptions.Timeout:
-        logger.error(f"Inference Timeout for {uid}")
+        logger.error(f"Inference Timeout for {uid} - NO CREDITS DEDUCTED")
         return https_fn.Response(
             {"error": "Generation timeout - please try again"},
             status=504,
@@ -162,7 +185,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except requests.exceptions.RequestException as e:
-        logger.error(f"Network Error contacting inference service: {str(e)}")
+        logger.error(f"Network Error contacting inference service: {str(e)} - NO CREDITS DEDUCTED")
         return https_fn.Response(
             {"error": f"Network error: {str(e)}"},
             status=500,
@@ -170,7 +193,7 @@ def voice_clone_proxy(req: https_fn.Request) -> https_fn.Response:
         )
         
     except Exception as e:
-        logger.error(f"Unexpected error in proxy: {str(e)}")
+        logger.error(f"Unexpected error in proxy: {str(e)} - NO CREDITS DEDUCTED")
         return https_fn.Response(
             {"error": f"Unexpected error: {str(e)}"},
             status=500,
