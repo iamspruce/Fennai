@@ -4,54 +4,39 @@ import { Icon } from '@iconify/react';
 import "@/styles/login-modal.css";
 import "@/styles/modal.css";
 
-// Production-grade error mapping
+// Simplified error mapping for Passwordless
 const getFriendlyErrorMessage = (errorCode: string): string => {
   switch (errorCode) {
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return "Invalid email or password.";
-    case 'auth/email-already-in-use':
-      return "This email is already associated with an account.";
     case 'auth/invalid-email':
       return "Please enter a valid email address.";
-    case 'auth/weak-password':
-      return "Password should be at least 6 characters.";
     case 'auth/too-many-requests':
-      return "Too many failed attempts. Please try again later.";
+      return "Too many attempts. Please try again later.";
     case 'auth/network-request-failed':
       return "Network error. Please check your connection.";
+    case 'auth/quota-exceeded':
+      return "Service temporarily unavailable.";
     default:
       return "An unexpected error occurred. Please try again.";
   }
 };
 
-type AuthMode = 'signin' | 'signup' | 'reset';
-
 export default function LoginModal() {
   const [isOpen, setIsOpen] = useState(false);
-  const [mode, setMode] = useState<AuthMode>('signin');
-
-  // Form State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
   // UI State
+  const [email, setEmail] = useState('');
+  const [isEmailSent, setIsEmailSent] = useState(false); // New state to track if link was sent
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Refs for focus management
+  // Refs
   const emailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleOpen = () => {
       setIsOpen(true);
-      // Reset state on open
       setError('');
-      setSuccessMessage('');
-      setMode('signin');
+      setIsEmailSent(false); // Reset on open
       setTimeout(() => emailInputRef.current?.focus(), 100);
     };
     window.addEventListener('open-login-modal', handleOpen);
@@ -61,12 +46,10 @@ export default function LoginModal() {
   const onClose = () => {
     setIsOpen(false);
     setError('');
-    setSuccessMessage('');
-    setPassword('');
-    // Don't clear email immediately in case they accidentally closed it
+    setIsEmailSent(false);
   };
 
-  // Centralized session creation
+  // Used for Google Auth only in this file
   const createSession = async () => {
     const idToken = await AuthService.getIdToken();
     if (!idToken) throw new Error('Failed to get authentication token');
@@ -81,35 +64,24 @@ export default function LoginModal() {
       const data = await response.json();
       throw new Error(data.error || 'Failed to create session');
     }
-
-    // Force a hard reload to ensure all server-side session data is recognized
     window.location.href = '/profile';
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleMagicLinkSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccessMessage('');
     setLoading(true);
 
-    const cleanEmail = email.trim(); // Sanitize input
+    const cleanEmail = email.trim();
 
     try {
-      if (mode === 'signin') {
-        await AuthService.signInWithEmail(cleanEmail, password);
-        await createSession();
-      } else if (mode === 'signup') {
-        await AuthService.signUpWithEmail(cleanEmail, password);
-        await createSession();
-      } else if (mode === 'reset') {
-        await AuthService.sendPasswordResetEmail(cleanEmail);
-        setSuccessMessage('Password reset email sent! Check your inbox.');
-        setLoading(false); // Stop loading, stay on screen to show success
-      }
+      // Send the link
+      await AuthService.sendMagicLink(cleanEmail);
+      setIsEmailSent(true); // Switch UI to success state
     } catch (err: any) {
-      console.error('Authentication error:', err);
-      // Use the friendly error mapper
+      console.error('Auth error:', err);
       setError(getFriendlyErrorMessage(err.code || err.message));
+    } finally {
       setLoading(false);
     }
   };
@@ -119,7 +91,7 @@ export default function LoginModal() {
     setLoading(true);
     try {
       await AuthService.signInWithGoogle();
-      await createSession();
+      await createSession(); // Google login happens immediately, so we create session here
     } catch (err: any) {
       console.error('Google sign-in error:', err);
       if (err.code !== 'auth/popup-closed-by-user') {
@@ -131,17 +103,6 @@ export default function LoginModal() {
   };
 
   if (!isOpen) return null;
-
-  // Dynamic Title Logic
-  const getTitle = () => {
-    if (mode === 'reset') return 'Reset Password';
-    return mode === 'signin' ? 'Welcome back' : 'Get started';
-  };
-
-  const getSubtitle = () => {
-    if (mode === 'reset') return 'Enter your email to receive a reset link';
-    return mode === 'signin' ? 'Sign in to account' : 'Create an account';
-  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -162,116 +123,87 @@ export default function LoginModal() {
         </div>
 
         <div className="modal-body">
-          <h2 className="welcome-text">
-            {getTitle()}
-            <br />
-            <span className="highlight">{getSubtitle()}</span>
-          </h2>
 
-          <form onSubmit={handleSubmit} className="auth-form">
-            <div className="input-group">
-              <label htmlFor="email">Email address</label>
-              <input
-                ref={emailInputRef}
-                type="email"
-                id="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                required
-                disabled={loading}
-                autoComplete="email"
-                style={{ fontSize: '16px' }}
-              />
-            </div>
-
-            {/* Password input - hidden in reset mode */}
-            {mode !== 'reset' && (
-              <div className="input-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label htmlFor="password">Password</label>
-                  {/* Forgot Password Link */}
-                  {mode === 'signin' && (
-                    <button
-                      type="button"
-                      onClick={() => { setMode('reset'); setError(''); }}
-                      style={{
-                        background: 'none', border: 'none', color: 'var(--slate-11)',
-                        fontSize: '12px', cursor: 'pointer', padding: 0
-                      }}
-                    >
-                      Forgot?
-                    </button>
-                  )}
-                </div>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    id="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    required
-                    minLength={6}
-                    disabled={loading}
-                    autoComplete={mode === 'signin' ? "current-password" : "new-password"}
-                    style={{ fontSize: '16px', paddingRight: '40px' }} // Make room for eye icon
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: 'absolute',
-                      right: '10px',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--slate-9)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                  >
-                    <Icon icon={showPassword ? "lucide:eye-off" : "lucide:eye"} width={18} height={18} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Error & Success Messages */}
-            {error && (
-              <div className="error-message" role="alert">
-                <Icon icon="lucide:alert-circle" width={16} height={16} style={{ marginRight: 8, flexShrink: 0 }} />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {successMessage && (
-              <div className="success-message" role="alert" style={{
-                color: 'var(--green-11)', background: 'var(--green-3)',
-                padding: '10px', borderRadius: 'var(--radius-sm)',
-                fontSize: '14px', display: 'flex', alignItems: 'center', marginBottom: '16px'
+          {/* VIEW 1: Success / Email Sent */}
+          {isEmailSent ? (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{
+                background: 'var(--green-3)',
+                color: 'var(--green-11)',
+                width: '60px', height: '60px',
+                borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 16px auto'
               }}>
-                <Icon icon="lucide:check-circle" width={16} height={16} style={{ marginRight: 8 }} />
-                {successMessage}
+                <Icon icon="lucide:mail-check" width={32} height={32} />
               </div>
-            )}
+              <h2 className="welcome-text" style={{ marginBottom: '8px' }}>Check your email</h2>
+              <p style={{ color: 'var(--slate-11)', marginBottom: '24px', fontSize: '15px' }}>
+                We sent a sign-in link to <span style={{ color: 'var(--slate-12)', fontWeight: 500 }}>{email}</span>.
+                <br />Click the link to complete your login.
+              </p>
+              <button
+                className="btn btn-secondary btn-full"
+                onClick={onClose}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEmailSent(false)}
+                className="link-button"
+                style={{ marginTop: '16px', fontSize: '14px' }}
+              >
+                Use a different email
+              </button>
+            </div>
+          ) : (
 
-            <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-              {loading ? (
-                <Icon icon="lucide:loader-2" className="animate-spin" width={20} height={20} />
-              ) : (
-                // Dynamic Button Label
-                mode === 'signin' ? 'Sign In' : (mode === 'signup' ? 'Create Account' : 'Send Reset Link')
-              )}
-            </button>
-          </form>
-
-          {/* Social Auth & Toggles - Hidden during reset to reduce noise */}
-          {mode !== 'reset' && (
+            /* VIEW 2: Input Form */
             <>
+              <h2 className="welcome-text">
+                Welcome
+                <br />
+                <span className="highlight">Sign in or create account</span>
+              </h2>
+
+              <form onSubmit={handleMagicLinkSubmit} className="auth-form">
+                <div className="input-group">
+                  <label htmlFor="email">Email address</label>
+                  <input
+                    ref={emailInputRef}
+                    type="email"
+                    id="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    required
+                    disabled={loading}
+                    autoComplete="email"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+
+                {/* Error Messages */}
+                {error && (
+                  <div className="error-message" role="alert">
+                    <Icon icon="lucide:alert-circle" width={16} height={16} style={{ marginRight: 8, flexShrink: 0 }} />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
+                  {loading ? (
+                    <Icon icon="lucide:loader-2" className="animate-spin" width={20} height={20} />
+                  ) : (
+                    <>
+                      <Icon icon="lucide:mail" width={18} height={18} style={{ marginRight: 8 }} />
+                      Continue with Email
+                    </>
+                  )}
+                </button>
+              </form>
+
               <div className="divider">
                 <span>or</span>
               </div>
@@ -285,39 +217,9 @@ export default function LoginModal() {
                 <Icon icon="logos:google-icon" width={20} height={20} style={{ marginRight: '8px' }} />
                 <span>Continue with Google</span>
               </button>
-
-              <p className="toggle-mode">
-                {mode === 'signin' ? "Don't have an account? " : "Already have an account? "}
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => {
-                    setMode(mode === 'signin' ? 'signup' : 'signin');
-                    setError('');
-                  }}
-                >
-                  {mode === 'signin' ? 'Sign up' : 'Log in'}
-                </button>
-              </p>
             </>
           )}
 
-          {/* Back button for Reset Mode */}
-          {mode === 'reset' && (
-            <p className="toggle-mode">
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => {
-                  setMode('signin');
-                  setError('');
-                  setSuccessMessage('');
-                }}
-              >
-                Back to Sign In
-              </button>
-            </p>
-          )}
         </div>
       </div>
     </div>

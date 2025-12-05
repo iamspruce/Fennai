@@ -8,7 +8,6 @@
   border: 1px solid var(--mauve-3);
   border-top-left-radius: var(--radius-l);
   border-top-right-radius: var(--radius-l);
-  box-shadow: var(--shadow-box-l);
   min-height: 100vh;
 }
 

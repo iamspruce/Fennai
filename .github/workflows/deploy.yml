@@ -100,7 +100,7 @@ jobs:
             --image gcr.io/fennai/fennai-inference:latest \
             --platform managed \
             --region us-central1 \
-            --no-allow-unauthenticated \
+            --allow-unauthenticated \
             --cpu 4 \
             --memory 16Gi \
             --gpu 1 \
@@ -120,11 +120,34 @@ jobs:
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
       
-      - name: Test Cloud Run Health
+      - name: Wait for Cloud Run to be ready
         run: |
-          echo "Testing Cloud Run health endpoint..."
-          sleep 10
-          curl -f "${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health" || echo "Health check failed (expected if auth required)"
+          echo "Waiting for Cloud Run service to be fully ready..."
+          sleep 20
+      
+      - name: Test Cloud Run Health Endpoint (Public)
+        run: |
+          echo "Testing Cloud Run health endpoint (public access)..."
+          
+          HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
+          echo "Health URL: $HEALTH_URL"
+          
+          # Test health endpoint without authentication (should work)
+          RESPONSE=$(curl -s -w "\n%{http_code}" "$HEALTH_URL")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response Body: $BODY"
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check PASSED - Service is ready!"
+          else
+            echo "❌ Health check FAILED with status $HTTP_CODE"
+            echo "This indicates Flask is not running correctly."
+            exit 1
+          fi
       
       - name: Create .env for proxy function
         run: |
@@ -135,11 +158,12 @@ jobs:
       - name: Deploy Proxy Function
         run: |
           firebase deploy \
-            --only functions:voice_clone \
+            --only proxy:voice_clone \
             --project fennai \
-            --token "${{ secrets.FIREBASE_TOKEN }}" \
             --non-interactive
-      
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+
       - name: Deployment Summary
         run: |
           echo "======================================"
@@ -158,7 +182,7 @@ jobs:
           echo "  Timeout: 600s"
           echo ""
           echo "Firebase Function:"
-          echo "  Name: voice_clone"
+          echo "  Name: proxy"
           echo "  Status: Deployed"
           echo ""
           echo "======================================"

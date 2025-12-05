@@ -1,0 +1,100 @@
+---
+// src/pages/finish-login.astro
+// No layout needed here as the page will immediately redirect.
+---
+
+<div
+    style="
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    height: 100vh; 
+    font-family: sans-serif;
+    color: var(--mauve-12);
+    background-color: var(--mauve-1);
+    "
+>
+    <div style="text-align: center;">
+        <svg class="spinner" width="40" height="40" viewBox="0 0 50 50">
+            <circle
+                class="path"
+                cx="25"
+                cy="25"
+                r="20"
+                fill="none"
+                stroke-width="5"
+            >
+            </circle>
+        </svg>
+        <h2>Securing your login...</h2>
+    </div>
+</div>
+
+<script>
+    import { AuthService } from "@/lib/firebase/authService";
+
+    async function handleLoginCompletion() {
+        try {
+            // 1. Client-Side Auth: Complete the Firebase sign-in using the link
+            await AuthService.completeMagicLinkLogin();
+
+            // 2. Get the fresh ID token (crucial for server verification)
+            const idToken = await AuthService.getIdToken();
+            if (!idToken) throw new Error("Could not retrieve user token.");
+
+            // 3. Client-Side Fetch: Send the token to the server API route
+            const response = await fetch("/api/auth/session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idToken }),
+            });
+
+            if (!response.ok) {
+                // The server failed to verify the token or set the cookie
+                throw new Error("Server session failed.");
+            }
+
+            // 4. Success: Redirect to the profile page
+            window.location.href = "/profile";
+        } catch (error: any) {
+            console.error("Login verification failed:", error);
+
+            // Failure: Redirect to the home page with an error status
+            // The user must re-initiate the login process if the link failed.
+            window.location.href = "/?loginError=invalid_link";
+        }
+    }
+
+    // Run on page load
+    handleLoginCompletion();
+</script>
+
+<style>
+    .spinner {
+        animation: rotate 2s linear infinite;
+    }
+    .spinner .path {
+        stroke: var(--pink-9, #d946ef);
+        stroke-linecap: round;
+        animation: dash 1.5s ease-in-out infinite;
+    }
+    @keyframes rotate {
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+    @keyframes dash {
+        0% {
+            stroke-dasharray: 1, 150;
+            stroke-dashoffset: 0;
+        }
+        50% {
+            stroke-dasharray: 90, 150;
+            stroke-dashoffset: -35;
+        }
+        100% {
+            stroke-dasharray: 90, 150;
+            stroke-dashoffset: -124;
+        }
+    }
+</style>
