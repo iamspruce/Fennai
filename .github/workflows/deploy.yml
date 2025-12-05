@@ -158,7 +158,7 @@ jobs:
       - name: Deploy Proxy Function
         run: |
           firebase deploy \
-            --only proxy:voice_clone \
+            --only functions:proxy \
             --project fennai \
             --non-interactive
         env:
