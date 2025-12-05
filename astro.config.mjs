@@ -10,7 +10,7 @@ output: "server",
   site: "https://www.fennai.com",
 
   image: {
-    domains: ["firebasestorage.googleapis.com", "localhost", "fennai.com"],
+    domains: ["firebasestorage.googleapis.com", "localhost", "fennai.com", "lh3.googleusercontent.com"],
   },
 
   adapter: node({
