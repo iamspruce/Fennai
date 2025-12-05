@@ -82,25 +82,10 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       # CREATE PERSISTENT DISK ONCE (idempotent)
-      - name: Create Persistent Disk (if not exists)
+      - name: Create Cloud Storage Bucket (if not exists)
         run: |
-          DISK_NAME="vibevoice-model-disk"
-          ZONE="us-central1-a"
-          
-          if gcloud compute disks describe $DISK_NAME --zone=$ZONE --quiet --format="value(name)" 2>/dev/null; then
-            echo "Persistent disk '$DISK_NAME' already exists. Skipping creation."
-          else
-            echo "Creating persistent disk '$DISK_NAME' (50GB SSD)..."
-            gcloud compute disks create $DISK_NAME \
-              --size=50GB \
-              --type=pd-ssd \
-              --zone=$ZONE \
-              --description="VibeVoice model cache - survives cold starts"
-            echo "Disk created successfully!"
-          fi
-
-      - name: Configure Docker authentication
-        run: gcloud auth configure-docker gcr.io
+          BUCKET_NAME="fennai-vibevoice-models"
+          gsutil mb -p fennai -l us-central1 gs://$BUCKET_NAME 2>/dev/null || echo "Bucket already exists"
 
       - name: Build & Submit GPU Inference Image
         run: |
@@ -109,7 +94,7 @@ jobs:
             --timeout=3600s \
             functions/inference
 
-      - name: Deploy Inference to Cloud Run (with Persistent Disk)
+      - name: Deploy Inference to Cloud Run (with Cloud Storage Mount)
         id: deploy_run
         run: |
           URL=$(gcloud run deploy fennai-inference \
@@ -130,14 +115,33 @@ jobs:
             --cpu-boost \
             --concurrency=1 \
             --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,HF_TOKEN=${{ secrets.HF_TOKEN }},CACHE_DIR=/models \
-            --mount=volume=vibevoice-models,type=pd,volume-mode=filesystem,destination=/models \
-            --volume=vibevoice-models=disk:vibevoice-model-disk \
+            --add-volume name=model-volume,type=cloud-storage,bucket=fennai-vibevoice-models \
+            --add-volume-mount volume=model-volume,mount-path=/models \
             --quiet \
             --format='value(status.url)')
-          
-          echo "Cloud Run URL: $URL"
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
+
+      - name: Warm-Up Download Model to Bucket (First Time Only)
+        run: |
+          # Only run if model not in bucket
+          if gsutil ls gs://fennai-vibevoice-models/models/ 2>/dev/null | grep -q .; then
+            echo "Model already in bucket, skipping download"
+          else
+            TEMP_DIR=$(mktemp -d)
+            cd $TEMP_DIR
+            python3 -c "
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id='${{ env.MODEL_NAME }}',
+                local_dir='./model',
+                token='${{ secrets.HF_TOKEN }}'
+            )
+            "
+            gsutil -m rsync -d -r ./model gs://fennai-vibevoice-models/models/
+            rm -rf $TEMP_DIR
+            echo "Model uploaded to bucket"
+          fi
 
       - name: Wait for Cloud Run to be ready
         run: sleep 30
