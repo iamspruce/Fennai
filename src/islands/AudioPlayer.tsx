@@ -220,6 +220,7 @@ export default function AudioPlayer({
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     const audioEl = audioRef.current;
     if (!audioEl) return;
 
