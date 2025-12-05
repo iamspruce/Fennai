@@ -41,6 +41,8 @@ async function getAuthToken(): Promise<string | null> {
 async function fetchCharacterAudio(characterId: string): Promise<File> {
     const response = await fetch(`/api/characters/${characterId}/audio`);
 
+    console.log(response);
+
     if (!response.ok) {
         throw new Error(`Failed to fetch audio for character ${characterId}`);
     }

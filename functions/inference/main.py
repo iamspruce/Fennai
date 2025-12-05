@@ -8,13 +8,10 @@ from pathlib import Path
 from io import BytesIO
 import soundfile as sf
 
-# === DO NOT import anything heavy here! ===
-# No vibevoice, no download_model, no processor/model imports at top level
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Ensures logs go to Cloud Run stdout
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
@@ -38,7 +35,7 @@ class TimeoutError(Exception):
 def timeout_handler(signum, frame):
     raise TimeoutError("Generation took too long")
 
-# === Lazy loading function (THIS IS THE KEY) ===
+# === Lazy loading function ===
 def ensure_model_loaded():
     global processor, model
 
@@ -48,9 +45,6 @@ def ensure_model_loaded():
 
     logger.info("First request received → starting model download & load...")
 
-    # ------------------------------
-    # Lazy imports (only now!)
-    # ------------------------------
     try:
         from download_model import download_if_missing
         from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
@@ -65,15 +59,13 @@ def ensure_model_loaded():
             map_speakers_to_voice_samples,
             log_startup_info,
             detect_multi_speaker,
+            format_text_for_vibevoice,
         )
-        globals().update(locals())  # Make them available below
+        globals().update(locals())
     except Exception as e:
         logger.error("Failed to import required modules!", exc_info=True)
         raise
 
-    # ------------------------------
-    # 1. Download model
-    # ------------------------------
     try:
         logger.info(f"Checking for model {MODEL_NAME} in {CACHE_DIR}...")
         model_path = download_if_missing()
@@ -98,9 +90,6 @@ def ensure_model_loaded():
 
     logger.info(f"Loading model from snapshot: {snapshot_dir}")
 
-    # ------------------------------
-    # 2. Load processor & model
-    # ------------------------------
     try:
         processor = VibeVoiceProcessor.from_pretrained(str(snapshot_dir))
         logger.info("Processor loaded")
@@ -128,7 +117,7 @@ def ensure_model_loaded():
         abort(503, "Failed to load model")
 
 
-# === Health endpoint (lightweight, no model load) ===
+# === Health endpoint ===
 @app.route("/", methods=["GET"])
 @app.route("/health", methods=["GET"])
 def health():
@@ -170,20 +159,32 @@ def inference():
         if not voice_b64s or not isinstance(voice_b64s, list):
             abort(400, "Missing or invalid 'voice_samples'")
 
-        # Multi-speaker logic
-        if detect_multi_speaker(raw_text):
+        # Detect if multi-speaker
+        is_multi = detect_multi_speaker(raw_text)
+        logger.info(f"Multi-speaker detected: {is_multi}")
+
+        # CRITICAL FIX: Always format text properly for VibeVoice
+        if is_multi:
+            # Parse dialogues and format per speaker
             dialogues = parse_dialogue_text(raw_text)
             texts = extract_per_speaker_texts(dialogues)
             voice_samples = map_speakers_to_voice_samples(dialogues, voice_b64s)
-            logger.info(f"Multi-speaker: {len(texts)} parts")
+            logger.info(f"Multi-speaker: {len(texts)} speakers")
+            logger.info(f"Formatted texts: {texts}")
         else:
-            texts = [raw_text]
+            # Single speaker: format with "Speaker:" prefix
+            formatted_text = format_text_for_vibevoice(raw_text, is_multi_speaker=False)
+            texts = [formatted_text]
             voice_samples = [b64_to_voice_sample(voice_b64s[0])]
             logger.info("Single speaker mode")
+            logger.info(f"Formatted text: {formatted_text}")
 
         if len(texts) != len(voice_samples):
+            logger.error(f"Mismatch: {len(texts)} texts, {len(voice_samples)} samples")
             abort(400, "Text/voice sample count mismatch")
 
+        # Process with VibeVoice
+        logger.info("Processing with VibeVoice processor...")
         inputs = processor(
             text=texts,
             voice_samples=voice_samples,
@@ -230,7 +231,7 @@ def inference():
         abort(504, "Generation timeout")
     except Exception as e:
         logger.error("Inference failed", exc_info=True)
-        abort(500, "Internal error during inference")
+        abort(500, f"Internal error: {str(e)}")
     finally:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

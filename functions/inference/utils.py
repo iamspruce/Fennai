@@ -60,7 +60,24 @@ def detect_multi_speaker(text: str) -> bool:
     
     return matches > 1
 
-# === 4. Multi-Character Dialogue Parser ===
+# === 4. Format Text for VibeVoice (CRITICAL FIX) ===
+def format_text_for_vibevoice(text: str, is_multi_speaker: bool = False) -> str:
+    """
+    VibeVoice ALWAYS needs "Speaker:" format, even for single speaker.
+    This function ensures the text is properly formatted.
+    """
+    # If already in multi-speaker format, return as-is
+    if is_multi_speaker and detect_multi_speaker(text):
+        return text.strip()
+    
+    # Single speaker: wrap entire text with "Speaker:" prefix
+    # Split into sentences for better natural breaks
+    sentences = [s.strip() for s in text.split('.') if s.strip()]
+    formatted_lines = [f"Speaker: {sentence}." for sentence in sentences]
+    
+    return '\n'.join(formatted_lines)
+
+# === 5. Multi-Character Dialogue Parser ===
 def parse_dialogue_text(text: str) -> List[Tuple[str, str]]:
     """
     Input: "Speaker 1: Hello there\nSpeaker 2: Hi! How are you?"
@@ -99,8 +116,16 @@ def extract_per_speaker_texts(dialogues: List[Tuple[str, str]]) -> List[str]:
             speaker_order.append(speaker_key)
         speaker_texts[speaker_key].append(utterance)
     
-    # Combine all utterances per speaker
-    return [" ".join(speaker_texts[s]) for s in speaker_order]
+    # Combine all utterances per speaker with proper formatting
+    formatted_texts = []
+    for speaker_key in speaker_order:
+        utterances = speaker_texts[speaker_key]
+        # Format as "Speaker: text" for each utterance
+        speaker_label = speaker_key.title()  # Capitalize first letter
+        formatted_text = '\n'.join([f"{speaker_label}: {utt}" for utt in utterances])
+        formatted_texts.append(formatted_text)
+    
+    return formatted_texts
 
 def map_speakers_to_voice_samples(
     dialogues: List[Tuple[str, str]],
@@ -134,7 +159,7 @@ def map_speakers_to_voice_samples(
     # Return voice samples in order of first speaker appearance
     return [speaker_to_sample[s] for s in unique_speakers]
 
-# === 5. Startup Logger ===
+# === 6. Startup Logger ===
 def log_startup_info():
     attn = get_optimal_attention_mode()
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
@@ -142,7 +167,7 @@ def log_startup_info():
     logger.info(f"Device: {gpu} | Attention: {attn}")
     logger.info(f"Model: {os.getenv('MODEL_NAME', 'VibeVoice-1.5B')}")
 
-# === 6. GPU Info ===
+# === 7. GPU Info ===
 def get_detailed_gpu_info():
     if not torch.cuda.is_available():
         return {"available": False}

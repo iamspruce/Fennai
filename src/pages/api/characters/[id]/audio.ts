@@ -16,6 +16,7 @@ export const GET: APIRoute = async ({ params, request }) => {
         // Verify session
         const sessionCookie = getSessionCookie(request);
 
+
         if (!sessionCookie) {
             return new Response(JSON.stringify({ error: 'Unauthorized' }), {
                 status: 401,
@@ -34,9 +35,11 @@ export const GET: APIRoute = async ({ params, request }) => {
 
         const uid = decodedClaims.uid;
 
+
         // Fetch character using Admin SDK
         const docRef = adminDb.collection('characters').doc(id);
         const docSnap = await docRef.get();
+
 
         if (!docSnap.exists) {
             return new Response(JSON.stringify({ error: 'Character not found' }), {
@@ -59,8 +62,10 @@ export const GET: APIRoute = async ({ params, request }) => {
         const bucket = adminStorage.bucket();
         const file = bucket.file(character.sampleAudioStoragePath);
 
+
         // Check if file exists
         const [exists] = await file.exists();
+
         if (!exists) {
             return new Response(JSON.stringify({ error: 'Audio file not found' }), {
                 status: 404,
