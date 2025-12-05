@@ -6,11 +6,9 @@ import '@/styles/modal.css';
 interface CloningEventDetail {
   characterId: string;
   text: string;
-  audioFile: File;
   isMultiCharacter?: boolean;
   characterIds?: string[];
   texts?: string[];
-  additionalCharacters?: Array<{ characterId: string; text: string; audioFile: File }>;
 }
 
 // Helper for friendly error mapping
@@ -20,6 +18,7 @@ const getFriendlyErrorMessage = (errorMsg: string): string => {
   if (lower.includes('unauthorized') || lower.includes('token')) return "We need to verify your identity again.";
   if (lower.includes('quota') || lower.includes('limit')) return "You've used all your voice magic for now.";
   if (lower.includes('format') || lower.includes('type')) return "This audio file format is a bit tricky for us.";
+  if (lower.includes('audio for character')) return "Couldn't load character voice sample. Please try again.";
   return "Our sound wizards hit a snag. Please try again.";
 };
 
@@ -98,18 +97,19 @@ export default function CloningModal() {
       }, 100);
 
       let result: CloneVoiceResponse;
-      if (data.isMultiCharacter) {
+      if (data.isMultiCharacter && data.characterIds && data.texts) {
+        // Multi-character cloning
         result = await cloneMultiVoice({
-          characters: [
-            { characterId: data.characterId, text: data.texts ? data.texts[0] : data.text, audioFile: data.audioFile },
-            ...(data.additionalCharacters || []),
-          ],
+          characters: data.characterIds.map((charId, idx) => ({
+            characterId: charId,
+            text: data.texts![idx],
+          })),
         });
       } else {
+        // Single-character cloning
         result = await cloneSingleVoice({
           characterId: data.characterId,
           text: data.text,
-          audioFile: data.audioFile,
         });
       }
 

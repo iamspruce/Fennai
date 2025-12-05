@@ -6,7 +6,7 @@ from huggingface_hub import snapshot_download
 import logging
 import traceback  # For full stack traces
 
-logger = logging.getLogger(__name__)  # ← ADD: Use logging instead of print
+logger = logging.getLogger(__name__)  
 
 MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
 

@@ -6,14 +6,12 @@ const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_VOICE_CLONE_
 export interface CloneVoiceParams {
     characterId: string;
     text: string;
-    audioFile: File;
 }
 
 export interface MultiCloneVoiceParams {
     characters: Array<{
         characterId: string;
         text: string;
-        audioFile: File;
     }>;
 }
 
@@ -27,12 +25,9 @@ async function getAuthToken(): Promise<string | null> {
     try {
         const user = auth.currentUser;
 
-
         if (!user) {
             throw new Error('No authenticated user');
         }
-
-
 
         // Get fresh ID token
         return await user.getIdToken();
@@ -40,6 +35,18 @@ async function getAuthToken(): Promise<string | null> {
         console.error('Error getting auth token:', error);
         return null;
     }
+}
+
+// Fetch character audio sample
+async function fetchCharacterAudio(characterId: string): Promise<File> {
+    const response = await fetch(`/api/characters/${characterId}/audio`);
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch audio for character ${characterId}`);
+    }
+
+    const audioBlob = await response.blob();
+    return new File([audioBlob], 'sample.mp3', { type: 'audio/mpeg' });
 }
 
 // Convert audio file to base64
@@ -66,8 +73,11 @@ export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneV
         throw new Error('Not authenticated');
     }
 
+    // Fetch the character's audio sample
+    const audioFile = await fetchCharacterAudio(params.characterId);
+
     // Convert audio file to base64
-    const voiceBase64 = await fileToBase64(params.audioFile);
+    const voiceBase64 = await fileToBase64(audioFile);
 
     // Call the Firebase proxy function
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
@@ -107,9 +117,14 @@ export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<Cl
         throw new Error('Not authenticated');
     }
 
+    // Fetch all character audio samples in parallel
+    const audioFiles = await Promise.all(
+        params.characters.map(char => fetchCharacterAudio(char.characterId))
+    );
+
     // Convert all audio files to base64
     const voiceSamples = await Promise.all(
-        params.characters.map(char => fileToBase64(char.audioFile))
+        audioFiles.map(file => fileToBase64(file))
     );
 
     // Format text with speaker labels

@@ -100,7 +100,7 @@ jobs:
             --image gcr.io/fennai/fennai-inference:latest \
             --platform managed \
             --region us-central1 \
-            --execution-environment gen2 \  # ← ADD: Better ephemeral storage and perf for large downloads
+            --execution-environment gen2 \
             --allow-unauthenticated \
             --cpu 8 \
             --memory 32Gi \
