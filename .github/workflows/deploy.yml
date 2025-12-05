@@ -101,8 +101,8 @@ jobs:
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated \
-            --cpu 4 \
-            --memory 16Gi \
+            --cpu 8 \
+            --memory 32Gi \
             --gpu 1 \
             --gpu-type nvidia-l4 \
             --no-gpu-zonal-redundancy \
@@ -111,7 +111,6 @@ jobs:
             --timeout 600s \
             --port 8080 \
             --cpu-boost \
-            --max-startup-timeout 840s
             --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B \
             --ingress internal-and-cloud-load-balancing \
             --format='value(status.url)' \
