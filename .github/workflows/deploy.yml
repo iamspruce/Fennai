@@ -28,7 +28,6 @@ jobs:
           echo "${{ secrets.ENV_FILE }}" > .env
           echo ".env created."
       
-      # Let Firebase handle the Astro build via frameworksBackend
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -117,24 +116,49 @@ jobs:
             --format='value(status.url)' \
             --quiet)
           
-          echo "CLOUD_RUN_URL=$URL"
+          echo "Cloud Run URL: $URL"
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
+          echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
       
-      - name: Deploy Proxy Function with Environment Variables
+      - name: Test Cloud Run Health
+        run: |
+          echo "Testing Cloud Run health endpoint..."
+          sleep 10
+          curl -f "${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health" || echo "Health check failed (expected if auth required)"
+      
+      - name: Create .env for proxy function
+        run: |
+          cd functions/proxy
+          echo "INFERENCE_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}" > .env
+          echo "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}" >> .env
+      
+      - name: Deploy Proxy Function
         run: |
           firebase deploy \
-            --only functions:proxy \
+            --only functions:voice_clone \
             --project fennai \
+            --token "${{ secrets.FIREBASE_TOKEN }}" \
             --non-interactive
-        env:
-          INFERENCE_URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}
-          INTERNAL_TOKEN: ${{ secrets.INTERNAL_TOKEN }}
       
-      - name: Success
+      - name: Deployment Summary
         run: |
-          echo "✅ GPU Cloud Run deployed → ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
-          echo "✅ Proxy function deployed with INFERENCE_URL and INTERNAL_TOKEN"
-          echo "✅ Model: microsoft/VibeVoice-1.5B"
-          echo "✅ GPU: NVIDIA L4"
-          echo "✅ Memory: 16GB"
-          echo "✅ Timeout: 600s"
+          echo "======================================"
+          echo "✅ DEPLOYMENT SUCCESSFUL"
+          echo "======================================"
+          echo ""
+          echo "Cloud Run Service:"
+          echo "  URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
+          echo "  Health: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
+          echo "  Inference: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/inference"
+          echo ""
+          echo "Configuration:"
+          echo "  Model: microsoft/VibeVoice-1.5B"
+          echo "  GPU: NVIDIA L4"
+          echo "  Memory: 16GB"
+          echo "  Timeout: 600s"
+          echo ""
+          echo "Firebase Function:"
+          echo "  Name: voice_clone"
+          echo "  Status: Deployed"
+          echo ""
+          echo "======================================"

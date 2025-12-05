@@ -1,5 +1,5 @@
-# Cloud Run framework
-functions-framework==3.5.0
+# Flask for HTTP routing
+Flask==3.0.0
 
 # Core ML dependencies
 transformers==4.51.3

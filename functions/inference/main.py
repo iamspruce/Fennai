@@ -1,6 +1,4 @@
-# functions/inference/main.py
-import functions_framework
-from flask import abort
+from flask import Flask, request, abort, jsonify
 import torch
 import numpy as np
 import soundfile as sf
@@ -30,7 +28,10 @@ from utils import (
 )
 
 # === Configuration ===
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -43,6 +44,9 @@ SAMPLE_RATE = 24000
 
 processor = None
 model = None
+
+# Create Flask app
+app = Flask(__name__)
 
 
 # -----------------------------------------------------
@@ -152,16 +156,46 @@ def validate_request(data):
 
 
 # -----------------------------------------------------
-# Inference Endpoint
+# Health Endpoint (No Auth Required)
 # -----------------------------------------------------
-@functions_framework.http
-def inference(request):
+@app.route("/", methods=["GET"])
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint for Cloud Run."""
+    logger.info("Health check requested")
+    
+    health_status = {
+        "status": "healthy" if (model is not None and processor is not None) else "initializing",
+        "device": device,
+        "model": MODEL_NAME,
+        "sample_rate": SAMPLE_RATE,
+        "cuda_available": torch.cuda.is_available()
+    }
+    
+    if torch.cuda.is_available():
+        health_status["gpu"] = torch.cuda.get_device_name(0)
+    
+    return jsonify(health_status), 200
+
+
+# -----------------------------------------------------
+# Inference Endpoint (Auth Required)
+# -----------------------------------------------------
+@app.route("/inference", methods=["POST"])
+def inference():
+    logger.info("Inference request received")
+    
     # Lazy load model on first request
     ensure_model_loaded()
     
     # Authentication
-    if request.headers.get("X-Internal-Token") != INTERNAL_TOKEN:
-        logger.warning("Unauthorized request")
+    token = request.headers.get("X-Internal-Token")
+    if not token:
+        logger.warning("Missing authentication token")
+        abort(401, "Missing X-Internal-Token header")
+    
+    if token != INTERNAL_TOKEN:
+        logger.warning(f"Invalid authentication token")
         abort(403, "Forbidden")
 
     try:
@@ -192,6 +226,7 @@ def inference(request):
             abort(400, f"Voice/text mismatch: {len(texts)} texts, {len(voice_samples)} samples")
 
         # Prepare inputs
+        logger.info("Preparing model inputs...")
         inputs = processor(
             text=texts,
             voice_samples=voice_samples,
@@ -205,6 +240,7 @@ def inference(request):
 
         try:
             # Generate with proper parameters
+            logger.info("Starting audio generation...")
             with torch.inference_mode():
                 generated = model.generate(
                     **inputs,
@@ -212,13 +248,14 @@ def inference(request):
                     do_sample=True,
                     temperature=0.7,
                     top_p=0.9,
-                    cfg_scale=1.3,          # Voice adherence
-                    inference_steps=10,     # Generation quality
+                    cfg_scale=1.3,
+                    inference_steps=10,
                 )
         finally:
             signal.alarm(0)  # Cancel timeout
 
         # Decode
+        logger.info("Decoding audio...")
         audio = processor.decode(generated, skip_special_tokens=True)
         audio_np = audio.cpu().numpy().squeeze()
 
@@ -233,7 +270,7 @@ def inference(request):
         duration = audio_np.size / SAMPLE_RATE
         logger.info(f"✓ Done: {duration:.2f}s audio generated")
 
-        return (buffer.getvalue(), 200, {"Content-Type": "audio/wav"})
+        return buffer.getvalue(), 200, {"Content-Type": "audio/wav"}
 
     except TimeoutError:
         logger.error("Generation timed out")
@@ -249,22 +286,7 @@ def inference(request):
             torch.cuda.empty_cache()
 
 
-# -----------------------------------------------------
-# Health Endpoint
-# -----------------------------------------------------
-@functions_framework.http
-def health(request):
-    """Health check endpoint for Cloud Run."""
-    # Check if model can be loaded (but don't force load if not needed)
-    health_status = {
-        "status": "healthy" if (model is not None and processor is not None) else "initializing",
-        "device": device,
-        "model": MODEL_NAME,
-        "sample_rate": SAMPLE_RATE
-    }
-    
-    if model is None or processor is None:
-        # Model not loaded yet, but container is healthy
-        return health_status, 200
-    
-    return health_status, 200
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    logger.info(f"Starting Flask server on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -40,6 +40,9 @@ RUN pip install --no-cache-dir \
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Flask explicitly
+RUN pip install --no-cache-dir Flask==3.0.0
+
 # Copy application code
 COPY . .
 
@@ -52,13 +55,12 @@ ENV PORT=8080
 ENV CUDA_VISIBLE_DEVICES=0
 ENV MODEL_NAME=microsoft/VibeVoice-1.5B
 
-
 # Expose port
 EXPOSE 8080
 
-# Health check - longer start period for model download
-HEALTHCHECK --interval=60s --timeout=10s --start-period=600s --retries=3 \
-CMD curl -f http://localhost:8080/ || exit 1
+# Health check - simpler, hits root endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
-# Run with functions-framework
-CMD exec functions-framework --target=inference --port=8080 --host=0.0.0.0
+# Run Flask app directly
+CMD exec python main.py

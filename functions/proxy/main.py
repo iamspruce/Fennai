@@ -10,16 +10,12 @@ load_dotenv()
 from shared.firebase import get_current_user
 from shared.credits import check_and_deduct_credits
 
-# Environment variables
+# Environment variables - these will come from Firebase Functions config
 INFERENCE_URL = os.environ.get("INFERENCE_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
 @https_fn.on_request()
 def voice_clone(req: https_fn.Request) -> https_fn.Response:
-    """
-    Voice cloning proxy endpoint.
-    Handles authentication, credit deduction, and forwards to inference service.
-    """
     # Health check endpoint
     if req.path == "/health" or req.path.endswith("/health"):
         logger.info("Health check requested")
@@ -32,7 +28,6 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
             }
         )
     
-    # 1. Log entry
     logger.info(f"Request received. Method: {req.method}")
 
     # Handle CORS preflight
@@ -48,7 +43,6 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
             }
         )
     
-    # Only allow POST requests
     if req.method != "POST":
         logger.warn(f"Method not allowed: {req.method}")
         return https_fn.Response(
@@ -58,12 +52,10 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
         )
     
     # Authenticate user
-    # 2. Log before Auth
     logger.info("Attempting to authenticate user...")
     user = get_current_user(req)
     
     if not user:
-        # NOTE: The specific reason was already logged in shared/firebase.py
         logger.warn("Returning 401 Unauthorized")
         return https_fn.Response(
             {"error": "Unauthorized"},
@@ -113,7 +105,7 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
     else:
         cost = 1  # Single character
     
-    # IMPORTANT: Check credits availability first, but DON'T deduct yet
+    # Check credits availability (don't deduct yet)
     logger.info(f"Checking credit availability for user {uid} (cost: {cost})")
     from shared.credits import check_credits_available
     has_credits, error_msg = check_credits_available(uid, cost)
@@ -137,9 +129,12 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
     
     # Call inference service FIRST
     try:
-        logger.info(f"Forwarding request to Inference URL: {INFERENCE_URL}")
+        # CRITICAL FIX: Add /inference to the URL
+        inference_endpoint = f"{INFERENCE_URL}/inference"
+        logger.info(f"Forwarding request to: {inference_endpoint}")
+        
         response = requests.post(
-            INFERENCE_URL,
+            inference_endpoint,
             json=payload,
             headers={"X-Internal-Token": INTERNAL_TOKEN},
             timeout=180
@@ -158,10 +153,8 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
         can_proceed, deduct_error = check_and_deduct_credits(uid, cost)
         
         if not can_proceed:
-            # This shouldn't happen since we checked above, but log it
             logger.error(f"Credit deduction failed after successful generation for {uid}: {deduct_error}")
             # Still return the audio since generation succeeded
-            # You might want to track this for reconciliation
         
         # Return audio file
         logger.info(f"Returning audio to {uid}")
