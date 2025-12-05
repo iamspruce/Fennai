@@ -3,6 +3,10 @@ import time
 import shutil
 from pathlib import Path
 from huggingface_hub import snapshot_download
+import logging
+import traceback  # For full stack traces
+
+logger = logging.getLogger(__name__)  # ← ADD: Use logging instead of print
 
 MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
 
@@ -15,7 +19,7 @@ LOCK_FILE = CACHE_DIR / ".download.lock"
 def wait_for_unlock():
     """If another instance is downloading, wait."""
     while LOCK_FILE.exists():
-        print("Another instance is downloading the model... waiting...")
+        logger.info("Another instance is downloading the model... waiting...")  # Changed to logger
         time.sleep(3)
 
 
@@ -35,7 +39,7 @@ def validate_model_cache(model_path):
     # Check that snapshot directory has contents
     snapshot_contents = list(snapshot_dir.iterdir())
     if not snapshot_contents:
-        print(f"Warning: Snapshot directory empty at {snapshot_dir}")
+        logger.warning(f"Snapshot directory empty at {snapshot_dir}")  # Changed to logger
         return False
     
     # Check for essential model files in the snapshot
@@ -47,7 +51,7 @@ def validate_model_cache(model_path):
             if has_essential:
                 return True
     
-    print(f"Warning: No valid model files found in {snapshot_dir}")
+    logger.warning(f"No valid model files found in {snapshot_dir}")  # Changed to logger
     return False
 
 
@@ -61,14 +65,14 @@ def download_if_missing():
         
         # Validate the cached model
         if validate_model_cache(model_path):
-            print(f"Valid model found in cache: {model_path}")
+            logger.info(f"Valid model found in cache: {model_path}")  # Changed to logger
             return model_path
         else:
-            print(f"Incomplete model cache found at {model_path}, removing and re-downloading...")
+            logger.warning(f"Incomplete model cache found at {model_path}, removing and re-downloading...")  # Changed to logger
             try:
                 shutil.rmtree(model_path)
             except Exception as e:
-                print(f"Warning: Could not remove incomplete cache: {e}")
+                logger.warning(f"Could not remove incomplete cache: {e}")  # Changed to logger
 
     # Prevent multiple parallel downloads
     if LOCK_FILE.exists():
@@ -79,31 +83,32 @@ def download_if_missing():
         # Create lock
         LOCK_FILE.touch()
 
-        print(f"Downloading model: {MODEL_NAME} ...")
-        print(f"Cache directory: {CACHE_DIR}")
+        logger.info(f"Downloading model: {MODEL_NAME} ...")  # Changed to logger
+        logger.info(f"Cache directory: {CACHE_DIR}")  # Changed to logger
 
         path = snapshot_download(
             repo_id=MODEL_NAME,
             cache_dir=str(CACHE_DIR),
             local_dir_use_symlinks=False,
             resume_download=True,
-            token=os.getenv("HF_TOKEN"),
+            token=os.getenv("HF_TOKEN"),  # None is fine since not gated
         )
 
-        print(f"✓ Model download complete: {path}")
+        logger.info(f"✓ Model download complete: {path}")  # Changed to logger
         
         # Validate the downloaded model
         downloaded_path = Path(path).parent.parent.parent  # Go up to the cache root for this model
         if validate_model_cache(downloaded_path):
-            print("✓ Model validation successful")
+            logger.info("✓ Model validation successful")  # Changed to logger
         else:
-            print("Warning: Downloaded model may be incomplete")
+            logger.warning("Downloaded model may be incomplete")  # Changed to logger
         
         return path
 
     except Exception as e:
-        print(f"Download failed: {e}")
-        print("Model will try to download again on next request.")
+        logger.error(f"Download failed: {e}")  # Changed to logger.error
+        logger.error(traceback.format_exc())  # ← ADD: Full stack trace in logs
+        logger.info("Model will try to download again on next request.")  # Changed to logger
         # Do NOT raise—keeps Cloud Run alive
         return None
 
@@ -116,6 +121,6 @@ def download_if_missing():
 if __name__ == "__main__":
     result = download_if_missing()
     if result:
-        print(f"✓ Model ready at: {result}")
+        logger.info(f"✓ Model ready at: {result}")  # Changed to logger
     else:
-        print("✗ Model download failed")
+        logger.warning("✗ Model download failed")  # Changed to logger

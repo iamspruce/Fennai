@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     build-essential \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symlink for python command
