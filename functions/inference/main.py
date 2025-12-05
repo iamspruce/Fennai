@@ -1,232 +1,189 @@
+# main.py
 from flask import Flask, request, abort, jsonify
-import torch
-import numpy as np
-import soundfile as sf
-from io import BytesIO
 import os
 import logging
 import signal
+import torch
 from pathlib import Path
+from io import BytesIO
+import soundfile as sf
 
-from download_model import download_if_missing
+# === DO NOT import anything heavy here! ===
+# No vibevoice, no download_model, no processor/model imports at top level
 
-# VibeVoice imports
-from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
-from vibevoice.modular.modeling_vibevoice_inference import (
-    VibeVoiceForConditionalGenerationInference,
-)
-
-# Local utils
-from utils import (
-    get_optimal_attention_mode,
-    b64_to_voice_sample,
-    parse_dialogue_text,
-    extract_per_speaker_texts,
-    map_speakers_to_voice_samples,
-    log_startup_info,
-    detect_multi_speaker,
-)
-
-# === Configuration ===
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]  # Ensures logs go to Cloud Run stdout
 )
 logger = logging.getLogger(__name__)
 
+# === Config ===
 device = "cuda" if torch.cuda.is_available() else "cpu"
-attention_mode = get_optimal_attention_mode()
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
-
 MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
 CACHE_DIR = Path("/workspace/models")
 SAMPLE_RATE = 24000
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 
+# Global model/processor (lazy loaded)
 processor = None
 model = None
 
-# Create Flask app
 app = Flask(__name__)
 
-
-# -----------------------------------------------------
-# Timeout Handler
-# -----------------------------------------------------
+# === Timeout handler ===
 class TimeoutError(Exception):
     pass
 
-
 def timeout_handler(signum, frame):
-    raise TimeoutError("Generation timeout")
+    raise TimeoutError("Generation took too long")
 
-
-# -----------------------------------------------------
-# Helper: Find snapshot folder inside HF cache
-# -----------------------------------------------------
-def get_snapshot_path():
-    repo_prefix = f"models--{MODEL_NAME.replace('/', '--')}"
-    matches = list(CACHE_DIR.glob(repo_prefix + "/snapshots/*"))
-    return matches[0] if matches else None
-
-
-# -----------------------------------------------------
-# Model Loading (Lazy)
-# -----------------------------------------------------
-def load_model():
+# === Lazy loading function (THIS IS THE KEY) ===
+def ensure_model_loaded():
     global processor, model
 
-    logger.info(f"Preparing model: {MODEL_NAME}")
+    if model is not None and processor is not None:
+        logger.info("Model already loaded")
+        return
 
-    # Ensure model is downloaded
-    download_if_missing()
+    logger.info("First request received → starting model download & load...")
 
-    # Locate the HF snapshot
-    snapshot_dir = get_snapshot_path()
-    if not snapshot_dir:
-        logger.error("Model snapshot directory not found!")
-        processor = None
-        model = None
-        return False
-
-    logger.info(f"Using snapshot dir: {snapshot_dir}")
-
+    # ------------------------------
+    # Lazy imports (only now!)
+    # ------------------------------
     try:
-        # Load processor
-        processor = VibeVoiceProcessor.from_pretrained(str(snapshot_dir))
-        logger.info("✓ Processor loaded")
+        from download_model import download_if_missing
+        from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+        from vibevoice.modular.modeling_vibevoice_inference import (
+            VibeVoiceForConditionalGenerationInference,
+        )
+        from utils import (
+            get_optimal_attention_mode,
+            b64_to_voice_sample,
+            parse_dialogue_text,
+            extract_per_speaker_texts,
+            map_speakers_to_voice_samples,
+            log_startup_info,
+            detect_multi_speaker,
+        )
+        globals().update(locals())  # Make them available below
+    except Exception as e:
+        logger.error("Failed to import required modules!", exc_info=True)
+        raise
 
-        # Load model
+    # ------------------------------
+    # 1. Download model
+    # ------------------------------
+    try:
+        logger.info(f"Checking for model {MODEL_NAME} in {CACHE_DIR}...")
+        model_path = download_if_missing()
+        if not model_path:
+            logger.error("Model download failed or returned None")
+            abort(503, "Model download failed")
+        logger.info(f"Model ready at: {model_path}")
+    except Exception as e:
+        logger.error("Unexpected error during model download", exc_info=True)
+        abort(503, "Model download crashed")
+
+    # Find actual snapshot directory
+    snapshot_dir = None
+    repo_prefix = f"models--{MODEL_NAME.replace('/', '--')}"
+    candidates = list(CACHE_DIR.glob(f"{repo_prefix}*/snapshots/*"))
+    if candidates:
+        snapshot_dir = candidates[0]
+    if not snapshot_dir or not snapshot_dir.exists():
+        logger.error(f"Could not find snapshot directory under {CACHE_DIR}")
+        logger.error(f"Contents of /workspace/models: {list(CACHE_DIR.glob('**/*'))}")
+        abort(503, "Model snapshot not found")
+
+    logger.info(f"Loading model from snapshot: {snapshot_dir}")
+
+    # ------------------------------
+    # 2. Load processor & model
+    # ------------------------------
+    try:
+        processor = VibeVoiceProcessor.from_pretrained(str(snapshot_dir))
+        logger.info("Processor loaded")
+
         dtype = torch.float16 if device == "cuda" else torch.float32
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             str(snapshot_dir),
             torch_dtype=dtype,
         )
-        logger.info("✓ Model loaded")
+        logger.info("Model weights loaded")
 
-        # Attention mode
+        attn_mode = get_optimal_attention_mode()
         if hasattr(model.config, "attention_type"):
-            model.config.attention_type = attention_mode
-            logger.info(f"✓ Attention mode: {attention_mode}")
-
-        # Move to GPU/CPU
+            model.config.attention_type = attn_mode
         model.to(device)
         model.eval()
 
         log_startup_info()
-        logger.info("✓ Model fully ready")
-
-        return True
+        logger.info("Model fully loaded and moved to device!")
 
     except Exception as e:
-        logger.error(f"Model load failed: {e}", exc_info=True)
+        logger.error("CRITICAL: Failed to load model/processor", exc_info=True)
         processor = None
         model = None
-        return False
+        abort(503, "Failed to load model")
 
 
-# -----------------------------------------------------
-# Ensure Model is Loaded (Lazy Loading)
-# -----------------------------------------------------
-def ensure_model_loaded():
-    global processor, model
-    
-    if model is None or processor is None:
-        logger.info("Model not loaded yet, loading now...")
-        success = load_model()
-        if not success:
-            abort(503, "Model failed to load")
-
-
-# -----------------------------------------------------
-# Request Validation
-# -----------------------------------------------------
-def validate_request(data):
-    """Validate incoming request data."""
-    raw_text = data.get("text", "").strip()
-    voice_b64s = data.get("voice_samples", [])
-    
-    if not raw_text:
-        abort(400, "Missing text")
-    if not voice_b64s:
-        abort(400, "Missing voice_samples")
-    if not isinstance(voice_b64s, list):
-        abort(400, "voice_samples must be an array")
-    
-    return raw_text, voice_b64s
-
-
-# -----------------------------------------------------
-# Health Endpoint (No Auth Required)
-# -----------------------------------------------------
+# === Health endpoint (lightweight, no model load) ===
 @app.route("/", methods=["GET"])
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint for Cloud Run."""
-    logger.info("Health check requested")
-    
-    health_status = {
-        "status": "healthy" if (model is not None and processor is not None) else "initializing",
-        "device": device,
+    status = "healthy" if (model is not None and processor is not None) else "warming up"
+    info = {
+        "status": status,
         "model": MODEL_NAME,
+        "device": device,
         "sample_rate": SAMPLE_RATE,
-        "cuda_available": torch.cuda.is_available()
+        "cuda": torch.cuda.is_available(),
     }
-    
     if torch.cuda.is_available():
-        health_status["gpu"] = torch.cuda.get_device_name(0)
-    
-    return jsonify(health_status), 200
+        info["gpu"] = torch.cuda.get_device_name(0)
+    logger.info(f"Health check → {status}")
+    return jsonify(info), 200
 
 
-# -----------------------------------------------------
-# Inference Endpoint (Auth Required)
-# -----------------------------------------------------
+# === Inference endpoint ===
 @app.route("/inference", methods=["POST"])
 def inference():
     logger.info("Inference request received")
-    
-    # Lazy load model on first request
-    ensure_model_loaded()
-    
-    # Authentication
+
+    # Auth
     token = request.headers.get("X-Internal-Token")
-    if not token:
-        logger.warning("Missing authentication token")
-        abort(401, "Missing X-Internal-Token header")
-    
     if token != INTERNAL_TOKEN:
-        logger.warning(f"Invalid authentication token")
+        logger.warning("Invalid or missing auth token")
         abort(403, "Forbidden")
 
-    try:
-        # Parse and validate request
-        data = request.get_json(silent=True) or {}
-        raw_text, voice_b64s = validate_request(data)
-        
-        # Log request details
-        trace_id = request.headers.get('X-Cloud-Trace-Context', 'unknown')
-        logger.info(f"Request ID: {trace_id}")
-        logger.info(f"Input: {len(raw_text)} chars, {len(voice_b64s)} voice samples")
+    # Lazy load model
+    ensure_model_loaded()
 
-        # Multi-speaker detection and processing
-        is_multi = detect_multi_speaker(raw_text)
-        
-        if is_multi:
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_text = data.get("text", "").strip()
+        voice_b64s = data.get("voice_samples", [])
+
+        if not raw_text:
+            abort(400, "Missing 'text'")
+        if not voice_b64s or not isinstance(voice_b64s, list):
+            abort(400, "Missing or invalid 'voice_samples'")
+
+        # Multi-speaker logic
+        if detect_multi_speaker(raw_text):
             dialogues = parse_dialogue_text(raw_text)
             texts = extract_per_speaker_texts(dialogues)
             voice_samples = map_speakers_to_voice_samples(dialogues, voice_b64s)
-            logger.info(f"Multi-speaker mode: {len(set(s for s, _ in dialogues))} unique speakers")
+            logger.info(f"Multi-speaker: {len(texts)} parts")
         else:
             texts = [raw_text]
             voice_samples = [b64_to_voice_sample(voice_b64s[0])]
             logger.info("Single speaker mode")
 
-        # Validation
         if len(texts) != len(voice_samples):
-            abort(400, f"Voice/text mismatch: {len(texts)} texts, {len(voice_samples)} samples")
+            abort(400, "Text/voice sample count mismatch")
 
-        # Prepare inputs
-        logger.info("Preparing model inputs...")
         inputs = processor(
             text=texts,
             voice_samples=voice_samples,
@@ -234,13 +191,11 @@ def inference():
             padding=True,
         ).to(device)
 
-        # Set timeout (550s to leave buffer for Cloud Run 600s limit)
         signal.signal(signal.SIGALRM, timeout_handler)
         signal.alarm(550)
 
         try:
-            # Generate with proper parameters
-            logger.info("Starting audio generation...")
+            logger.info("Generating audio...")
             with torch.inference_mode():
                 generated = model.generate(
                     **inputs,
@@ -252,9 +207,8 @@ def inference():
                     inference_steps=10,
                 )
         finally:
-            signal.alarm(0)  # Cancel timeout
+            signal.alarm(0)
 
-        # Decode
         logger.info("Decoding audio...")
         audio = processor.decode(generated, skip_special_tokens=True)
         audio_np = audio.cpu().numpy().squeeze()
@@ -262,31 +216,27 @@ def inference():
         if audio_np.size == 0:
             abort(500, "Generated empty audio")
 
-        # WAV output
         buffer = BytesIO()
         sf.write(buffer, audio_np, SAMPLE_RATE, format="WAV")
         buffer.seek(0)
 
-        duration = audio_np.size / SAMPLE_RATE
-        logger.info(f"✓ Done: {duration:.2f}s audio generated")
+        duration = len(audio_np) / SAMPLE_RATE
+        logger.info(f"Success: Generated {duration:.2f}s of audio")
 
         return buffer.getvalue(), 200, {"Content-Type": "audio/wav"}
 
     except TimeoutError:
-        logger.error("Generation timed out")
-        abort(504, "Request timeout - text may be too long")
-    
+        logger.error("Generation timeout (>550s)")
+        abort(504, "Generation timeout")
     except Exception as e:
-        logger.error(f"Inference failed: {e}", exc_info=True)
-        abort(500, str(e))
-    
+        logger.error("Inference failed", exc_info=True)
+        abort(500, "Internal error during inference")
     finally:
-        # Clean up GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    logger.info(f"Starting Flask server on port {port}")
+    logger.info(f"Starting Flask server on port {port}...")
     app.run(host="0.0.0.0", port=port, debug=False)
