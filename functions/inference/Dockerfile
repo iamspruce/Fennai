@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir gunicorn Flask==3.0.0
 # Copy app code
 COPY . .
 
-# Create model cache directory (for Persistent Disk)
+# Create model cache directory (mounted to Cloud Storage bucket)
 RUN mkdir -p /models && chmod -R 777 /models
 
 # Environment variables

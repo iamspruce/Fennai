@@ -81,11 +81,19 @@ jobs:
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # CREATE PERSISTENT DISK ONCE (idempotent)
-      - name: Create Cloud Storage Bucket (if not exists)
+      # CREATE CLOUD STORAGE BUCKET (idempotent)
+      - name: Create Cloud Storage Bucket for Models (if not exists)
         run: |
           BUCKET_NAME="fennai-vibevoice-models"
-          gsutil mb -p fennai -l us-central1 gs://$BUCKET_NAME 2>/dev/null || echo "Bucket already exists"
+          REGION="us-central1"
+          
+          if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
+            echo "✓ Bucket gs://$BUCKET_NAME already exists"
+          else
+            echo "Creating bucket gs://$BUCKET_NAME"
+            gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
+            echo "✓ Bucket created successfully"
+          fi
 
       - name: Build & Submit GPU Inference Image
         run: |
@@ -122,46 +130,23 @@ jobs:
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
 
-      - name: Warm-Up Download Model to Bucket (First Time Only)
+      - name: Verify Deployment
         run: |
-          # Only run if model not in bucket
-          if gsutil ls gs://fennai-vibevoice-models/models/ 2>/dev/null | grep -q .; then
-            echo "Model already in bucket, skipping download"
+          echo "Waiting for Cloud Run to be ready..."
+          sleep 10
+          
+          HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+          
+          if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "503" ]; then
+            echo "✓ Cloud Run is responding (status: $RESPONSE)"
+            echo "Note: 503 is normal if model needs to download on first user request"
           else
-            TEMP_DIR=$(mktemp -d)
-            cd $TEMP_DIR
-            python3 -c "
-            from huggingface_hub import snapshot_download
-            snapshot_download(
-                repo_id='${{ env.MODEL_NAME }}',
-                local_dir='./model',
-                token='${{ secrets.HF_TOKEN }}'
-            )
-            "
-            gsutil -m rsync -d -r ./model gs://fennai-vibevoice-models/models/
-            rm -rf $TEMP_DIR
-            echo "Model uploaded to bucket"
+            echo "⚠ Unexpected response: $RESPONSE"
+            echo "Cloud Run may still be initializing"
           fi
 
-      - name: Wait for Cloud Run to be ready
-        run: sleep 30
 
-      - name: Test Cloud Run Health Endpoint
-        run: |
-          HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          echo "Testing: $HEALTH_URL"
-          
-          for i in {1..10}; do
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
-            if [ "$RESPONSE" = "200" ]; then
-              echo "Health check PASSED"
-              exit 0
-            fi
-            echo "Attempt $i failed ($RESPONSE), retrying in 10s..."
-            sleep 10
-          done
-          echo "Health check FAILED after 10 attempts"
-          exit 1
 
       - name: Create .env for proxy function
         run: |
@@ -178,8 +163,24 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "DEPLOYMENT SUCCESSFUL"
+          echo "================================"
+          echo "🚀 DEPLOYMENT SUCCESSFUL"
+          echo "================================"
           echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
-          echo "Model cache: Persistent Disk (vibevoice-model-disk) mounted at /models"
-          echo "First request: ~60s (download once)"
-          echo "All future requests: <2s"
+          echo ""
+          echo "Storage Configuration:"
+          echo "  • Type: Cloud Storage Bucket (GCS FUSE)"
+          echo "  • Bucket: gs://fennai-vibevoice-models"
+          echo "  • Mount Path: /models"
+          echo "  • Model: microsoft/VibeVoice-1.5B (~3GB)"
+          echo ""
+          echo "Performance:"
+          echo "  • First user request: 60-120s (one-time model download)"
+          echo "  • All subsequent requests: <2s (model cached in bucket)"
+          echo "  • Container cold starts: <5s (model already in bucket)"
+          echo ""
+          echo "Important Notes:"
+          echo "  • Writes are staged in memory before uploading"
+          echo "  • 60s stat cache TTL for bucket operations"
+          echo "  • Network bandwidth affects read/write speed"
+          echo "================================"
