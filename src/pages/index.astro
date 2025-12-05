@@ -16,7 +16,7 @@ if (user) {
 		<header class="home-header">
 			<div class="logo">
 				<Logo size={58} />
-				<h4>Fennai</h4>
+				<h4 class="logo-text">Fennai</h4>
 			</div>
 
 			<button class="btn-login" id="open-login"> Login / Sign Up </button>
@@ -96,13 +96,12 @@ if (user) {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: var(--space-2xs);
+		padding: var(--space-3xs);
 	}
 
 	.logo {
 		display: flex;
 		align-items: center;
-		gap: var(--space-2xs);
 	}
 
 	.logo-text {
@@ -110,6 +109,7 @@ if (user) {
 		font-weight: 700;
 		letter-spacing: -0.02em;
 		color: var(--mauve-12);
+		transform: translateY(-4px);
 	}
 
 	.btn-login {
