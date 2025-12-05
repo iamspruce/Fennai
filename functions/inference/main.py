@@ -67,15 +67,18 @@ def ensure_model_loaded():
     logger.info("Model loaded and ready!")
 
 @app.route("/health", methods=["GET"])
-def health():
-    ensure_model_loaded()
+def health():    
+    is_loaded = model is not None
+    
+    status_code = 200
+    status_msg = "healthy"
+    
     return jsonify({
-        "status": "healthy",
-        "model": MODEL_NAME,
+        "status": status_msg,
+        "model_loaded": is_loaded,
+        "model_name": MODEL_NAME,
         "device": device,
-        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        "cache_dir": str(CACHE_DIR),
-    })
+    }), status_code
 
 @app.route("/inference", methods=["POST"])
 def inference():

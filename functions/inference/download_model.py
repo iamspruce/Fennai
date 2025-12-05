@@ -8,33 +8,39 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "/models"))
-
-# This is the actual directory where we want the model files to live
-TARGET_DIR = CACHE_DIR / "VibeVoice-1.5B"   # ← simple flat name, no --models-- nonsense
+TARGET_DIR = CACHE_DIR / "VibeVoice-1.5B"
 
 def download_if_missing() -> str:
-    """
-    Downloads the model directly into a flat directory /models/VibeVoice-1.5B
-    instead of using HF's complicated cache + symlinks structure.
-    This is the only way that works reliably with GCS FUSE on Cloud Run.
-    """
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # DEFINITIVE FIX: Check for a specific marker file, not just config.json
+    completion_marker = TARGET_DIR / ".download_complete"
 
-    # If config.json already exists → assume complete
-    if (TARGET_DIR / "config.json").exists():
-        logger.info(f"Model already present at {TARGET_DIR}")
+    if completion_marker.exists():
+        logger.info(f"Model verified and present at {TARGET_DIR}")
         return str(TARGET_DIR)
 
-    logger.info(f"Downloading {MODEL_NAME} directly into {TARGET_DIR} (GCS-friendly layout)...")
+    logger.info(f"Downloading {MODEL_NAME} to {TARGET_DIR}...")
 
-    snapshot_download(
-        repo_id=MODEL_NAME,
-        local_dir=TARGET_DIR,           # ← THIS IS THE KEY
-        local_dir_use_symlinks=False,   # ← AND THIS IS CRUCIAL
-        resume_download=True,
-        token=os.getenv("HF_TOKEN"),
-        ignore_patterns=["*.msgpack", "*.h5"],  # optional: skip unused files
-    )
+    try:
+        snapshot_download(
+            repo_id=MODEL_NAME,
+            local_dir=TARGET_DIR,
+            local_dir_use_symlinks=False,
+            resume_download=True, # crucial: will pick up where it left off
+            token=os.getenv("HF_TOKEN"),
+            ignore_patterns=["*.msgpack", "*.h5"],
+        )
+        
+        # Only write this file if the download completes without error
+        completion_marker.touch() 
+        logger.info(f"Model successfully downloaded and marked complete.")
+        
+    except Exception as e:
+        logger.error(f"Download failed: {e}")
+        # Optional: remove the marker if it exists to force retry next time
+        if completion_marker.exists():
+            completion_marker.unlink()
+        raise e
 
-    logger.info(f"Model successfully downloaded to {TARGET_DIR}")
     return str(TARGET_DIR)

@@ -94,11 +94,11 @@ jobs:
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
             echo "✓ Bucket created successfully"
           fi
-          
+
       - name: Remove old broken HuggingFace cache (one-time cleanup)
         run: |
           echo "Removing old broken cache structure from the bucket (safe to run multiple times)..."
-          gsutil -m rm -r gs://fennai-vibevoice-models/models--microsoft--VibeVoice-1.5B || echo "Nothing to delete or already gone"
+          gsutil -m rm -r gs://fennai-vibevoice-models/VibeVoice-1.5B || echo "Nothing to delete or already gone"
           echo "Old cache removed"
 
       - name: Build & Submit GPU Inference Image
