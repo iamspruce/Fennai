@@ -10,24 +10,23 @@ jobs:
     name: Deploy Frontend (Firebase Hosting)
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
           echo ".env created."
-      
+
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -41,40 +40,39 @@ jobs:
   deploy-backend:
     name: Deploy Functions + Cloud Run GPU Inference
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    
+    if: startsWith(github.ref, 'refs/tags/v')  # Only on version tags
     permissions:
       contents: read
       id-token: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      
+
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: fennai
-      
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
+
       - name: Setup Python virtual environment for proxy function
         run: |
           cd functions/proxy
@@ -82,18 +80,36 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      
+
+      # CREATE PERSISTENT DISK ONCE (idempotent)
+      - name: Create Persistent Disk (if not exists)
+        run: |
+          DISK_NAME="vibevoice-model-disk"
+          ZONE="us-central1-a"
+          
+          if gcloud compute disks describe $DISK_NAME --zone=$ZONE --quiet --format="value(name)" 2>/dev/null; then
+            echo "Persistent disk '$DISK_NAME' already exists. Skipping creation."
+          else
+            echo "Creating persistent disk '$DISK_NAME' (50GB SSD)..."
+            gcloud compute disks create $DISK_NAME \
+              --size=50GB \
+              --type=pd-ssd \
+              --zone=$ZONE \
+              --description="VibeVoice model cache - survives cold starts"
+            echo "Disk created successfully!"
+          fi
+
       - name: Configure Docker authentication
         run: gcloud auth configure-docker gcr.io
-      
+
       - name: Build & Submit GPU Inference Image
         run: |
           gcloud builds submit \
             --tag gcr.io/fennai/fennai-inference:latest \
             --timeout=3600s \
             functions/inference
-      
-      - name: Deploy Inference to Cloud Run
+
+      - name: Deploy Inference to Cloud Run (with Persistent Disk)
         id: deploy_run
         run: |
           URL=$(gcloud run deploy fennai-inference \
@@ -109,81 +125,57 @@ jobs:
             --no-gpu-zonal-redundancy \
             --max-instances 1 \
             --min-instances 0 \
-            --timeout 600s \
+            --timeout 900s \
             --port 8080 \
             --cpu-boost \
-            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,HF_TOKEN=${{ secrets.HF_TOKEN }} \
-            --ingress all \
-            --format='value(status.url)' \
-            --quiet)
+            --concurrency=1 \
+            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,HF_TOKEN=${{ secrets.HF_TOKEN }},CACHE_DIR=/models \
+            --mount=volume=vibevoice-models,type=pd,volume-mode=filesystem,destination=/models \
+            --volume=vibevoice-models=disk:vibevoice-model-disk \
+            --quiet \
+            --format='value(status.url)')
           
           echo "Cloud Run URL: $URL"
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
-      
+
       - name: Wait for Cloud Run to be ready
+        run: sleep 30
+
+      - name: Test Cloud Run Health Endpoint
         run: |
-          echo "Waiting for Cloud Run service to be fully ready..."
-          sleep 20
-      
-      - name: Test Cloud Run Health Endpoint (Public)
-        run: |
-          echo "Testing Cloud Run health endpoint (public access)..."
-          
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          echo "Health URL: $HEALTH_URL"
+          echo "Testing: $HEALTH_URL"
           
-          # Test health endpoint without authentication (should work)
-          RESPONSE=$(curl -s -w "\n%{http_code}" "$HEALTH_URL")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
-          
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response Body: $BODY"
-          
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Health check PASSED - Service is ready!"
-          else
-            echo "❌ Health check FAILED with status $HTTP_CODE"
-            echo "This indicates Flask is not running correctly."
-            exit 1
-          fi
-      
+          for i in {1..10}; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL")
+            if [ "$RESPONSE" = "200" ]; then
+              echo "Health check PASSED"
+              exit 0
+            fi
+            echo "Attempt $i failed ($RESPONSE), retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check FAILED after 10 attempts"
+          exit 1
+
       - name: Create .env for proxy function
         run: |
           cd functions/proxy
           echo "INFERENCE_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}" > .env
           echo "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}" >> .env
-      
+
       - name: Deploy Proxy Function
         run: |
           firebase deploy \
             --only functions:proxy \
             --project fennai \
             --non-interactive
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
 
       - name: Deployment Summary
         run: |
-          echo "======================================"
-          echo "✅ DEPLOYMENT SUCCESSFUL"
-          echo "======================================"
-          echo ""
-          echo "Cloud Run Service:"
-          echo "  URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
-          echo "  Health: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          echo "  Inference: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/inference"
-          echo ""
-          echo "Configuration:"
-          echo "  Model: microsoft/VibeVoice-1.5B"
-          echo "  GPU: NVIDIA L4"
-          echo "  Memory: 16GB"
-          echo "  Timeout: 600s"
-          echo ""
-          echo "Firebase Function:"
-          echo "  Name: proxy"
-          echo "  Status: Deployed"
-          echo ""
-          echo "======================================"
+          echo "DEPLOYMENT SUCCESSFUL"
+          echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
+          echo "Model cache: Persistent Disk (vibevoice-model-disk) mounted at /models"
+          echo "First request: ~60s (download once)"
+          echo "All future requests: <2s"

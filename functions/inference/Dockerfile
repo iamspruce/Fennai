@@ -1,7 +1,7 @@
 # Use NVIDIA CUDA base with Python
 FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 
-# Install Python and system dependencies
+# Install system dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     python3.10 \
@@ -16,10 +16,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symlink for python command
+# Create python symlink
 RUN ln -s /usr/bin/python3.10 /usr/bin/python
 
-# Set up Python virtual environment
+# Create and activate virtual environment
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3.10 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
@@ -29,39 +29,51 @@ RUN pip install --upgrade pip setuptools wheel
 
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements first (caching)
 COPY requirements.txt .
 
-# Install PyTorch with CUDA support FIRST
+# Install PyTorch + CUDA FIRST (critical for correct wheel)
 RUN pip install --no-cache-dir \
-    torch>=2.1.0 \
-    torchaudio>=2.1.0 \
+    torch==2.3.0+cu121 \
+    torchaudio==2.3.0+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install remaining dependencies
+# Install everything else
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Flask explicitly
-RUN pip install --no-cache-dir Flask==3.0.0
+# Install Gunicorn + Flask
+RUN pip install --no-cache-dir gunicorn Flask==3.0.0
 
-# Copy application code
+# Copy app code
 COPY . .
 
-# Create model cache directory with proper permissions
-RUN mkdir -p /workspace/models && chmod -R 777 /workspace/models
+# Create model cache directory (for Persistent Disk)
+RUN mkdir -p /models && chmod -R 777 /models
 
-# Set environment variables
+# Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
 ENV CUDA_VISIBLE_DEVICES=0
 ENV MODEL_NAME=microsoft/VibeVoice-1.5B
+ENV CACHE_DIR=/models
 
 # Expose port
 EXPOSE 8080
 
-# Health check - simpler, hits root endpoint
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
-# Run Flask app directly
-CMD exec python main.py
+# Use Gunicorn (PRODUCTION READY)
+CMD exec gunicorn \
+    --bind 0.0.0.0:$PORT \
+    --workers 1 \
+    --threads 1 \
+    --worker-class sync \
+    --timeout 900 \
+    --max-requests 10 \
+    --max-requests-jitter 5 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile - \
+    "main:app"

@@ -25,9 +25,9 @@ app = Flask(__name__)
 # Config
 device = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
-CACHE_DIR = Path("/workspace/models")
+CACHE_DIR = Path(os.getenv("CACHE_DIR", "/models"))  # ← From Persistent Disk
 SAMPLE_RATE = 24000
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN", "your-secret-token")
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
 
 processor = None
 model = None
@@ -42,26 +42,28 @@ def ensure_model_loaded():
     from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
     from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
 
-    model_path = download_if_missing()
-    snapshot_dir = next((p for p in (CACHE_DIR / f"models--{MODEL_NAME.replace('/', '--')}").rglob("snapshots/*")), None)
-    if not snapshot_dir:
-        abort(503, "Model not found")
+    # This returns the exact snapshot directory
+    snapshot_dir = Path(download_if_missing())
+    if not snapshot_dir.exists() or not (snapshot_dir / "config.json").exists():
+        abort(503, "Model not available")
+
+    logger.info(f"Loading model from {snapshot_dir}")
 
     processor = VibeVoiceProcessor.from_pretrained(str(snapshot_dir))
     dtype = torch.float16 if device == "cuda" else torch.float32
     model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-        str(snapshot_dir), torch_dtype=dtype
+        str(snapshot_dir),
+        torch_dtype=dtype,
     )
 
+    # Attention mode
     attn_mode = get_optimal_attention_mode()
     if hasattr(model.config, "attention_type"):
         model.config.attention_type = attn_mode
 
     model.to(device)
     model.eval()
-
-    # CRITICAL: Set DDPM steps for fast high-quality inference
-    model.set_ddpm_inference_steps(10)  # 8–12 is ideal
+    model.set_ddpm_inference_steps(10)  # Critical!
 
     log_startup_info()
     logger.info("Model loaded and ready!")
@@ -73,7 +75,8 @@ def health():
         "status": "healthy",
         "model": MODEL_NAME,
         "device": device,
-        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        "cache_dir": str(CACHE_DIR),
     })
 
 @app.route("/inference", methods=["POST"])
@@ -82,7 +85,7 @@ def inference():
 
     token = request.headers.get("X-Internal-Token")
     if token != INTERNAL_TOKEN:
-        abort(403)
+        abort(403, "Forbidden")
 
     data = request.get_json() or {}
     raw_text = data.get("text", "").strip()
@@ -93,18 +96,17 @@ def inference():
     if not voice_b64s:
         abort(400, "Missing 'voice_samples'")
 
-    # === TEXT: Use as-is if multi-speaker, otherwise wrap ===
-    if detect_multi_speaker(raw_text):
-        text_to_use = raw_text.strip()
-    else:
+    # Text formatting
+    text_to_use = raw_text.strip()
+    if not detect_multi_speaker(text_to_use):
         text_to_use = format_text_for_vibevoice(raw_text)
 
     logger.info(f"Using text:\n{text_to_use}")
 
-    # === VOICE SAMPLES: Map in correct order ===
+    # Voice samples
     voice_samples = map_speakers_to_voice_samples(text_to_use, voice_b64s)
 
-    # === INFERENCE ===
+    # Inference
     inputs = processor(
         text=[text_to_use],
         voice_samples=voice_samples,
@@ -115,9 +117,8 @@ def inference():
     with torch.inference_mode():
         generated = model.generate(
             **inputs,
-            do_sample=False,        # CRITICAL
+            do_sample=False,
             cfg_scale=1.3,
-            max_new_tokens=None,    # Let model decide
         )
 
     audio = processor.decode(generated, skip_special_tokens=True)
@@ -132,4 +133,9 @@ def inference():
     sf.write(buffer, audio_np, SAMPLE_RATE, format="WAV")
     buffer.seek(0)
 
-    return send_file(buffer, mimetype="audio/wav", as_attachment=True, download_name="output.wav")
+    return send_file(
+        buffer,
+        mimetype="audio/wav",
+        as_attachment=True,
+        download_name="output.wav"
+    )
