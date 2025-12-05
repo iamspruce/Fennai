@@ -44,8 +44,6 @@ def ensure_model_loaded():
 
     # This returns the exact snapshot directory
     snapshot_dir = Path(download_if_missing())
-    if not snapshot_dir.exists() or not (snapshot_dir / "config.json").exists():
-        abort(503, "Model not available")
 
     logger.info(f"Loading model from {snapshot_dir}")
 
