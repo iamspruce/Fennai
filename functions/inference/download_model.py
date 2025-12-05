@@ -1,7 +1,6 @@
 # download_model.py
 import os
 from pathlib import Path
-from huggingface_hub import snapshot_download
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,36 +10,36 @@ CACHE_DIR = Path(os.getenv("CACHE_DIR", "/models"))
 TARGET_DIR = CACHE_DIR / "VibeVoice-1.5B"
 
 def download_if_missing() -> str:
+    """
+    Verifies model exists in mounted bucket.
+    Model should be pre-downloaded during deployment.
+    
+    HuggingFace's snapshot_download with local_dir creates a 
+    .cache/huggingface/ subfolder to track completion.
+    """
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
     
-    # DEFINITIVE FIX: Check for a specific marker file, not just config.json
-    completion_marker = TARGET_DIR / ".download_complete"
-
-    if completion_marker.exists():
-        logger.info(f"Model verified and present at {TARGET_DIR}")
+    # Check for HuggingFace's own metadata (indicates successful download)
+    hf_cache = TARGET_DIR / ".cache" / "huggingface"
+    config_file = TARGET_DIR / "config.json"
+    
+    if hf_cache.exists() and config_file.exists():
+        logger.info(f"✓ Model present at {TARGET_DIR} (HuggingFace metadata found)")
         return str(TARGET_DIR)
-
-    logger.info(f"Downloading {MODEL_NAME} to {TARGET_DIR}...")
-
-    try:
-        snapshot_download(
-            repo_id=MODEL_NAME,
-            local_dir=TARGET_DIR,
-            local_dir_use_symlinks=False,
-            resume_download=True, # crucial: will pick up where it left off
-            token=os.getenv("HF_TOKEN"),
-            ignore_patterns=["*.msgpack", "*.h5"],
-        )
-        
-        # Only write this file if the download completes without error
-        completion_marker.touch() 
-        logger.info(f"Model successfully downloaded and marked complete.")
-        
-    except Exception as e:
-        logger.error(f"Download failed: {e}")
-        # Optional: remove the marker if it exists to force retry next time
-        if completion_marker.exists():
-            completion_marker.unlink()
-        raise e
+    
+    if config_file.exists():
+        logger.warning("⚠️ Model files exist but no HuggingFace metadata")
+        logger.warning("Model may be incomplete - attempting to use anyway")
+        return str(TARGET_DIR)
+    
+    # Model not found
+    logger.error(f"❌ Model not found at {TARGET_DIR}")
+    logger.error("Model should be pre-downloaded to bucket during deployment")
+    logger.error(f"Expected path: gs://fennai-vibevoice-models/VibeVoice-1.5B")
+    
+    raise RuntimeError(
+        f"Model not found at {TARGET_DIR}. "
+        "Ensure deployment completed successfully and model was uploaded to bucket."
+    )
 
     return str(TARGET_DIR)

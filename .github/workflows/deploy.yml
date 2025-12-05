@@ -95,11 +95,108 @@ jobs:
             echo "✓ Bucket created successfully"
           fi
 
-      - name: Remove old broken HuggingFace cache (one-time cleanup)
+      # NEW: Pre-download model to bucket if not present
+      - name: Pre-download Model to Bucket (One-Time)
         run: |
-          echo "Removing old broken cache structure from the bucket (safe to run multiple times)..."
-          gsutil -m rm -r gs://fennai-vibevoice-models/VibeVoice-1.5B || echo "Nothing to delete or already gone"
-          echo "Old cache removed"
+          BUCKET_NAME="fennai-vibevoice-models"
+          MODEL_NAME="microsoft/VibeVoice-1.5B"
+          BUCKET_PATH="gs://$BUCKET_NAME/VibeVoice-1.5B"
+          
+          echo "Checking if model exists in bucket..."
+          
+          # Check for HuggingFace's own metadata cache
+          if gsutil -q stat "$BUCKET_PATH/.cache/huggingface/download/.locks/models--microsoft--VibeVoice-1.5B/.gitignore" 2>/dev/null; then
+            echo "✓ HuggingFace metadata found - model was previously downloaded successfully"
+            
+            # Quick sanity check
+            if gsutil -q stat "$BUCKET_PATH/config.json" 2>/dev/null; then
+              echo "✓ Model verified. Skipping download."
+              exit 0
+            else
+              echo "⚠️ Metadata exists but model files missing. Re-downloading..."
+            fi
+          fi
+          
+          echo "⬇️ Downloading model to bucket..."
+          echo "This is a one-time operation (~3GB, may take 2-5 minutes)"
+          
+          # Install huggingface-hub
+          pip install huggingface-hub
+          
+          # Download model using HuggingFace's built-in caching/resume
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import sys
+          from pathlib import Path
+          from huggingface_hub import snapshot_download
+          
+          print("Downloading model from HuggingFace...")
+          try:
+              # Download to temp location - HF handles completion tracking
+              snapshot_dir = snapshot_download(
+                  repo_id="microsoft/VibeVoice-1.5B",
+                  local_dir="./temp_model",
+                  local_dir_use_symlinks=False,
+                  resume_download=True,  # HF handles partial downloads
+                  token=os.getenv("HF_TOKEN"),
+                  ignore_patterns=["*.msgpack", "*.h5"],
+              )
+              print(f"✓ HuggingFace completed download to {snapshot_dir}")
+              
+          except Exception as e:
+              print(f"❌ Download failed: {e}")
+              sys.exit(1)
+          PYTHON_SCRIPT
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Model download failed"
+            exit 1
+          fi
+          
+          # Upload entire directory including HF's cache metadata
+          echo "Uploading to bucket (including HuggingFace metadata)..."
+          gsutil -m rsync -r ./temp_model "$BUCKET_PATH"
+          
+          if [ $? -ne 0 ]; then
+            echo "❌ Upload to bucket failed"
+            rm -rf ./temp_model
+            exit 1
+          fi
+          
+          # Cleanup
+          rm -rf ./temp_model
+          
+          echo "✓ Model successfully uploaded to bucket"
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      - name: Verify Model in Bucket (Final Check)
+        run: |
+          BUCKET_PATH="gs://fennai-vibevoice-models/VibeVoice-1.5B"
+          
+          echo "Running final model verification..."
+          
+          # Check critical model files exist
+          REQUIRED_FILES=(
+            "config.json"
+            "preprocessor_config.json"
+            "generation_config.json"
+          )
+          
+          MISSING=""
+          for file in "${REQUIRED_FILES[@]}"; do
+            if ! gsutil -q stat "$BUCKET_PATH/$file" 2>/dev/null; then
+              MISSING="$MISSING $file"
+            fi
+          done
+          
+          if [ -n "$MISSING" ]; then
+            echo "❌ Verification failed. Missing files:$MISSING"
+            exit 1
+          fi
+          
+          echo "✓ All critical files present"
+          echo "✓ Model ready for deployment"
 
       - name: Build & Submit GPU Inference Image
         run: |
@@ -146,13 +243,11 @@ jobs:
           
           if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "503" ]; then
             echo "✓ Cloud Run is responding (status: $RESPONSE)"
-            echo "Note: 503 is normal if model needs to download on first user request"
+            echo "Note: 503 is normal if model needs to load on first request"
           else
             echo "⚠ Unexpected response: $RESPONSE"
             echo "Cloud Run may still be initializing"
           fi
-
-
 
       - name: Create .env for proxy function
         run: |
@@ -179,14 +274,11 @@ jobs:
           echo "  • Bucket: gs://fennai-vibevoice-models"
           echo "  • Mount Path: /models"
           echo "  • Model: microsoft/VibeVoice-1.5B (~3GB)"
+          echo "  • Status: Pre-downloaded and cached"
           echo ""
           echo "Performance:"
-          echo "  • First user request: 60-120s (one-time model download)"
-          echo "  • All subsequent requests: <2s (model cached in bucket)"
-          echo "  • Container cold starts: <5s (model already in bucket)"
+          echo "  • First container start: 5-10s (model read from bucket)"
+          echo "  • Inference requests: <2s"
+          echo "  • Cold starts: 5-10s (model already in bucket)"
           echo ""
-          echo "Important Notes:"
-          echo "  • Writes are staged in memory before uploading"
-          echo "  • 60s stat cache TTL for bucket operations"
-          echo "  • Network bandwidth affects read/write speed"
           echo "================================"
