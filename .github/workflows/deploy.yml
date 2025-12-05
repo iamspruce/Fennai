@@ -176,11 +176,11 @@ jobs:
           
           echo "Running final model verification..."
           
-          # Check critical model files exist
+          # Check critical model files that actually exist for VibeVoice-1.5B
           REQUIRED_FILES=(
             "config.json"
             "preprocessor_config.json"
-            "generation_config.json"
+            "model.safetensors.index.json"
           )
           
           MISSING=""
@@ -192,6 +192,12 @@ jobs:
           
           if [ -n "$MISSING" ]; then
             echo "❌ Verification failed. Missing files:$MISSING"
+            exit 1
+          fi
+          
+          # Verify at least one model shard exists
+          if ! gsutil ls "$BUCKET_PATH/model-*.safetensors" 2>/dev/null | head -n1; then
+            echo "❌ No model weight files (*.safetensors) found in bucket"
             exit 1
           fi
           
