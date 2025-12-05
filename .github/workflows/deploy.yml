@@ -112,7 +112,7 @@ jobs:
             --timeout 600s \
             --port 8080 \
             --cpu-boost \
-            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B \
+            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,HF_TOKEN=${{ secrets.HF_TOKEN }} \
             --ingress all \
             --format='value(status.url)' \
             --quiet)

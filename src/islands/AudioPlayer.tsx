@@ -158,6 +158,7 @@ export default function AudioPlayer({
     generateWaveform();
   }, [audioUrl, audioBlob]);
 
+  // Draw the waveform (Rounded "Voice Note" Style)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || waveformData.length === 0) return;
@@ -175,20 +176,37 @@ export default function AudioPlayer({
 
       const width = rect.width;
       const height = rect.height;
-      const barWidth = width / waveformData.length;
+
+      // CONFIGURATION
+      const gap = 2; // Pixel gap between bars
+      const barCount = waveformData.length;
+      const totalGapSpace = gap * (barCount - 1);
+      const availableSpace = width - totalGapSpace;
+      const barWidth = availableSpace / barCount;
       const progress = duration > 0 ? currentTime / duration : 0;
 
       ctx.clearRect(0, 0, width, height);
 
+      // We use 'round' lineCap to make the bars look like pills
+      ctx.lineCap = 'round';
+      ctx.lineWidth = barWidth;
+
       waveformData.forEach((value, index) => {
-        const barHeight = value * height * 0.8;
-        const x = index * barWidth;
-        const y = (height - barHeight) / 2;
+        // Minimum height ensures the bar is always visible even when silent
+        const barHeight = Math.max(value * height * 0.8, barWidth);
+
+        const x = index * (barWidth + gap) + (barWidth / 2); // Center x on the line
+        const yCenter = height / 2;
+        const halfHeight = barHeight / 2;
 
         const barProgress = index / waveformData.length;
-        ctx.fillStyle = barProgress <= progress ? progressColor : waveColor;
 
-        ctx.fillRect(x, y, barWidth * 0.5, barHeight);
+        ctx.strokeStyle = barProgress <= progress ? progressColor : waveColor;
+
+        ctx.beginPath();
+        ctx.moveTo(x, yCenter - halfHeight);
+        ctx.lineTo(x, yCenter + halfHeight);
+        ctx.stroke();
       });
     };
 
