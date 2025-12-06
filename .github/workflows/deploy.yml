@@ -1,10 +1,8 @@
 name: Deploy to Firebase & Cloud Run
-
 on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
-
 jobs:
   deploy-hosting:
     name: Deploy Frontend (Firebase Hosting)
@@ -13,20 +11,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Install dependencies
         run: npm ci
-
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
           echo ".env created."
-
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -44,35 +38,29 @@ jobs:
     permissions:
       contents: read
       id-token: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
+          service_account_file: /tmp/gcp-credentials.json
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: fennai
-
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Setup Python virtual environment for proxy function
         run: |
           cd functions/proxy
@@ -80,13 +68,11 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
       # CREATE OUTPUT BUCKET (for audio files)
       - name: Create Cloud Storage Bucket for Audio Output
         run: |
           BUCKET_NAME="fennai-voice-output"
           REGION="us-central1"
-          
           if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
             echo "✓ Bucket gs://$BUCKET_NAME already exists"
           else
@@ -94,7 +80,6 @@ jobs:
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
             echo "✓ Bucket created successfully"
           fi
-          
           # Set 24-hour lifecycle policy for auto-deletion
           echo '{
             "lifecycle": {
@@ -104,17 +89,14 @@ jobs:
               }]
             }
           }' > lifecycle.json
-          
           gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
           echo "✓ Lifecycle policy set (24-hour auto-delete)"
           rm lifecycle.json
-
       # CREATE CLOUD TASKS QUEUE
       - name: Create Cloud Tasks Queue
         run: |
           QUEUE_NAME="voice-generation-queue"
           LOCATION="us-central1"
-          
           # Check if queue exists
           if gcloud tasks queues describe $QUEUE_NAME --location=$LOCATION 2>/dev/null; then
             echo "✓ Queue $QUEUE_NAME already exists"
@@ -131,76 +113,67 @@ jobs:
               --max-retry-duration=1800s
             echo "✓ Queue created successfully"
           fi
-
       # BUILD AND DEPLOY CLOUD RUN (with baked-in model)
       - name: Build GPU Inference Image (with baked model)
         run: |
           echo "Building Docker image with model baked in..."
-          echo "⚠️  This will take 5-10 minutes due to model download (~3GB)"
-          
+          echo "⚠️ This will take 5-10 minutes due to model download (~3GB)"
           gcloud builds submit \
             --tag gcr.io/fennai/fennai-inference:latest \
             --timeout=1800s \
             --machine-type=e2-highcpu-8 \
-            --build-arg HF_TOKEN=${{ secrets.HF_TOKEN }} \
+            --substitutions _HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
-
       - name: Deploy Inference to Cloud Run
         id: deploy_run
         run: |
           URL=$(gcloud run deploy fennai-inference \
-            --image gcr.io/fennai/fennai-inference:latest \
-            --platform managed \
-            --region us-central1 \
-            --execution-environment gen2 \
-            --allow-unauthenticated \
-            --cpu 8 \
-            --memory 32Gi \
-            --gpu 1 \
-            --gpu-type nvidia-l4 \
-            --no-gpu-zonal-redundancy \
-            --max-instances 3 \
-            --min-instances 0 \
-            --timeout 900s \
-            --port 8080 \
-            --cpu-boost \
-            --concurrency=1 \
-            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output \
-            --quiet \
-            --format='value(status.url)')
+              --image gcr.io/fennai/fennai-inference:latest \
+              --platform managed \
+              --region us-central1 \
+              --execution-environment gen2 \
+              --allow-unauthenticated \
+              --cpu 8 \
+              --memory 32Gi \
+              --gpu 1 \
+              --gpu-type nvidia-l4 \
+              --no-gpu-zonal-redundancy \
+              --max-instances 3 \
+              --min-instances 0 \
+              --timeout 900s \
+              --port 8080 \
+              --cpu-boost \
+              --concurrency=1 \
+              --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output \
+              --quiet \
+              --format='value(status.url)')
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
-
       - name: Get Cloud Run Service Account
         id: get_sa
         run: |
           SA=$(gcloud run services describe fennai-inference \
-            --region us-central1 \
-            --format='value(spec.template.spec.serviceAccountName)')
+              --region=us-central1 \
+              --format='value(spec.template.spec.serviceAccountName)')
           echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
           echo "Service Account: $SA"
-
       - name: Grant Storage Permissions to Cloud Run
         run: |
           SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
           echo "✓ Storage permissions granted"
-
       - name: Verify Deployment
         run: |
           echo "Waiting for Cloud Run to be ready..."
           sleep 10
-          
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
-          
           if [ "$RESPONSE" = "200" ]; then
             echo "✓ Cloud Run is healthy"
           else
-            echo "⚠️  Unexpected response: $RESPONSE"
+            echo "⚠️ Unexpected response: $RESPONSE"
             echo "Cloud Run may still be initializing"
           fi
-
       - name: Create .env for proxy function
         run: |
           cd functions/proxy
@@ -210,31 +183,29 @@ jobs:
           echo "QUEUE_LOCATION=us-central1" >> .env
           echo "QUEUE_NAME=voice-generation-queue" >> .env
           echo "SERVICE_ACCOUNT_EMAIL=${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}" >> .env
-
       - name: Deploy Proxy Function
         run: |
           firebase deploy \
-            --only functions:voice_clone \
-            --project fennai \
-            --non-interactive
-
+              --only functions:voice_clone \
+              --project fennai \
+              --non-interactive
       - name: Deployment Summary
         run: |
-          echo "================================"
+          echo "================================\n"
           echo "🚀 DEPLOYMENT SUCCESSFUL"
-          echo "================================"
+          echo "================================\n"
           echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
           echo ""
           echo "Architecture:"
-          echo "  • Model: Baked into Docker image (~3GB)"
-          echo "  • Storage: GCS bucket (24hr lifecycle)"
-          echo "  • Queue: Cloud Tasks (async processing)"
-          echo "  • Credits: Reserved on queue, deducted on success"
+          echo " • Model: Baked into Docker image (~3GB)"
+          echo " • Storage: GCS bucket (24hr lifecycle)"
+          echo " • Queue: Cloud Tasks (async processing)"
+          echo " • Credits: Reserved on queue, deducted on success"
           echo ""
           echo "Performance:"
-          echo "  • Cold start: 10-15s (model loads from disk)"
-          echo "  • Warm inference: <2s"
-          echo "  • Max concurrency: 1 per instance"
-          echo "  • Max instances: 3"
+          echo " • Cold start: 10-15s (model loads from disk)"
+          echo " • Warm inference: <2s"
+          echo " • Max concurrency: 1 per instance"
+          echo " • Max instances: 3"
           echo ""
-          echo "================================"
+          echo "================================\n"

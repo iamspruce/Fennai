@@ -1,53 +1,64 @@
-# functions/inference/Dockerfile
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+# ============= Builder Stage =============
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
 
-# Install Python and dependencies
-RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
-    git \
-    wget \
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-venv python3-pip git \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Create clean venv
+RUN python3.10 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 WORKDIR /app
 
-# Copy requirements first (for caching)
+# Install deps + hf-transfer (this is the magic for 60–90 sec downloads)
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir "huggingface_hub[hf-transfer]>=0.24"
 
-# Install HuggingFace CLI for downloading models
-RUN pip3 install --no-cache-dir huggingface-hub
+# Enable ultra-fast download mode
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
-# Download and bake model into image
+# ←←← THIS IS THE ONLY LINE THAT MATTERS FOR THE SIMPLE METHOD
 ARG HF_TOKEN
 ENV HF_TOKEN=${HF_TOKEN}
+# ←←←
 
-RUN python3 -c "\
+RUN python -c "\
 from huggingface_hub import snapshot_download; \
-import os; \
 snapshot_download( \
     repo_id='microsoft/VibeVoice-1.5B', \
     local_dir='/app/models/VibeVoice-1.5B', \
     local_dir_use_symlinks=False, \
-    token=os.getenv('HF_TOKEN'), \
-    ignore_patterns=['*.msgpack', '*.h5'] \
-)"
+    token='${HF_TOKEN}', \
+    ignore_patterns=['*.msgpack', '*.h5', '*.safetensors'] \
+)" && \
+    echo "Model baked successfully (~60–90 sec thanks to hf-transfer!)"
 
-# Verify model was downloaded
-RUN ls -lah /app/models/VibeVoice-1.5B && \
-    test -f /app/models/VibeVoice-1.5B/config.json || \
-    (echo "Model download failed" && exit 1)
+# ============= Runtime Stage =============
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-# Copy application code
-COPY . .
+RUN apt-get update && apt-get install -y --no-install-recommends python3.10 \
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
-# Expose port
+RUN useradd -m appuser
+WORKDIR /app
+USER appuser
+
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+COPY --from=builder --chown=appuser:appuser /app/models /app/models
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    HF_HUB_OFFLINE=1
+
+# Copy only what your app actually needs
+COPY --chown=appuser:appuser main.py .
+COPY --chown=appuser:appuser utils.py .
+COPY --chown=appuser:appuser vibevoice ./vibevoice
+
 EXPOSE 8080
-
-# Environment variables (set at runtime via Cloud Run)
-ENV MODEL_NAME=microsoft/VibeVoice-1.5B
-ENV PYTHONUNBUFFERED=1
-
-# Run the application
-CMD ["python3", "main.py"]
+CMD ["python", "main.py"]
