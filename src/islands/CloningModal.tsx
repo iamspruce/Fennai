@@ -1,6 +1,13 @@
+// components/CloningModal.tsx
 import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify/react';
-import { cloneSingleVoice, cloneMultiVoice, checkUserCanClone, type CloneVoiceResponse } from '@/lib/api/voiceClone';
+import {
+  cloneSingleVoice,
+  cloneMultiVoice,
+  checkUserCanClone,
+  type CloneVoiceResponse,
+  type JobStatus
+} from '@/lib/api/voiceClone';
 import '@/styles/modal.css';
 
 interface CloningEventDetail {
@@ -11,15 +18,30 @@ interface CloningEventDetail {
   texts?: string[];
 }
 
-// Helper for friendly error mapping
 const getFriendlyErrorMessage = (errorMsg: string): string => {
   const lower = errorMsg.toLowerCase();
   if (lower.includes('network') || lower.includes('fetch')) return "We're having trouble reaching our audio lab. Check your connection.";
   if (lower.includes('unauthorized') || lower.includes('token')) return "We need to verify your identity again.";
-  if (lower.includes('quota') || lower.includes('limit')) return "You've used all your voice magic for now.";
+  if (lower.includes('insufficient credits')) return "You've used all your voice magic for now.";
+  if (lower.includes('timed out')) return "Generation took too long. Please try again.";
   if (lower.includes('format') || lower.includes('type')) return "This audio file format is a bit tricky for us.";
   if (lower.includes('audio for character')) return "Couldn't load character voice sample. Please try again.";
   return "Our sound wizards hit a snag. Please try again.";
+};
+
+const getStatusMessage = (status: JobStatus['status']): string => {
+  switch (status) {
+    case 'queued':
+      return 'Job queued, waiting for processing...';
+    case 'processing':
+      return 'AI is learning the voice patterns...';
+    case 'completed':
+      return 'Voice successfully cloned!';
+    case 'failed':
+      return 'Generation failed';
+    default:
+      return 'Preparing...';
+  }
 };
 
 export default function CloningModal() {
@@ -27,10 +49,10 @@ export default function CloningModal() {
   const [data, setData] = useState<CloningEventDetail | null>(null);
 
   const [status, setStatus] = useState<'checking' | 'cloning' | 'complete' | 'error'>('checking');
+  const [jobStatus, setJobStatus] = useState<JobStatus['status']>('queued');
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('Warming up engines...');
 
-  // Ref for the fake progress interval so we can clear it easily
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -38,6 +60,7 @@ export default function CloningModal() {
       setData(e.detail);
       setIsOpen(true);
       setStatus('checking');
+      setJobStatus('queued');
       setProgress(0);
       setMessage('Warming up engines...');
     };
@@ -50,7 +73,6 @@ export default function CloningModal() {
     if (isOpen && data) {
       startCloning();
     }
-    // Cleanup interval on unmount or close
     return () => stopProgressSimulation();
   }, [isOpen, data]);
 
@@ -71,7 +93,7 @@ export default function CloningModal() {
     if (!data) return;
 
     try {
-      // 1. Authorization Phase (Playful Tone)
+      // 1. Authorization Phase
       setStatus('checking');
       setMessage('Consulting the audio oracles...');
       setProgress(10);
@@ -81,46 +103,56 @@ export default function CloningModal() {
 
       // 2. Processing Phase
       setStatus('cloning');
-      setMessage('Teaching the AI to speak...');
-      setProgress(30);
+      setJobStatus('queued');
+      setMessage('Queueing generation job...');
+      setProgress(20);
 
-      // Start "Fake" progress to make it feel alive while waiting for API
-      // It will move from 30% to 85% over time, but never hit 100% until done
+      // Start fake progress animation
       stopProgressSimulation();
       progressInterval.current = setInterval(() => {
         setProgress((prev) => {
-          if (prev >= 85) return prev;
-          // Slow down as we get higher
-          const increment = prev > 70 ? 0.2 : 0.8;
+          if (prev >= 90) return prev;
+          const increment = prev > 70 ? 0.3 : 0.8;
           return prev + increment;
         });
-      }, 100);
+      }, 150);
+
+      // Handle status updates from Firestore
+      const onStatusUpdate = (jobStatusUpdate: JobStatus) => {
+        setJobStatus(jobStatusUpdate.status);
+        setMessage(getStatusMessage(jobStatusUpdate.status));
+
+        // Update progress based on status
+        if (jobStatusUpdate.status === 'queued') {
+          setProgress(30);
+        } else if (jobStatusUpdate.status === 'processing') {
+          setProgress(50);
+        }
+      };
 
       let result: CloneVoiceResponse;
       if (data.isMultiCharacter && data.characterIds && data.texts) {
-        // Multi-character cloning
         result = await cloneMultiVoice({
           characters: data.characterIds.map((charId, idx) => ({
             characterId: charId,
             text: data.texts![idx],
           })),
-        });
+        }, onStatusUpdate);
       } else {
-        // Single-character cloning
         result = await cloneSingleVoice({
           characterId: data.characterId,
           text: data.text,
-        });
+        }, onStatusUpdate);
       }
 
       // 3. Completion Phase
       stopProgressSimulation();
       setProgress(100);
-      setMessage('Polishing the final audio...'); // Brief final status
+      setJobStatus('completed');
+      setMessage('Polishing the final audio...');
 
       setTimeout(() => {
         setStatus('complete');
-        setMessage('Voice successfully cloned!');
 
         setTimeout(() => {
           setIsOpen(false);
@@ -135,14 +167,15 @@ export default function CloningModal() {
               texts: data.texts,
             }
           }));
-        }, 800); // Slightly longer pause to let them see the "Complete" checkmark
+        }, 800);
       }, 400);
 
     } catch (error: any) {
       stopProgressSimulation();
       setStatus('error');
-      // Use friendly error mapping
+      setJobStatus('failed');
       setMessage(getFriendlyErrorMessage(error.message || ''));
+      console.error('Cloning error:', error);
     }
   };
 
@@ -151,7 +184,6 @@ export default function CloningModal() {
   return (
     <div className="modal-overlay">
       <div className="modal-content cloning-modal">
-        {/* Mobile Handle */}
         <div className="modal-handle-bar">
           <div className="modal-handle-pill"></div>
         </div>
@@ -208,7 +240,8 @@ export default function CloningModal() {
 
           <h3 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 8px', color: 'var(--mauve-12)' }}>
             {status === 'checking' && 'Verifying...'}
-            {status === 'cloning' && 'Synthesizing Audio...'}
+            {status === 'cloning' && jobStatus === 'queued' && 'Queued...'}
+            {status === 'cloning' && jobStatus === 'processing' && 'Synthesizing Audio...'}
             {status === 'complete' && 'All Done!'}
             {status === 'error' && 'Oops!'}
           </h3>

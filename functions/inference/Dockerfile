@@ -1,79 +1,53 @@
-# Use NVIDIA CUDA base with Python
-FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
+# functions/inference/Dockerfile
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-# Install system dependencies
-ENV DEBIAN_FRONTEND=noninteractive
+# Install Python and dependencies
 RUN apt-get update && apt-get install -y \
     python3.10 \
-    python3.10-venv \
     python3-pip \
-    python3.10-dev \
     git \
-    ffmpeg \
-    libsndfile1 \
-    build-essential \
-    curl \
-    ca-certificates \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Create python symlink
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
-
-# Create and activate virtual environment
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3.10 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# Upgrade pip
-RUN pip install --upgrade pip setuptools wheel
-
+# Set working directory
 WORKDIR /app
 
-# Copy requirements first (caching)
+# Copy requirements first (for caching)
 COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Install PyTorch + CUDA FIRST (critical for correct wheel)
-RUN pip install --no-cache-dir \
-    torch==2.3.0+cu121 \
-    torchaudio==2.3.0+cu121 \
-    --index-url https://download.pytorch.org/whl/cu121
+# Install HuggingFace CLI for downloading models
+RUN pip3 install --no-cache-dir huggingface-hub
 
-# Install everything else
-RUN pip install --no-cache-dir -r requirements.txt
+# Download and bake model into image
+ARG HF_TOKEN
+ENV HF_TOKEN=${HF_TOKEN}
 
-# Install Gunicorn + Flask
-RUN pip install --no-cache-dir gunicorn Flask==3.0.0
+RUN python3 -c "\
+from huggingface_hub import snapshot_download; \
+import os; \
+snapshot_download( \
+    repo_id='microsoft/VibeVoice-1.5B', \
+    local_dir='/app/models/VibeVoice-1.5B', \
+    local_dir_use_symlinks=False, \
+    token=os.getenv('HF_TOKEN'), \
+    ignore_patterns=['*.msgpack', '*.h5'] \
+)"
 
-# Copy app code
+# Verify model was downloaded
+RUN ls -lah /app/models/VibeVoice-1.5B && \
+    test -f /app/models/VibeVoice-1.5B/config.json || \
+    (echo "Model download failed" && exit 1)
+
+# Copy application code
 COPY . .
-
-# Create model cache directory (mounted to Cloud Storage bucket)
-RUN mkdir -p /models && chmod -R 777 /models
-
-# Environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8080
-ENV CUDA_VISIBLE_DEVICES=0
-ENV MODEL_NAME=microsoft/VibeVoice-1.5B
-ENV CACHE_DIR=/models
 
 # Expose port
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+# Environment variables (set at runtime via Cloud Run)
+ENV MODEL_NAME=microsoft/VibeVoice-1.5B
+ENV PYTHONUNBUFFERED=1
 
-# Use Gunicorn (PRODUCTION READY)
-CMD exec gunicorn \
-    --bind 0.0.0.0:$PORT \
-    --workers 1 \
-    --threads 1 \
-    --worker-class sync \
-    --timeout 900 \
-    --max-requests 10 \
-    --max-requests-jitter 5 \
-    --log-level info \
-    --access-logfile - \
-    --error-logfile - \
-    "main:app"
+# Run the application
+CMD ["python3", "main.py"]

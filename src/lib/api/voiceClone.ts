@@ -1,4 +1,7 @@
+// lib/api/voiceClone.ts
 import { auth } from "../firebase/config";
+import { db } from "../firebase/config";
+import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 
 const USE_MOCK_API = import.meta.env.PUBLIC_USE_MOCK_VOICE_API === 'true';
 const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_VOICE_CLONE_API_URL;
@@ -18,6 +21,14 @@ export interface MultiCloneVoiceParams {
 export interface CloneVoiceResponse {
     audioBlob: Blob;
     duration: number;
+}
+
+export interface JobStatus {
+    jobId: string;
+    status: 'queued' | 'processing' | 'completed' | 'failed';
+    audioUrl?: string;
+    error?: string;
+    expiresAt?: Date;
 }
 
 // Get Firebase ID token for API calls
@@ -41,8 +52,6 @@ async function getAuthToken(): Promise<string | null> {
 async function fetchCharacterAudio(characterId: string): Promise<File> {
     const response = await fetch(`/api/characters/${characterId}/audio`);
 
-    console.log(response);
-
     if (!response.ok) {
         throw new Error(`Failed to fetch audio for character ${characterId}`);
     }
@@ -56,7 +65,7 @@ async function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1]; // Remove data:audio/...;base64, prefix
+            const base64 = (reader.result as string).split(',')[1];
             resolve(base64);
         };
         reader.onerror = reject;
@@ -64,8 +73,76 @@ async function fileToBase64(file: File): Promise<string> {
     });
 }
 
-// Clone single voice using the new API
-export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneVoiceResponse> {
+// Listen to job status updates from Firestore
+function listenToJobStatus(
+    jobId: string,
+    onUpdate: (status: JobStatus) => void,
+    onError: (error: Error) => void,
+    timeout: number = 180000 // 3 minutes default
+): Unsubscribe {
+    const jobRef = doc(db, "voiceJobs", jobId);
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+        unsubscribe();
+        onError(new Error('Generation timed out after 3 minutes'));
+    }, timeout);
+
+    const unsubscribe = onSnapshot(
+        jobRef,
+        (docSnap) => {
+            if (!docSnap.exists()) {
+                console.warn(`Job ${jobId} not found in Firestore`);
+                return;
+            }
+
+            const data = docSnap.data();
+            const status: JobStatus = {
+                jobId,
+                status: data.status,
+                audioUrl: data.audioUrl,
+                error: data.error,
+                expiresAt: data.expiresAt?.toDate(),
+            };
+
+            onUpdate(status);
+
+            // Clean up if terminal state reached
+            if (status.status === 'completed' || status.status === 'failed') {
+                clearTimeout(timeoutId);
+                unsubscribe();
+            }
+        },
+        (error) => {
+            clearTimeout(timeoutId);
+            console.error('Firestore snapshot error:', error);
+            onError(new Error('Connection lost to job status'));
+        }
+    );
+
+    // Return unsubscribe function that also clears timeout
+    return () => {
+        clearTimeout(timeoutId);
+        unsubscribe();
+    };
+}
+
+// Download audio from signed URL
+async function downloadAudioFromUrl(url: string): Promise<Blob> {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(`Failed to download audio: ${response.status}`);
+    }
+
+    return await response.blob();
+}
+
+// Clone single voice (new async flow)
+export async function cloneSingleVoice(
+    params: CloneVoiceParams,
+    onStatusUpdate?: (status: JobStatus) => void
+): Promise<CloneVoiceResponse> {
     if (USE_MOCK_API) {
         return cloneSingleVoiceMock(params);
     }
@@ -81,7 +158,7 @@ export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneV
     // Convert audio file to base64
     const voiceBase64 = await fileToBase64(audioFile);
 
-    // Call the Firebase proxy function
+    // Call the proxy function to queue the job
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
@@ -99,17 +176,47 @@ export async function cloneSingleVoice(params: CloneVoiceParams): Promise<CloneV
         throw new Error(error.error || 'Voice cloning failed');
     }
 
-    const audioBlob = await response.blob();
-    const duration = await getAudioDuration(audioBlob);
+    const result = await response.json();
+    const jobId = result.job_id;
 
-    return {
-        audioBlob,
-        duration,
-    };
+    if (!jobId) {
+        throw new Error('No job ID returned from server');
+    }
+
+    // Listen to job status and wait for completion
+    return new Promise((resolve, reject) => {
+        const unsubscribe = listenToJobStatus(
+            jobId,
+            async (status) => {
+                // Call optional status update callback
+                if (onStatusUpdate) {
+                    onStatusUpdate(status);
+                }
+
+                if (status.status === 'completed' && status.audioUrl) {
+                    try {
+                        const audioBlob = await downloadAudioFromUrl(status.audioUrl);
+                        const duration = await getAudioDuration(audioBlob);
+                        resolve({ audioBlob, duration });
+                    } catch (err) {
+                        reject(err);
+                    }
+                } else if (status.status === 'failed') {
+                    reject(new Error(status.error || 'Voice generation failed'));
+                }
+            },
+            (error) => {
+                reject(error);
+            }
+        );
+    });
 }
 
-// Clone multi-character voice using the new API
-export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<CloneVoiceResponse> {
+// Clone multi-character voice (new async flow)
+export async function cloneMultiVoice(
+    params: MultiCloneVoiceParams,
+    onStatusUpdate?: (status: JobStatus) => void
+): Promise<CloneVoiceResponse> {
     if (USE_MOCK_API) {
         return cloneMultiVoiceMock(params);
     }
@@ -134,7 +241,7 @@ export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<Cl
         .map((char, index) => `Speaker ${index + 1}: ${char.text}`)
         .join('\n');
 
-    // Call the Firebase proxy function
+    // Call the proxy function to queue the job
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
@@ -144,7 +251,7 @@ export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<Cl
         body: JSON.stringify({
             text: text,
             voice_samples: voiceSamples,
-            character_texts: params.characters.map(c => c.text), // For credit calculation
+            character_texts: params.characters.map(c => c.text),
         }),
     });
 
@@ -153,13 +260,40 @@ export async function cloneMultiVoice(params: MultiCloneVoiceParams): Promise<Cl
         throw new Error(error.error || 'Voice cloning failed');
     }
 
-    const audioBlob = await response.blob();
-    const duration = await getAudioDuration(audioBlob);
+    const result = await response.json();
+    const jobId = result.job_id;
 
-    return {
-        audioBlob,
-        duration,
-    };
+    if (!jobId) {
+        throw new Error('No job ID returned from server');
+    }
+
+    // Listen to job status and wait for completion
+    return new Promise((resolve, reject) => {
+        const unsubscribe = listenToJobStatus(
+            jobId,
+            async (status) => {
+                // Call optional status update callback
+                if (onStatusUpdate) {
+                    onStatusUpdate(status);
+                }
+
+                if (status.status === 'completed' && status.audioUrl) {
+                    try {
+                        const audioBlob = await downloadAudioFromUrl(status.audioUrl);
+                        const duration = await getAudioDuration(audioBlob);
+                        resolve({ audioBlob, duration });
+                    } catch (err) {
+                        reject(err);
+                    }
+                } else if (status.status === 'failed') {
+                    reject(new Error(status.error || 'Voice generation failed'));
+                }
+            },
+            (error) => {
+                reject(error);
+            }
+        );
+    });
 }
 
 // Get audio duration
@@ -194,34 +328,19 @@ export async function checkUserCanClone(): Promise<{ canClone: boolean; reason?:
 }
 
 // ==================== MOCK IMPLEMENTATIONS ====================
-// These are fallbacks for development/testing
 
 async function cloneSingleVoiceMock(params: CloneVoiceParams): Promise<CloneVoiceResponse> {
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Create a mock audio blob (1 second of silence)
     const audioContext = new AudioContext();
     const buffer = audioContext.createBuffer(1, audioContext.sampleRate, audioContext.sampleRate);
     const mockBlob = new Blob([buffer.getChannelData(0)], { type: 'audio/wav' });
-
-    return {
-        audioBlob: mockBlob,
-        duration: 1.0,
-    };
+    return { audioBlob: mockBlob, duration: 1.0 };
 }
 
 async function cloneMultiVoiceMock(params: MultiCloneVoiceParams): Promise<CloneVoiceResponse> {
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Create a mock audio blob (2 seconds of silence)
     const audioContext = new AudioContext();
     const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 2, audioContext.sampleRate);
     const mockBlob = new Blob([buffer.getChannelData(0)], { type: 'audio/wav' });
-
-    return {
-        audioBlob: mockBlob,
-        duration: 2.0,
-    };
+    return { audioBlob: mockBlob, duration: 2.0 };
 }

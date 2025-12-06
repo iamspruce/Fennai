@@ -40,7 +40,7 @@ jobs:
   deploy-backend:
     name: Deploy Functions + Cloud Run GPU Inference
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')  # Only on version tags
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: read
       id-token: write
@@ -81,10 +81,10 @@ jobs:
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # CREATE CLOUD STORAGE BUCKET (idempotent)
-      - name: Create Cloud Storage Bucket for Models (if not exists)
+      # CREATE OUTPUT BUCKET (for audio files)
+      - name: Create Cloud Storage Bucket for Audio Output
         run: |
-          BUCKET_NAME="fennai-vibevoice-models"
+          BUCKET_NAME="fennai-voice-output"
           REGION="us-central1"
           
           if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
@@ -94,124 +94,58 @@ jobs:
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
             echo "✓ Bucket created successfully"
           fi
+          
+          # Set 24-hour lifecycle policy for auto-deletion
+          echo '{
+            "lifecycle": {
+              "rule": [{
+                "action": {"type": "Delete"},
+                "condition": {"age": 1}
+              }]
+            }
+          }' > lifecycle.json
+          
+          gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
+          echo "✓ Lifecycle policy set (24-hour auto-delete)"
+          rm lifecycle.json
 
-      # NEW: Pre-download model to bucket if not present
-      - name: Pre-download Model to Bucket (One-Time)
+      # CREATE CLOUD TASKS QUEUE
+      - name: Create Cloud Tasks Queue
         run: |
-          BUCKET_NAME="fennai-vibevoice-models"
-          MODEL_NAME="microsoft/VibeVoice-1.5B"
-          BUCKET_PATH="gs://$BUCKET_NAME/VibeVoice-1.5B"
+          QUEUE_NAME="voice-generation-queue"
+          LOCATION="us-central1"
           
-          echo "Checking if model exists in bucket..."
-          
-          # Check for HuggingFace's own metadata cache
-          if gsutil -q stat "$BUCKET_PATH/.cache/huggingface/download/.locks/models--microsoft--VibeVoice-1.5B/.gitignore" 2>/dev/null; then
-            echo "✓ HuggingFace metadata found - model was previously downloaded successfully"
-            
-            # Quick sanity check
-            if gsutil -q stat "$BUCKET_PATH/config.json" 2>/dev/null; then
-              echo "✓ Model verified. Skipping download."
-              exit 0
-            else
-              echo "⚠️ Metadata exists but model files missing. Re-downloading..."
-            fi
+          # Check if queue exists
+          if gcloud tasks queues describe $QUEUE_NAME --location=$LOCATION 2>/dev/null; then
+            echo "✓ Queue $QUEUE_NAME already exists"
+          else
+            echo "Creating Cloud Tasks queue..."
+            gcloud tasks queues create $QUEUE_NAME \
+              --location=$LOCATION \
+              --max-dispatches-per-second=10 \
+              --max-concurrent-dispatches=5 \
+              --max-attempts=3 \
+              --min-backoff=10s \
+              --max-backoff=300s \
+              --max-doublings=3 \
+              --max-retry-duration=1800s
+            echo "✓ Queue created successfully"
           fi
-          
-          echo "⬇️ Downloading model to bucket..."
-          echo "This is a one-time operation (~3GB, may take 2-5 minutes)"
-          
-          # Install huggingface-hub
-          pip install huggingface-hub
-          
-          # Download model using HuggingFace's built-in caching/resume
-          python3 << 'PYTHON_SCRIPT'
-          import os
-          import sys
-          from pathlib import Path
-          from huggingface_hub import snapshot_download
-          
-          print("Downloading model from HuggingFace...")
-          try:
-              # Download to temp location - HF handles completion tracking
-              snapshot_dir = snapshot_download(
-                  repo_id="microsoft/VibeVoice-1.5B",
-                  local_dir="./temp_model",
-                  local_dir_use_symlinks=False,
-                  resume_download=True,  # HF handles partial downloads
-                  token=os.getenv("HF_TOKEN"),
-                  ignore_patterns=["*.msgpack", "*.h5"],
-              )
-              print(f"✓ HuggingFace completed download to {snapshot_dir}")
-              
-          except Exception as e:
-              print(f"❌ Download failed: {e}")
-              sys.exit(1)
-          PYTHON_SCRIPT
-          
-          if [ $? -ne 0 ]; then
-            echo "❌ Model download failed"
-            exit 1
-          fi
-          
-          # Upload entire directory including HF's cache metadata
-          echo "Uploading to bucket (including HuggingFace metadata)..."
-          gsutil -m rsync -r ./temp_model "$BUCKET_PATH"
-          
-          if [ $? -ne 0 ]; then
-            echo "❌ Upload to bucket failed"
-            rm -rf ./temp_model
-            exit 1
-          fi
-          
-          # Cleanup
-          rm -rf ./temp_model
-          
-          echo "✓ Model successfully uploaded to bucket"
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
-      - name: Verify Model in Bucket (Final Check)
+      # BUILD AND DEPLOY CLOUD RUN (with baked-in model)
+      - name: Build GPU Inference Image (with baked model)
         run: |
-          BUCKET_PATH="gs://fennai-vibevoice-models/VibeVoice-1.5B"
+          echo "Building Docker image with model baked in..."
+          echo "⚠️  This will take 5-10 minutes due to model download (~3GB)"
           
-          echo "Running final model verification..."
-          
-          # Check critical model files that actually exist for VibeVoice-1.5B
-          REQUIRED_FILES=(
-            "config.json"
-            "preprocessor_config.json"
-            "model.safetensors.index.json"
-          )
-          
-          MISSING=""
-          for file in "${REQUIRED_FILES[@]}"; do
-            if ! gsutil -q stat "$BUCKET_PATH/$file" 2>/dev/null; then
-              MISSING="$MISSING $file"
-            fi
-          done
-          
-          if [ -n "$MISSING" ]; then
-            echo "❌ Verification failed. Missing files:$MISSING"
-            exit 1
-          fi
-          
-          # Verify at least one model shard exists
-          if ! gsutil ls "$BUCKET_PATH/model-*.safetensors" 2>/dev/null | head -n1; then
-            echo "❌ No model weight files (*.safetensors) found in bucket"
-            exit 1
-          fi
-          
-          echo "✓ All critical files present"
-          echo "✓ Model ready for deployment"
-
-      - name: Build & Submit GPU Inference Image
-        run: |
           gcloud builds submit \
             --tag gcr.io/fennai/fennai-inference:latest \
-            --timeout=3600s \
+            --timeout=1800s \
+            --machine-type=e2-highcpu-8 \
+            --build-arg HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
 
-      - name: Deploy Inference to Cloud Run (with Cloud Storage Mount)
+      - name: Deploy Inference to Cloud Run
         id: deploy_run
         run: |
           URL=$(gcloud run deploy fennai-inference \
@@ -225,19 +159,32 @@ jobs:
             --gpu 1 \
             --gpu-type nvidia-l4 \
             --no-gpu-zonal-redundancy \
-            --max-instances 1 \
+            --max-instances 3 \
             --min-instances 0 \
             --timeout 900s \
             --port 8080 \
             --cpu-boost \
             --concurrency=1 \
-            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,HF_TOKEN=${{ secrets.HF_TOKEN }},CACHE_DIR=/models \
-            --add-volume name=model-volume,type=cloud-storage,bucket=fennai-vibevoice-models \
-            --add-volume-mount volume=model-volume,mount-path=/models \
+            --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output \
             --quiet \
             --format='value(status.url)')
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
+
+      - name: Get Cloud Run Service Account
+        id: get_sa
+        run: |
+          SA=$(gcloud run services describe fennai-inference \
+            --region us-central1 \
+            --format='value(spec.template.spec.serviceAccountName)')
+          echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
+          echo "Service Account: $SA"
+
+      - name: Grant Storage Permissions to Cloud Run
+        run: |
+          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
+          gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
+          echo "✓ Storage permissions granted"
 
       - name: Verify Deployment
         run: |
@@ -247,24 +194,27 @@ jobs:
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
           
-          if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "503" ]; then
-            echo "✓ Cloud Run is responding (status: $RESPONSE)"
-            echo "Note: 503 is normal if model needs to load on first request"
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✓ Cloud Run is healthy"
           else
-            echo "⚠ Unexpected response: $RESPONSE"
+            echo "⚠️  Unexpected response: $RESPONSE"
             echo "Cloud Run may still be initializing"
           fi
 
       - name: Create .env for proxy function
         run: |
           cd functions/proxy
-          echo "INFERENCE_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}" > .env
+          echo "CLOUD_RUN_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}" > .env
           echo "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}" >> .env
+          echo "GCP_PROJECT=fennai" >> .env
+          echo "QUEUE_LOCATION=us-central1" >> .env
+          echo "QUEUE_NAME=voice-generation-queue" >> .env
+          echo "SERVICE_ACCOUNT_EMAIL=${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}" >> .env
 
       - name: Deploy Proxy Function
         run: |
           firebase deploy \
-            --only functions:proxy \
+            --only functions:voice_clone \
             --project fennai \
             --non-interactive
 
@@ -275,16 +225,16 @@ jobs:
           echo "================================"
           echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
           echo ""
-          echo "Storage Configuration:"
-          echo "  • Type: Cloud Storage Bucket (GCS FUSE)"
-          echo "  • Bucket: gs://fennai-vibevoice-models"
-          echo "  • Mount Path: /models"
-          echo "  • Model: microsoft/VibeVoice-1.5B (~3GB)"
-          echo "  • Status: Pre-downloaded and cached"
+          echo "Architecture:"
+          echo "  • Model: Baked into Docker image (~3GB)"
+          echo "  • Storage: GCS bucket (24hr lifecycle)"
+          echo "  • Queue: Cloud Tasks (async processing)"
+          echo "  • Credits: Reserved on queue, deducted on success"
           echo ""
           echo "Performance:"
-          echo "  • First container start: 5-10s (model read from bucket)"
-          echo "  • Inference requests: <2s"
-          echo "  • Cold starts: 5-10s (model already in bucket)"
+          echo "  • Cold start: 10-15s (model loads from disk)"
+          echo "  • Warm inference: <2s"
+          echo "  • Max concurrency: 1 per instance"
+          echo "  • Max instances: 3"
           echo ""
           echo "================================"
