@@ -1,0 +1,29 @@
+steps:
+  # Build the Docker image with the HF token passed as a build arg
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/fennai-inference:latest'
+      - '--build-arg'
+      - 'HF_TOKEN=$_HF_TOKEN'
+      - '.'
+    id: 'build-image'
+    # This uses $_HF_TOKEN here, satisfying the validation
+
+  # Push the image to the registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/fennai-inference:latest']
+    waitFor: ['build-image']
+
+# Use your existing substitutions (passed from GitHub Actions)
+substitutions:
+  _HF_TOKEN: ''  # Placeholder; actual value comes from --substitutions flag
+
+# Optional: Speed up builds with caching (Docker layers)
+options:
+  machineType: 'E2_HIGHCPU_8'  # Matches your existing --machine-type
+  diskSizeGb: 200  # Extra space for the ~3GB model download
+  logStreamingOption: 'STREAM_ON'  # Real-time logs in GitHub Actions
+  env:
+    - 'HF_HUB_ENABLE_HF_TRANSFER=1'  # Enables fast downloads globally

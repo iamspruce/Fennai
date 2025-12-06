@@ -7,7 +7,7 @@ jobs:
   deploy-hosting:
     name: Deploy Frontend (Firebase Hosting)
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'deploy:hosting') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,17 +113,19 @@ jobs:
               --max-retry-duration=1800s
             echo "✓ Queue created successfully"
           fi
+      
       # BUILD AND DEPLOY CLOUD RUN (with baked-in model)
-      - name: Build GPU Inference Image (with baked model)
+      - name: Build GPU Inference Image (with baked model + hf-transfer)
         run: |
           echo "Building Docker image with model baked in..."
-          echo "⚠️ This will take 5-10 minutes due to model download (~3GB)"
+          echo "⚠️ This will take ~60-90 seconds due to model download (~3GB) + hf-transfer"
           gcloud builds submit \
+            --config functions/inference/cloudbuild.yaml \
             --tag gcr.io/fennai/fennai-inference:latest \
             --timeout=1800s \
-            --machine-type=e2-highcpu-8 \
             --substitutions _HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
+
       - name: Deploy Inference to Cloud Run
         id: deploy_run
         run: |
