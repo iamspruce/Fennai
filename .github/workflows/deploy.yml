@@ -121,7 +121,6 @@ jobs:
           echo "⚠️ This will take ~60-90 seconds due to model download (~3GB) + hf-transfer"
           gcloud builds submit \
             --config functions/inference/cloudbuild.yaml \
-            --tag gcr.io/fennai/fennai-inference:latest \
             --timeout=1800s \
             --substitutions _HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
