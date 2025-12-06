@@ -150,6 +150,7 @@ jobs:
               --format='value(status.url)')
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
+
       - name: Get Cloud Run Service Account
         id: get_sa
         run: |
@@ -158,11 +159,13 @@ jobs:
               --format='value(spec.template.spec.serviceAccountName)')
           echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
           echo "Service Account: $SA"
+
       - name: Grant Storage Permissions to Cloud Run
         run: |
           SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
           echo "✓ Storage permissions granted"
+
       - name: Verify Deployment
         run: |
           echo "Waiting for Cloud Run to be ready..."

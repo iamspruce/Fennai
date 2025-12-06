@@ -1,16 +1,59 @@
 # functions/inference/main.py
-from flask import Flask, request, abort, jsonify
 import os
 import logging
 import torch
-from pathlib import Path
-from io import BytesIO
-import soundfile as sf
 import numpy as np
 from datetime import datetime, timedelta
-from google.cloud import storage
-from firebase_admin import credentials, firestore, initialize_app
+from io import BytesIO
+from pathlib import Path
 
+from flask import Flask, request, abort, jsonify
+import soundfile as sf
+
+# Google Cloud clients — use Application Default Credentials (no explicit init needed)
+from google.cloud import storage
+import firebase_admin
+from firebase_admin import firestore
+
+# Enable TF32 for ~15-25% speedup on NVIDIA L4/A100
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+# === Logging with job_id context ===
+class JobContextFilter(logging.Filter):
+    def filter(self, record):
+        record.job_id = getattr(request, "job_id", "NO_JOB")
+        return True
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(job_id)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+logger.addFilter(JobContextFilter())
+
+app = Flask(__name__)
+
+# === Config ===
+device = "cuda" if torch.cuda.is_available() else "cpu"
+MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
+MODEL_DIR = Path("/app/models/VibeVoice-1.5B")
+SAMPLE_RATE = 24000
+INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
+GCS_BUCKET = os.getenv("GCS_BUCKET", "fennai-voice-output")
+
+# Global clients (automatically use Cloud Run service account)
+storage_client = storage.Client()
+bucket = storage_client.bucket(GCS_BUCKET)
+db = firestore.client()
+
+# Initialize Firebase Admin only once
+if not firebase_admin._apps:
+    firebase_admin.initialize_app()
+
+# Global model variables
+processor = None
+model = None
+START_TIME = datetime.utcnow()
+
+# === Import utils only after logging is set up ===
 from utils import (
     b64_to_voice_sample,
     detect_multi_speaker,
@@ -20,321 +63,191 @@ from utils import (
     get_optimal_attention_mode,
 )
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-# Initialize Firebase Admin
-if not len(credentials.Certificate._from_dict):
-    cred = credentials.ApplicationDefault()
-    initialize_app(cred)
-
-db = firestore.client()
-
-# Config
-device = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_NAME = os.getenv("MODEL_NAME", "microsoft/VibeVoice-1.5B")
-MODEL_DIR = Path("/app/models/VibeVoice-1.5B")  # Baked into Docker image
-SAMPLE_RATE = 24000
-INTERNAL_TOKEN = os.getenv("INTERNAL_TOKEN")
-GCS_BUCKET = os.getenv("GCS_BUCKET", "fennai-voice-output")
-
-processor = None
-model = None
-storage_client = storage.Client()
-bucket = storage_client.bucket(GCS_BUCKET)
-
-
-def ensure_model_loaded():
-    """Load model on first request (lazy loading)"""
+# === Model loading at container startup (critical for performance!) ===
+def load_model():
     global processor, model
-    if model is not None:
-        return
-
-    logger.info("Loading VibeVoice model...")
-    from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
-    from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
+    logger.info("Container starting — loading VibeVoice model into GPU memory...")
 
     if not MODEL_DIR.exists():
-        logger.error(f"Model not found at {MODEL_DIR}")
-        raise RuntimeError(f"Model not found. Expected at {MODEL_DIR}")
+        logger.error(f"Model directory not found: {MODEL_DIR}")
+        raise RuntimeError(f"Model not found at {MODEL_DIR}")
 
-    logger.info(f"Loading model from {MODEL_DIR}")
-
-    processor = VibeVoiceProcessor.from_pretrained(str(MODEL_DIR))
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-        str(MODEL_DIR),
-        torch_dtype=dtype,
-    )
-
-    # Attention mode
-    attn_mode = get_optimal_attention_mode()
-    if hasattr(model.config, "attention_type"):
-        model.config.attention_type = attn_mode
-
-    model.to(device)
-    model.eval()
-    model.set_ddpm_inference_steps(10)
-
-    log_startup_info()
-    logger.info("Model loaded and ready!")
-
-
-def update_job_status(job_id: str, status: str, **kwargs):
-    """Update job document in Firestore"""
     try:
-        job_ref = db.collection("voiceJobs").document(job_id)
-        updates = {
-            "status": status,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        }
-        updates.update(kwargs)
-        job_ref.update(updates)
-        logger.info(f"Job {job_id} status updated to {status}")
-    except Exception as e:
-        logger.error(f"Failed to update job {job_id}: {str(e)}")
+        from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+        from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
 
+        logger.info(f"Loading processor and model from {MODEL_DIR}")
+        processor = VibeVoiceProcessor.from_pretrained(str(MODEL_DIR))
 
-def upload_to_gcs_with_signed_url(job_id: str, audio_bytes: bytes) -> str:
-    """
-    Upload audio to GCS and return signed URL.
-    Bucket has 24-hour lifecycle policy for auto-deletion.
-    """
-    try:
-        blob_name = f"jobs/{job_id}/output.wav"
-        blob = bucket.blob(blob_name)
-        
-        # Upload audio
-        blob.upload_from_string(
-            audio_bytes,
-            content_type="audio/wav"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+            str(MODEL_DIR),
+            torch_dtype=dtype,
         )
-        
-        # Generate signed URL (expires in 24 hours)
-        signed_url = blob.generate_signed_url(
-            version="v4",
-            expiration=timedelta(hours=24),
-            method="GET"
-        )
-        
-        logger.info(f"Audio uploaded to gs://{GCS_BUCKET}/{blob_name}")
-        return signed_url
-        
+
+        model.to(device)
+        model.eval()
+        model.set_ddpm_inference_steps(10)
+
+        # Best attention mode
+        attn_mode = get_optimal_attention_mode()
+        if hasattr(model.config, "attention_type"):
+            model.config.attention_type = attn_mode
+
+        # torch.compile = 20–40% faster inference on L4
+        if device == "cuda":
+            logger.info("Compiling model with torch.compile() for maximum performance...")
+            model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
+
+        log_startup_info()
+        logger.info("Model loaded and compiled successfully!")
+        logger.info(f"GPU memory allocated: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+
     except Exception as e:
-        logger.error(f"Failed to upload to GCS: {str(e)}")
+        logger.error("Failed to load model", exc_info=True)
         raise
 
+# === Fire it up at import time ===
+load_model()
 
-def release_credits_on_failure(uid: str, job_id: str, cost: int):
-    """Helper to release credits when generation fails"""
+# === Helper functions ===
+def update_job_status(job_id: str, status: str, **kwargs):
     try:
-        user_ref = db.collection("users").document(uid)
-        
-        @firestore.transactional
-        def decrement_pending(transaction):
-            user_doc = transaction.get(user_ref)
-            if user_doc.exists:
-                user_data = user_doc.to_dict() or {}
-                if not user_data.get("isPro", False):
-                    transaction.update(user_ref, {
-                        "pendingCredits": firestore.Increment(-cost)
-                    })
-        
-        transaction = db.transaction()
-        decrement_pending(transaction)
-        logger.info(f"Released {cost} credits for user {uid}")
-        
+        job_ref = db.collection("voiceJobs").document(job_id)
+        updates = {"status": status, "updatedAt": firestore.SERVER_TIMESTAMP}
+        updates.update(kwargs)
+        job_ref.update(updates)
     except Exception as e:
-        logger.error(f"Failed to release credits: {str(e)}")
+        logger.error(f"Failed to update job {job_id}", exc_info=True)
 
+def upload_to_gcs_with_signed_url(job_id: str, audio_bytes: bytes) -> str:
+    blob_name = f"jobs/{job_id}/output.wav"
+    blob = bucket.blob(blob_name)
+    blob.upload_from_string(audio_bytes, content_type="audio/wav")
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=24),
+        method="GET",
+    )
+    logger.info(f"Uploaded gs://{GCS_BUCKET}/{blob_name}")
+    return signed_url
 
-def confirm_credit_deduction_internal(uid: str, job_id: str, cost: int):
-    """Helper to confirm credit deduction after successful generation"""
-    try:
-        user_ref = db.collection("users").document(uid)
-        
-        @firestore.transactional
-        def finalize_credits(transaction):
-            user_doc = transaction.get(user_ref)
-            if user_doc.exists:
-                user_data = user_doc.to_dict() or {}
-                is_pro = user_data.get("isPro", False)
-                
-                updates = {
-                    "totalVoicesGenerated": firestore.Increment(1),
-                    "updatedAt": firestore.SERVER_TIMESTAMP
-                }
-                
-                if not is_pro:
-                    updates["credits"] = firestore.Increment(-cost)
-                    updates["pendingCredits"] = firestore.Increment(-cost)
-                
-                transaction.update(user_ref, updates)
-        
-        transaction = db.transaction()
-        finalize_credits(transaction)
-        logger.info(f"Deducted {cost} credits from user {uid}")
-        
-    except Exception as e:
-        logger.error(f"Failed to deduct credits: {str(e)}")
+@firestore.transactional
+def release_credits(transaction, user_ref, cost: int):
+    doc = transaction.get(user_ref)
+    if doc.exists and not doc.to_dict().get("isPro", False):
+        transaction.update(user_ref, {"pendingCredits": firestore.Increment(-cost)})
 
+@firestore.transactional
+def confirm_credits(transaction, user_ref, cost: int):
+    doc = transaction.get(user_ref)
+    if not doc.exists:
+        return
+    data = doc.to_dict()
+    updates = {
+        "totalVoicesGenerated": firestore.Increment(1),
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    }
+    if not data.get("isPro", False):
+        updates["credits"] = firestore.Increment(-cost)
+        updates["pendingCredits"] = firestore.Increment(-cost)
+    transaction.update(user_ref, updates)
+
+# === Routes ===
+@app.before_request
+def security_limits():
+    # Block huge payloads
+    if request.content_length and request.content_length > 10 * 1024 * 1024:
+        abort(413, "Payload too large")
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint"""
-    is_loaded = model is not None
-    
     return jsonify({
         "status": "healthy",
-        "model_loaded": is_loaded,
-        "model_name": MODEL_NAME,
+        "model_loaded": True,
         "device": device,
+        "gpu_memory_gb": round(torch.cuda.memory_allocated() / 1e9, 2) if device == "cuda" else None,
+        "uptime_seconds": round((datetime.utcnow() - START_TIME).total_seconds(), 1),
+        "model": MODEL_NAME,
     }), 200
-
 
 @app.route("/inference", methods=["POST"])
 def inference():
-    """
-    Main inference endpoint called by Cloud Tasks.
-    
-    Flow:
-    1. Verify internal token
-    2. Update job status to 'processing'
-    3. Load model if needed
-    4. Generate audio
-    5. Upload to GCS with signed URL
-    6. Confirm credit deduction
-    7. Update job status to 'completed'
-    
-    Error handling:
-    - 400: Bad input (won't retry)
-    - 500: Internal error (will retry)
-    - 503: OOM/resource error (will retry)
-    """
-    
-    # Verify internal token
+    # Attach job_id to request for logging
+    request.job_id = "NO_JOB"
+
     token = request.headers.get("X-Internal-Token")
     if token != INTERNAL_TOKEN:
-        logger.warn("Unauthorized inference request")
-        abort(403, "Forbidden")
+        logger.warning("Unauthorized access attempt")
+        abort(403)
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     job_id = data.get("job_id")
     uid = data.get("uid")
     cost = data.get("cost", 1)
     raw_text = data.get("text", "").strip()
     voice_b64s = data.get("voice_samples", [])
 
-    # Validate required fields
-    if not job_id or not uid:
-        logger.error("Missing job_id or uid")
-        abort(400, "Missing job_id or uid")
-    
-    if not raw_text or not voice_b64s:
-        logger.error(f"Job {job_id}: Missing text or voice_samples")
-        update_job_status(job_id, "failed", error="Missing text or voice_samples")
-        release_credits_on_failure(uid, job_id, cost)
-        abort(400, "Missing text or voice_samples")
+    if not all([job_id, uid, raw_text, voice_b64s]):
+        update_job_status(job_id or "unknown", "failed", error="Missing required fields")
+        abort(400, "Missing required fields")
 
-    logger.info(f"Processing job {job_id} for user {uid}")
+    request.job_id = job_id
+    logger.info(f"Starting inference | user={uid} | cost={cost}")
 
     try:
-        # Update status to processing
         update_job_status(job_id, "processing")
-        
-        # Load model if not loaded
-        ensure_model_loaded()
-        
-        # Format text
-        text_to_use = raw_text.strip()
-        if not detect_multi_speaker(text_to_use):
-            text_to_use = format_text_for_vibevoice(raw_text)
 
-        logger.info(f"Job {job_id}: Using text:\n{text_to_use}")
+        text = raw_text
+        if not detect_multi_speaker(text):
+            text = format_text_for_vibevoice(raw_text)
 
-        # Prepare voice samples
-        voice_samples = map_speakers_to_voice_samples(text_to_use, voice_b64s)
+        voice_samples = map_speakers_to_voice_samples(text, voice_b64s)
 
-        # Run inference
         inputs = processor(
-            text=[text_to_use],
+            text=[text],
             voice_samples=voice_samples,
             return_tensors="pt",
             padding=True,
         ).to(device)
 
         with torch.inference_mode():
-            generated = model.generate(
-                **inputs,
-                do_sample=False,
-                cfg_scale=1.3,
-            )
+            generated = model.generate(**inputs, do_sample=False, cfg_scale=1.3)
+            audio = processor.decode(generated, skip_special_tokens=True)
 
-        audio = processor.decode(generated, skip_special_tokens=True)
         audio_np = audio.cpu().numpy().squeeze()
-
-        # Post-process audio
         audio_np = np.clip(audio_np, -1.0, 1.0)
         if np.abs(audio_np).max() > 0:
             audio_np = audio_np / np.abs(audio_np).max() * 0.95
 
-        # Convert to WAV bytes
         buffer = BytesIO()
         sf.write(buffer, audio_np, SAMPLE_RATE, format="WAV")
         audio_bytes = buffer.getvalue()
 
-        logger.info(f"Job {job_id}: Audio generated successfully ({len(audio_bytes)} bytes)")
-
-        # Upload to GCS
         signed_url = upload_to_gcs_with_signed_url(job_id, audio_bytes)
-        
-        # Confirm credit deduction
-        confirm_credit_deduction_internal(uid, job_id, cost)
-        
-        # Update job as completed
+
+        # Confirm credits
+        user_ref = db.collection("users").document(uid)
+        confirm_credits(db.transaction(), user_ref, cost)
+
         expires_at = datetime.utcnow() + timedelta(hours=24)
-        update_job_status(
-            job_id, 
-            "completed", 
-            audioUrl=signed_url,
-            expiresAt=expires_at,
-            audioSize=len(audio_bytes)
-        )
-        
-        logger.info(f"Job {job_id} completed successfully")
-        
-        return jsonify({
-            "status": "completed",
-            "job_id": job_id,
-            "audio_url": signed_url
-        }), 200
+        update_job_status(job_id, "completed", audioUrl=signed_url, expiresAt=expires_at, audioSize=len(audio_bytes))
 
-    except torch.cuda.OutOfMemoryError as e:
-        logger.error(f"Job {job_id}: GPU OOM - {str(e)}")
+        logger.info("Job completed successfully")
+        return jsonify({"status": "completed", "audio_url": signed_url}), 200
+
+    except torch.cuda.OutOfMemoryError:
+        logger.error("GPU OOM", exc_info=True)
         update_job_status(job_id, "failed", error="GPU out of memory")
-        release_credits_on_failure(uid, job_id, cost)
-        
-        # Return 503 to trigger retry by Cloud Tasks
-        return jsonify({"error": "GPU out of memory"}), 503
-
-    except ValueError as e:
-        # Bad input - don't retry
-        logger.error(f"Job {job_id}: Validation error - {str(e)}")
-        update_job_status(job_id, "failed", error=str(e))
-        release_credits_on_failure(uid, job_id, cost)
-        
-        # Return 400 - won't retry
-        return jsonify({"error": str(e)}), 400
+        user_ref = db.collection("users").document(uid)
+        release_credits(db.transaction(), user_ref, cost)
+        return jsonify({"error": "GPU OOM"}), 503
 
     except Exception as e:
-        # Unknown error - retry with caution
-        logger.error(f"Job {job_id}: Unexpected error - {str(e)}", exc_info=True)
-        update_job_status(job_id, "failed", error="Internal error")
-        release_credits_on_failure(uid, job_id, cost)
-        
-        # Return 500 - will retry
+        logger.error("Unexpected inference error", exc_info=True)
+        update_job_status(job_id, "failed", error=str(e))
+        user_ref = db.collection("users").document(uid)
+        release_credits(db.transaction(), user_ref, cost)
         return jsonify({"error": "Internal error"}), 500
 
 
