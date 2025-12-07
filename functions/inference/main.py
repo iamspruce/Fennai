@@ -11,7 +11,7 @@ from flask import Flask, request, abort, jsonify
 import soundfile as sf
 
 # === Google Cloud clients from shared module (correct ADC init!) ===
-from shared.firebase import db  # ← This is now the single source of truth
+from shared.firebase import db 
 
 # Enable maximum performance on NVIDIA L4 / A100
 torch.backends.cuda.matmul.allow_tf32 = True
