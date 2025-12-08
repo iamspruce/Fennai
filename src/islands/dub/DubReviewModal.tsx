@@ -88,7 +88,7 @@ export default function DubReviewModal() {
                                         cy="60"
                                         r="54"
                                         fill="none"
-                                        stroke="var(--purple-9)"
+                                        stroke="var(--pink-9)"
                                         strokeWidth="8"
                                         strokeLinecap="round"
                                         strokeDasharray={`${2 * Math.PI * 54}`}

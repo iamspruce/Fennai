@@ -258,7 +258,7 @@ export default function VoiceLibraryModal({ isPro }: VoiceLibraryModalProps) {
                                 </div>
                                 <h4>No voices found</h4>
                                 <p>Try adjusting filters or record your own voice.</p>
-                                <button className="btn-primary-outline" onClick={openRecordModal}>
+                                <button className="btn btn-primary-outline" onClick={openRecordModal}>
                                     Record Voice
                                 </button>
                             </div>
