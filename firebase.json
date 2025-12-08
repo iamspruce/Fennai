@@ -46,10 +46,6 @@
       {
         "source": "/api/proxy/dub/clone",
         "function": "dub_clone"
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
       }
     ]
   },

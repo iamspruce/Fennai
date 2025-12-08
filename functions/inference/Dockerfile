@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Python, FFmpeg, and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-venv python3-pip git \
+    python3.10 python3.10-venv python3.10-dev libpython3.10-dev python3-pip git \
     ffmpeg \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
