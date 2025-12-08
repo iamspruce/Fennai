@@ -1,22 +1,147 @@
 # functions/proxy/routes/script_generator.py
-from firebase_functions import https_fn, logger
+"""
+Enhanced AI Script Generator using Gemini 1.5 Pro with proper job tracking,
+rate limiting, and comprehensive error handling.
+"""
+from firebase_functions import https_fn
+import logging
 import os
+import uuid
+import time
+from typing import List, Dict, Any
 import google.generativeai as genai
+from firebase_admin import firestore
+
 from firebase.admin import get_current_user
+from firebase.credits import check_credits_available, confirm_credit_deduction
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Configure Gemini
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# Constants
 SCRIPT_COST = 1  # 1 credit per script generation
+MAX_CONTEXT_LENGTH = 2000
+MAX_CHARACTERS = 10
+RATE_LIMIT_WINDOW = 60  # 1 minute
+MAX_REQUESTS_PER_WINDOW = 10
+
+db = firestore.client()
+
+
+def check_rate_limit(uid: str) -> tuple[bool, str]:
+    """
+    Check if user has exceeded rate limit for script generation.
+    
+    Args:
+        uid: User ID
+        
+    Returns:
+        Tuple of (is_allowed, error_message)
+    """
+    try:
+        now = time.time()
+        cutoff = now - RATE_LIMIT_WINDOW
+        
+        # Query recent script generations
+        recent_scripts = (
+            db.collection("scriptGenerations")
+            .where("uid", "==", uid)
+            .where("timestamp", ">=", cutoff)
+            .stream()
+        )
+        
+        count = sum(1 for _ in recent_scripts)
+        
+        if count >= MAX_REQUESTS_PER_WINDOW:
+            return False, f"Rate limit exceeded. Max {MAX_REQUESTS_PER_WINDOW} scripts per minute."
+        
+        return True, ""
+        
+    except Exception as e:
+        logger.error(f"Rate limit check failed: {str(e)}")
+        # Allow request on error to avoid blocking users
+        return True, ""
+
+
+def validate_script_request(data: dict) -> tuple[bool, str]:
+    """
+    Validate script generation request data.
+    
+    Args:
+        data: Request data
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    mode = data.get("mode", "single")
+    template = data.get("template", "custom")
+    context = data.get("context", "").strip()
+    characters = data.get("characters", [])
+    
+    # Validate mode
+    if mode not in ["single", "dialogue"]:
+        return False, "Invalid mode. Must be 'single' or 'dialogue'"
+    
+    # Validate context
+    if not context and template == "custom":
+        return False, "Context required for custom template"
+    
+    if len(context) > MAX_CONTEXT_LENGTH:
+        return False, f"Context too long. Max {MAX_CONTEXT_LENGTH} characters"
+    
+    # Validate characters
+    if not isinstance(characters, list):
+        return False, "Characters must be an array"
+    
+    if len(characters) > MAX_CHARACTERS:
+        return False, f"Too many characters. Max {MAX_CHARACTERS}"
+    
+    if mode == "dialogue" and len(characters) < 2:
+        return False, "Dialogue mode requires at least 2 characters"
+    
+    for idx, char in enumerate(characters):
+        if not isinstance(char, dict) or "name" not in char:
+            return False, f"Invalid character format at index {idx}"
+        if not char["name"].strip():
+            return False, f"Character name cannot be empty at index {idx}"
+    
+    return True, ""
+
+
+def log_script_generation(uid: str, generation_id: str, data: dict):
+    """
+    Log script generation for rate limiting and analytics.
+    
+    Args:
+        uid: User ID
+        generation_id: Unique generation ID
+        data: Generation metadata
+    """
+    try:
+        db.collection("scriptGenerations").document(generation_id).set({
+            "uid": uid,
+            "mode": data.get("mode"),
+            "template": data.get("template"),
+            "timestamp": time.time(),
+            "createdAt": firestore.SERVER_TIMESTAMP
+        })
+    except Exception as e:
+        logger.error(f"Failed to log script generation: {str(e)}")
+
 
 @https_fn.on_request()
 def generate_script(req: https_fn.Request) -> https_fn.Response:
     """
-    AI Script Generator using Gemini 1.5 Pro
-    Costs 1 credit per generation
+    AI Script Generator using Gemini 1.5 Pro.
+    Costs 1 credit per generation with rate limiting.
     """
+    request_id = str(uuid.uuid4())
+    logger.info(f"[{request_id}] Script generation request received")
     
     # CORS
     if req.method == "OPTIONS":
@@ -40,6 +165,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     # Auth
     user = get_current_user(req)
     if not user:
+        logger.warning(f"[{request_id}] Unauthorized request")
         return https_fn.Response(
             {"error": "Unauthorized"},
             status=401,
@@ -47,10 +173,11 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         )
     
     uid = user.get("uid")
+    logger.info(f"[{request_id}] User authenticated: {uid}")
     
     # Check Gemini API key
     if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not configured")
+        logger.error(f"[{request_id}] GEMINI_API_KEY not configured")
         return https_fn.Response(
             {"error": "AI service not configured"},
             status=500,
@@ -60,39 +187,56 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     # Parse request
     try:
         data = req.get_json(silent=True) or {}
-    except Exception:
+    except Exception as e:
+        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
         return https_fn.Response(
             {"error": "Invalid JSON"},
             status=400,
             headers={"Access-Control-Allow-Origin": "*"}
         )
     
+    # Validate request
+    is_valid, error_msg = validate_script_request(data)
+    if not is_valid:
+        logger.warning(f"[{request_id}] Validation failed: {error_msg}")
+        return https_fn.Response(
+            {"error": error_msg},
+            status=400,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+    
+    # Check rate limit
+    allowed, rate_error = check_rate_limit(uid)
+    if not allowed:
+        logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
+        return https_fn.Response(
+            {"error": rate_error},
+            status=429,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+    
+    # Check credits
+    has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
+    if not has_credits:
+        logger.warning(f"[{request_id}] Insufficient credits for {uid}")
+        return https_fn.Response(
+            {"error": credit_error or "Insufficient credits"},
+            status=402,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+    
+    # Extract parameters
     mode = data.get("mode", "single")
     template = data.get("template", "custom")
     context = data.get("context", "").strip()
     characters = data.get("characters", [])
     
-    if not context and template == "custom":
-        return https_fn.Response(
-            {"error": "Context required for custom template"},
-            status=400,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
-    
-    # Check credits
-    from firebase.credits import check_credits_available
-    has_credits, error_msg = check_credits_available(uid, SCRIPT_COST)
-    if not has_credits:
-        return https_fn.Response(
-            {"error": error_msg or "Insufficient credits"},
-            status=402,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
-    
     # Build prompt
     prompt = build_gemini_prompt(mode, template, context, characters)
+    logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
     # Call Gemini
+    generation_id = str(uuid.uuid4())
     try:
         model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(
@@ -107,13 +251,23 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         script = response.text.strip()
         
         # Deduct credits (non-refundable for AI generations)
-        from firebase.credits import confirm_credit_deduction
-        confirm_credit_deduction(uid, "script_generation", SCRIPT_COST)
+        confirm_credit_deduction(uid, generation_id, SCRIPT_COST)
         
-        logger.info(f"Script generated for user {uid}, mode={mode}, template={template}")
+        # Log generation for rate limiting
+        log_script_generation(uid, generation_id, data)
+        
+        logger.info(
+            f"[{request_id}] Script generated successfully for user {uid}, "
+            f"generation_id={generation_id}"
+        )
         
         return https_fn.Response(
-            {"script": script},
+            {
+                "success": True,
+                "script": script,
+                "generationId": generation_id,
+                "requestId": request_id
+            },
             status=200,
             headers={
                 "Content-Type": "application/json",
@@ -122,16 +276,35 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         )
         
     except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
+        logger.error(f"[{request_id}] Gemini API error: {str(e)}")
         return https_fn.Response(
-            {"error": "Failed to generate script. Please try again."},
+            {
+                "error": "Failed to generate script. Please try again.",
+                "details": str(e) if os.getenv("DEBUG") else None
+            },
             status=500,
             headers={"Access-Control-Allow-Origin": "*"}
         )
 
 
-def build_gemini_prompt(mode: str, template: str, context: str, characters: list) -> str:
-    """Build structured prompt for Gemini"""
+def build_gemini_prompt(
+    mode: str, 
+    template: str, 
+    context: str, 
+    characters: List[Dict[str, Any]]
+) -> str:
+    """
+    Build structured prompt for Gemini.
+    
+    Args:
+        mode: 'single' or 'dialogue'
+        template: Template type
+        context: User-provided context
+        characters: List of character dictionaries
+        
+    Returns:
+        Formatted prompt string
+    """
     
     # Template prompts
     TEMPLATE_PROMPTS = {
@@ -162,6 +335,7 @@ Write a natural, engaging script for {char_name} to speak. The script should:
 - Be appropriate for voice acting/text-to-speech
 - Have clear pacing and rhythm
 - Be emotionally engaging
+- Be between 100-500 words
 
 Output only the script text, no labels or stage directions."""
 
@@ -179,6 +353,7 @@ Write a natural, engaging dialogue between these characters. The dialogue should
 - Flow naturally like real conversation
 - Be appropriate for voice acting
 - Stay true to the context provided
+- Be between 200-800 words total
 
 Format each line as:
 Character Name: dialogue text

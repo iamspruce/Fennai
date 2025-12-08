@@ -1,5 +1,5 @@
 # ============= Builder Stage =============
-FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
+FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -41,7 +41,7 @@ snapshot_download( \
     echo "Model baked successfully (~60–90 sec thanks to hf-transfer!)"
 
 # ============= Runtime Stage =============
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 # Install runtime dependencies including FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \

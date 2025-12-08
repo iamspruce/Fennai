@@ -1,30 +1,32 @@
 # functions/proxy/routes/dub_clone.py
-from firebase_functions import https_fn, logger
-from firebase_admin import firestore
+"""
+Enhanced dubbing voice cloning route with multi-chunk processing
+and comprehensive error handling.
+"""
+from firebase_functions import https_fn
+import logging
 import os
-import json
-import base64
-from google.cloud import tasks_v2
+import uuid
+from typing import List, Dict, Any, Optional
+from firebase_admin import firestore
 
 from firebase.admin import get_current_user
+from utils import ResponseBuilder, MAX_SPEAKERS_PER_CHUNK
+from utils.task_helper import create_cloud_task
 
-# Environment
-CLOUD_RUN_URL = os.environ.get("CLOUD_RUN_URL")
-INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
-GCP_PROJECT = os.environ.get("GCP_PROJECT", "fennai")
-QUEUE_LOCATION = os.environ.get("QUEUE_LOCATION", "us-central1")
-QUEUE_NAME = os.environ.get("QUEUE_NAME", "voice-generation-queue")
-SERVICE_ACCOUNT = os.environ.get("SERVICE_ACCOUNT_EMAIL")
-
-tasks_client = tasks_v2.CloudTasksClient()
-queue_path = tasks_client.queue_path(GCP_PROJECT, QUEUE_LOCATION, QUEUE_NAME)
+logger = logging.getLogger(__name__)
 db = firestore.client()
 
 
-def chunk_dialogue_for_inference(transcript: list) -> list:
+def chunk_dialogue_for_inference(transcript: List[Dict]) -> List[Dict[str, Any]]:
     """
-    Split transcript into chunks with max 4 unique speakers per chunk
-    Returns: List of chunks with {chunkId, speakers[], segments[]}
+    Split transcript into chunks with max 4 unique speakers per chunk.
+    
+    Args:
+        transcript: List of transcript segments with speaker IDs
+        
+    Returns:
+        List of chunks with {chunkId, speakers[], segments[]}
     """
     chunks = []
     current_chunk = {
@@ -36,19 +38,25 @@ def chunk_dialogue_for_inference(transcript: list) -> list:
     for segment in transcript:
         speaker_id = segment.get("speakerId")
         
+        if not speaker_id:
+            logger.warning(f"Segment missing speakerId: {segment}")
+            continue
+        
         # Check if speaker already in current chunk
         if speaker_id in current_chunk["speakers"]:
             current_chunk["segments"].append(segment)
             continue
         
         # Check if chunk has room for new speaker
-        if len(current_chunk["speakers"]) < 4:
+        if len(current_chunk["speakers"]) < MAX_SPEAKERS_PER_CHUNK:
             current_chunk["speakers"].append(speaker_id)
             current_chunk["segments"].append(segment)
             continue
         
         # Chunk full, start new chunk
-        chunks.append(current_chunk)
+        if current_chunk["segments"]:
+            chunks.append(current_chunk)
+        
         current_chunk = {
             "chunkId": len(chunks),
             "speakers": [speaker_id],
@@ -62,12 +70,32 @@ def chunk_dialogue_for_inference(transcript: list) -> list:
     return chunks
 
 
+def validate_clone_request(data: dict) -> tuple[bool, Optional[str]]:
+    """
+    Validate voice clone request.
+    
+    Args:
+        data: Request data
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    job_id = data.get("jobId")
+    
+    if not job_id:
+        return False, "Job ID is required"
+    
+    return True, None
+
+
 @https_fn.on_request()
 def dub_clone(req: https_fn.Request) -> https_fn.Response:
     """
-    Start voice cloning for dubbing job
-    Handles multi-chunk processing for >4 speakers
+    Start voice cloning for dubbing job.
+    Handles multi-chunk processing for >4 speakers.
     """
+    request_id = str(uuid.uuid4())
+    logger.info(f"[{request_id}] Dubbing clone request received")
     
     # CORS
     if req.method == "OPTIONS":
@@ -83,40 +111,46 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
     
     if req.method != "POST":
         return https_fn.Response(
-            {"error": "Method not allowed"},
+            ResponseBuilder.error("Method not allowed", request_id=request_id),
             status=405,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     # Auth
     user = get_current_user(req)
     if not user:
+        logger.warning(f"[{request_id}] Unauthorized request")
         return https_fn.Response(
-            {"error": "Unauthorized"},
+            ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     uid = user.get("uid")
+    logger.info(f"[{request_id}] User authenticated: {uid}")
     
     # Parse request
     try:
         data = req.get_json(silent=True) or {}
-    except Exception:
+    except Exception as e:
+        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
         return https_fn.Response(
-            {"error": "Invalid JSON"},
+            ResponseBuilder.error("Invalid JSON", request_id=request_id),
             status=400,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        )
+    
+    # Validate request
+    is_valid, error_msg = validate_clone_request(data)
+    if not is_valid:
+        logger.warning(f"[{request_id}] Validation failed: {error_msg}")
+        return https_fn.Response(
+            ResponseBuilder.error(error_msg, request_id=request_id),
+            status=400,
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     job_id = data.get("jobId")
-    
-    if not job_id:
-        return https_fn.Response(
-            {"error": "Missing jobId"},
-            status=400,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
     
     # Get job document
     try:
@@ -124,20 +158,22 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
         job_doc = job_ref.get()
         
         if not job_doc.exists:
+            logger.warning(f"[{request_id}] Job not found: {job_id}")
             return https_fn.Response(
-                {"error": "Job not found"},
+                ResponseBuilder.error("Job not found", request_id=request_id),
                 status=404,
-                headers={"Access-Control-Allow-Origin": "*"}
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
         
         job_data = job_doc.to_dict()
         
         # Verify ownership
         if job_data.get("uid") != uid:
+            logger.warning(f"[{request_id}] Unauthorized access attempt to job {job_id}")
             return https_fn.Response(
-                {"error": "Unauthorized"},
+                ResponseBuilder.error("Unauthorized", request_id=request_id),
                 status=403,
-                headers={"Access-Control-Allow-Origin": "*"}
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
         
         transcript = job_data.get("transcript", [])
@@ -145,19 +181,26 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
         speakers = job_data.get("speakers", [])
         speaker_voice_samples = job_data.get("speakerVoiceSamples", {})
         
-        if not transcript or not voice_mapping:
+        if not transcript:
             return https_fn.Response(
-                {"error": "Missing transcript or voice mapping"},
+                ResponseBuilder.error("No transcript available", request_id=request_id),
                 status=400,
-                headers={"Access-Control-Allow-Origin": "*"}
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            )
+        
+        if not voice_mapping:
+            return https_fn.Response(
+                ResponseBuilder.error("Voice mapping not configured", request_id=request_id),
+                status=400,
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
         
     except Exception as e:
-        logger.error(f"Failed to get job: {str(e)}")
+        logger.error(f"[{request_id}] Failed to get job: {str(e)}")
         return https_fn.Response(
-            {"error": "Failed to retrieve job"},
+            ResponseBuilder.error("Failed to retrieve job", request_id=request_id),
             status=500,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     # Use translated text if available
@@ -170,7 +213,7 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
     # Chunk dialogue for 4-speaker limit
     chunks = chunk_dialogue_for_inference(transcript)
     
-    logger.info(f"Job {job_id}: Split into {len(chunks)} chunks")
+    logger.info(f"[{request_id}] Job {job_id}: Split into {len(chunks)} chunks")
     
     # Update job with chunks
     try:
@@ -196,11 +239,11 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
         })
         
     except Exception as e:
-        logger.error(f"Failed to update job: {str(e)}")
+        logger.error(f"[{request_id}] Failed to update job: {str(e)}")
         return https_fn.Response(
-            {"error": "Failed to update job"},
+            ResponseBuilder.error("Failed to update job", request_id=request_id),
             status=500,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     # Queue clone tasks for each chunk
@@ -216,10 +259,15 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
                     # Fetch character's voice sample
                     character_id = mapping.get("characterId")
                     if character_id:
-                        char_doc = db.collection("characters").document(character_id).get()
-                        if char_doc.exists:
-                            char_data = char_doc.to_dict()
-                            chunk_voice_samples[speaker_id] = char_data.get("sampleAudioUrl")
+                        try:
+                            char_doc = db.collection("characters").document(character_id).get()
+                            if char_doc.exists:
+                                char_data = char_doc.to_dict()
+                                chunk_voice_samples[speaker_id] = char_data.get("sampleAudioUrl")
+                        except Exception as e:
+                            logger.warning(
+                                f"[{request_id}] Failed to fetch character {character_id}: {str(e)}"
+                            )
                 
                 elif mapping.get("type") == "original":
                     # Use original speaker voice sample
@@ -228,8 +276,14 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
             # Build text for this chunk (format for VibeVoice)
             chunk_text_parts = []
             for segment in chunk["segments"]:
-                speaker_idx = chunk["speakers"].index(segment["speakerId"]) + 1
-                chunk_text_parts.append(f"Speaker {speaker_idx}: {segment['textToClone']}")
+                try:
+                    speaker_idx = chunk["speakers"].index(segment["speakerId"]) + 1
+                    chunk_text_parts.append(f"Speaker {speaker_idx}: {segment['textToClone']}")
+                except ValueError:
+                    logger.warning(
+                        f"[{request_id}] Speaker {segment['speakerId']} not in chunk speakers"
+                    )
+                    continue
             
             chunk_text = "\n".join(chunk_text_parts)
             
@@ -241,49 +295,32 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
                 "speakers": chunk["speakers"],
                 "text": chunk_text,
                 "voice_samples": chunk_voice_samples,
+                "request_id": request_id,
             }
             
-            task = {
-                "http_request": {
-                    "http_method": tasks_v2.HttpMethod.POST,
-                    "url": f"{CLOUD_RUN_URL}/clone-audio",
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "X-Internal-Token": INTERNAL_TOKEN,
-                    },
-                    "body": base64.b64encode(
-                        json.dumps(task_payload).encode()
-                    ).decode(),
-                },
-                "dispatch_deadline": {"seconds": 900},
-            }
+            success, error = create_cloud_task(task_payload, endpoint="/clone-audio")
             
-            if SERVICE_ACCOUNT:
-                task["http_request"]["oidc_token"] = {
-                    "service_account_email": SERVICE_ACCOUNT
-                }
+            if not success:
+                raise Exception(f"Failed to queue chunk {chunk['chunkId']}: {error}")
             
-            response = tasks_client.create_task(
-                request={"parent": queue_path, "task": task}
+            logger.info(
+                f"[{request_id}] Queued clone task for chunk {chunk['chunkId']} "
+                f"with {len(chunk['speakers'])} speakers"
             )
-            
-            logger.info(f"Queued clone task for chunk {chunk['chunkId']}: {response.name}")
         
         return https_fn.Response(
-            {
-                "success": True,
+            ResponseBuilder.success({
+                "jobId": job_id,
+                "status": "cloning",
                 "totalChunks": len(chunks),
                 "message": "Voice cloning started"
-            },
+            }, request_id=request_id),
             status=202,
-            headers={
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            }
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
         
     except Exception as e:
-        logger.error(f"Failed to queue clone tasks: {str(e)}")
+        logger.error(f"[{request_id}] Failed to queue clone tasks: {str(e)}")
         
         job_ref.update({
             "status": "failed",
@@ -293,7 +330,7 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
         })
         
         return https_fn.Response(
-            {"error": "Failed to queue voice cloning"},
+            ResponseBuilder.error("Failed to queue voice cloning", request_id=request_id),
             status=500,
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )

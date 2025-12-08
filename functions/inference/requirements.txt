@@ -1,6 +1,7 @@
 # Flask for HTTP routing
 Flask==3.0.0
 
+
 # Firebase & Google Cloud
 firebase-admin==6.2.0
 google-cloud-firestore==2.13.0
@@ -38,6 +39,7 @@ scipy>=1.11.0
 python-dotenv>=1.0.0
 requests>=2.31.0
 numpy>=1.24.0
+pydantic==2.5.0
 
 # Optional but recommended for performance
 einops>=0.7.0
