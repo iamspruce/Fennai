@@ -29,25 +29,7 @@
     ],
     "frameworksBackend": {
       "region": "us-central1"
-    },
-    "rewrites": [
-      {
-        "source": "/api/proxy/generate-script",
-        "function": "generate_script"
-      },
-      {
-        "source": "/api/proxy/dub/transcribe",
-        "function": "dub_transcribe"
-      },
-      {
-        "source": "/api/proxy/dub/translate",
-        "function": "dub_translate"
-      },
-      {
-        "source": "/api/proxy/dub/clone",
-        "function": "dub_clone"
-      }
-    ]
+    }
   },
   "emulators": {
     "auth": { "port": 9099 },
