@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import type { Character } from '../../types/character';
 import type { DialogueSegment, Voice } from '../../types/voice';
+import type { LibraryVoice } from '@/types/voiceLibrary';
 
 // Performance monitoring utility
 class FirestoreMonitor {
@@ -508,6 +509,142 @@ export async function deleteVoice(voiceId: string, userId: string): Promise<void
             await docRef.delete();
         },
         { voiceId, userId }
+    );
+}
+
+/**
+ * CREATE Voice Library Entry(Admin only - for manual uploads)
+ */
+
+export async function createVoiceLibraryEntry(data: {
+    name: string;
+    description: string;
+    language: string;
+    languageCode: string;
+    accent?: string;
+    gender: 'male' | 'female' | 'neutral';
+    age: 'young' | 'adult' | 'senior';
+    emotion?: 'neutral' | 'happy' | 'sad' | 'energetic' | 'calm';
+    isPro: boolean;
+    audioUrl: string;
+    audioStoragePath: string;
+    duration: number;
+    tags?: string[];
+}): Promise<string> {
+    return FirestoreMonitor.track(
+        'createVoiceLibraryEntry',
+        async () => {
+            const docRef = await adminDb.collection('voiceLibrary').add({
+                ...data,
+                createdAt: FieldValue.serverTimestamp(),
+            });
+
+            return docRef.id;
+        },
+        { name: data.name }
+    );
+}
+
+/**
+ * GET Voice Library Entries (with filters)
+ */
+export async function getVoiceLibrary(filters?: {
+    language?: string;
+    gender?: string;
+    isPro?: boolean;
+    limit?: number;
+}): Promise<{ voices: LibraryVoice[] }> {
+    return FirestoreMonitor.track(
+        'getVoiceLibrary',
+        async () => {
+            let query = adminDb.collection('voiceLibrary')
+                .orderBy('createdAt', 'desc');
+
+            if (filters?.language) {
+                query = query.where('languageCode', '==', filters.language);
+            }
+            if (filters?.gender) {
+                query = query.where('gender', '==', filters.gender);
+            }
+            if (filters?.isPro !== undefined) {
+                query = query.where('isPro', '==', filters.isPro);
+            }
+            if (filters?.limit) {
+                query = query.limit(filters.limit);
+            }
+
+            const snapshot = await query.get();
+
+            const voices = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    name: data.name,
+                    description: data.description,
+                    language: data.language,
+                    languageCode: data.languageCode,
+                    accent: data.accent,
+                    gender: data.gender,
+                    age: data.age,
+                    emotion: data.emotion,
+                    isPro: data.isPro || false,
+                    audioUrl: data.audioUrl,
+                    audioStoragePath: data.audioStoragePath,
+                    duration: data.duration || 0,
+                    createdAt: data.createdAt?.toDate() || new Date(),
+                    tags: data.tags || [],
+                };
+            });
+
+            return { voices };
+        },
+        filters
+    );
+}
+
+/**
+ * DELETE Voice Library Entry (Admin only)
+ */
+export async function deleteVoiceLibraryEntry(voiceId: string): Promise<void> {
+    return FirestoreMonitor.track(
+        'deleteVoiceLibraryEntry',
+        async () => {
+            const docRef = adminDb.collection('voiceLibrary').doc(voiceId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new Error('Voice not found');
+            }
+
+            await docRef.delete();
+        },
+        { voiceId }
+    );
+}
+
+/**
+ * UPDATE Voice Library Entry (Admin only)
+ */
+export async function updateVoiceLibraryEntry(
+    voiceId: string,
+    data: Partial<Omit<LibraryVoice, 'id' | 'createdAt'>>
+): Promise<void> {
+    return FirestoreMonitor.track(
+        'updateVoiceLibraryEntry',
+        async () => {
+            const docRef = adminDb.collection('voiceLibrary').doc(voiceId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new Error('Voice not found');
+            }
+
+            await docRef.update({
+                ...data,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        },
+        { voiceId }
     );
 }
 

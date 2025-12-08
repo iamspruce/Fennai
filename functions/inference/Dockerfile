@@ -3,8 +3,11 @@ FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install Python, FFmpeg, and build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 python3.10-venv python3-pip git \
+    ffmpeg \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Create clean venv
@@ -13,7 +16,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# Install deps + hf-transfer (this is the magic for 60–90 sec downloads)
+# Install deps + hf-transfer
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
@@ -22,10 +25,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Enable ultra-fast download mode
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
-# ←←← THIS IS THE ONLY LINE THAT MATTERS FOR THE SIMPLE METHOD
+# Download model at build time
 ARG HF_TOKEN
 ENV HF_TOKEN=${HF_TOKEN}
-# ←←←
 
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
@@ -41,13 +43,19 @@ snapshot_download( \
 # ============= Runtime Stage =============
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3.10 \
+# Install runtime dependencies including FFmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 RUN useradd -m appuser
+
 WORKDIR /app
 USER appuser
 
+# Copy venv and models from builder
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 COPY --from=builder --chown=appuser:appuser /app/models /app/models
 
@@ -55,10 +63,14 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     HF_HUB_OFFLINE=1
 
-# Copy only what your app actually needs
+# Copy application code
 COPY --chown=appuser:appuser main.py .
 COPY --chown=appuser:appuser utils.py .
 COPY --chown=appuser:appuser vibevoice ./vibevoice
+COPY --chown=appuser:appuser utils ./utils
+COPY --chown=appuser:appuser routes ./routes
+COPY --chown=appuser:appuser firebase ./firebase
 
 EXPOSE 8080
+
 CMD ["python", "main.py"]

@@ -29,6 +29,14 @@ export interface JobStatus {
     audioUrl?: string;
     error?: string;
     expiresAt?: Date;
+    // Enhanced fields
+    duration?: number;
+    actualCost?: number;
+    reservedCost?: number;
+    creditRefund?: number;
+    speakerCount?: number;
+    totalChunks?: number;
+    completedChunks?: number;
 }
 
 // Get Firebase ID token for API calls
@@ -40,7 +48,6 @@ async function getAuthToken(): Promise<string | null> {
             throw new Error('No authenticated user');
         }
 
-        // Get fresh ID token
         return await user.getIdToken();
     } catch (error) {
         console.error('Error getting auth token:', error);
@@ -78,14 +85,13 @@ function listenToJobStatus(
     jobId: string,
     onUpdate: (status: JobStatus) => void,
     onError: (error: Error) => void,
-    timeout: number = 180000 // 3 minutes default
+    timeout: number = 300000 // 5 minutes default (increased for multi-chunk)
 ): Unsubscribe {
     const jobRef = doc(db, "voiceJobs", jobId);
 
-    // Set up timeout
     const timeoutId = setTimeout(() => {
         unsubscribe();
-        onError(new Error('Generation timed out after 3 minutes'));
+        onError(new Error('Generation timed out'));
     }, timeout);
 
     const unsubscribe = onSnapshot(
@@ -103,11 +109,17 @@ function listenToJobStatus(
                 audioUrl: data.audioUrl,
                 error: data.error,
                 expiresAt: data.expiresAt?.toDate(),
+                duration: data.duration,
+                actualCost: data.actualCost,
+                reservedCost: data.reservedCost,
+                creditRefund: data.creditRefund,
+                speakerCount: data.speakerCount,
+                totalChunks: data.totalChunks,
+                completedChunks: data.completedChunks,
             };
 
             onUpdate(status);
 
-            // Clean up if terminal state reached
             if (status.status === 'completed' || status.status === 'failed') {
                 clearTimeout(timeoutId);
                 unsubscribe();
@@ -120,7 +132,6 @@ function listenToJobStatus(
         }
     );
 
-    // Return unsubscribe function that also clears timeout
     return () => {
         clearTimeout(timeoutId);
         unsubscribe();
@@ -138,7 +149,7 @@ async function downloadAudioFromUrl(url: string): Promise<Blob> {
     return await response.blob();
 }
 
-// Clone single voice (new async flow)
+// Clone single voice
 export async function cloneSingleVoice(
     params: CloneVoiceParams,
     onStatusUpdate?: (status: JobStatus) => void
@@ -152,13 +163,9 @@ export async function cloneSingleVoice(
         throw new Error('Not authenticated');
     }
 
-    // Fetch the character's audio sample
     const audioFile = await fetchCharacterAudio(params.characterId);
-
-    // Convert audio file to base64
     const voiceBase64 = await fileToBase64(audioFile);
 
-    // Call the proxy function to queue the job
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
@@ -183,12 +190,10 @@ export async function cloneSingleVoice(
         throw new Error('No job ID returned from server');
     }
 
-    // Listen to job status and wait for completion
     return new Promise((resolve, reject) => {
         const unsubscribe = listenToJobStatus(
             jobId,
             async (status) => {
-                // Call optional status update callback
                 if (onStatusUpdate) {
                     onStatusUpdate(status);
                 }
@@ -196,7 +201,7 @@ export async function cloneSingleVoice(
                 if (status.status === 'completed' && status.audioUrl) {
                     try {
                         const audioBlob = await downloadAudioFromUrl(status.audioUrl);
-                        const duration = await getAudioDuration(audioBlob);
+                        const duration = status.duration || await getAudioDuration(audioBlob);
                         resolve({ audioBlob, duration });
                     } catch (err) {
                         reject(err);
@@ -212,7 +217,7 @@ export async function cloneSingleVoice(
     });
 }
 
-// Clone multi-character voice (new async flow)
+// Clone multi-character voice
 export async function cloneMultiVoice(
     params: MultiCloneVoiceParams,
     onStatusUpdate?: (status: JobStatus) => void
@@ -241,7 +246,6 @@ export async function cloneMultiVoice(
         .map((char, index) => `Speaker ${index + 1}: ${char.text}`)
         .join('\n');
 
-    // Call the proxy function to queue the job
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
@@ -267,12 +271,10 @@ export async function cloneMultiVoice(
         throw new Error('No job ID returned from server');
     }
 
-    // Listen to job status and wait for completion
     return new Promise((resolve, reject) => {
         const unsubscribe = listenToJobStatus(
             jobId,
             async (status) => {
-                // Call optional status update callback
                 if (onStatusUpdate) {
                     onStatusUpdate(status);
                 }
@@ -280,7 +282,7 @@ export async function cloneMultiVoice(
                 if (status.status === 'completed' && status.audioUrl) {
                     try {
                         const audioBlob = await downloadAudioFromUrl(status.audioUrl);
-                        const duration = await getAudioDuration(audioBlob);
+                        const duration = status.duration || await getAudioDuration(audioBlob);
                         resolve({ audioBlob, duration });
                     } catch (err) {
                         reject(err);
@@ -314,17 +316,6 @@ async function getAudioDuration(blob: Blob): Promise<number> {
 
         audio.src = url;
     });
-}
-
-// Check if user has credits or is pro
-export async function checkUserCanClone(): Promise<{ canClone: boolean; reason?: string }> {
-    try {
-        const response = await fetch('/api/voices/check-credits');
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        return { canClone: false, reason: 'Failed to check credits' };
-    }
 }
 
 // ==================== MOCK IMPLEMENTATIONS ====================

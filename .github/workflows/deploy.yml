@@ -3,6 +3,7 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
+
 jobs:
   deploy-hosting:
     name: Deploy Frontend (Firebase Hosting)
@@ -11,16 +12,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      
       - name: Install dependencies
         run: npm ci
+      
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
           echo ".env created."
+      
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -38,29 +43,35 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          service_account_file: /tmp/gcp-credentials.json
+      
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: fennai
+      
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      
       - name: Setup Python virtual environment for proxy function
         run: |
           cd functions/proxy
@@ -68,8 +79,10 @@ jobs:
           source venv/bin/activate
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      # CREATE OUTPUT BUCKET (for audio files)
-      - name: Create Cloud Storage Bucket for Audio Output
+
+      # ==================== STORAGE BUCKETS ====================
+      
+      - name: Create Voice Output Bucket
         run: |
           BUCKET_NAME="fennai-voice-output"
           REGION="us-central1"
@@ -80,7 +93,7 @@ jobs:
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
             echo "✓ Bucket created successfully"
           fi
-          # Set 24-hour lifecycle policy for auto-deletion
+          # 24-hour lifecycle policy
           echo '{
             "lifecycle": {
               "rule": [{
@@ -92,12 +105,37 @@ jobs:
           gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
           echo "✓ Lifecycle policy set (24-hour auto-delete)"
           rm lifecycle.json
-      # CREATE CLOUD TASKS QUEUE
+
+      - name: Create Dubbing Temp Bucket
+        run: |
+          BUCKET_NAME="fennai-dubbing-temp"
+          REGION="us-central1"
+          if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
+            echo "✓ Bucket gs://$BUCKET_NAME already exists"
+          else
+            echo "Creating bucket gs://$BUCKET_NAME"
+            gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
+            echo "✓ Bucket created successfully"
+          fi
+          # 7-day lifecycle policy for dubbing files
+          echo '{
+            "lifecycle": {
+              "rule": [{
+                "action": {"type": "Delete"},
+                "condition": {"age": 7}
+              }]
+            }
+          }' > lifecycle.json
+          gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
+          echo "✓ Lifecycle policy set (7-day auto-delete)"
+          rm lifecycle.json
+
+      # ==================== CLOUD TASKS QUEUE ====================
+      
       - name: Create Cloud Tasks Queue
         run: |
           QUEUE_NAME="voice-generation-queue"
           LOCATION="us-central1"
-          # Check if queue exists
           if gcloud tasks queues describe $QUEUE_NAME --location=$LOCATION 2>/dev/null; then
             echo "✓ Queue $QUEUE_NAME already exists"
           else
@@ -113,15 +151,16 @@ jobs:
               --max-retry-duration=1800s
             echo "✓ Queue created successfully"
           fi
+
+      # ==================== CLOUD RUN INFERENCE ====================
       
-      # BUILD AND DEPLOY CLOUD RUN (with baked-in model)
-      - name: Build GPU Inference Image (with baked model + hf-transfer)
+      - name: Build GPU Inference Image (with FFmpeg + Resemblyzer)
         run: |
-          echo "Building Docker image with model baked in..."
-          echo "⚠️ This will take ~60-90 seconds due to model download (~3GB) + hf-transfer"
+          echo "Building Docker image with model + FFmpeg + Resemblyzer..."
+          echo "⚠️ This will take ~90-120 seconds"
           gcloud builds submit \
             --config functions/inference/cloudbuild.yaml \
-            --timeout=1800s \
+            --timeout=2400s \
             --substitutions _HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
 
@@ -145,7 +184,7 @@ jobs:
               --port 8080 \
               --cpu-boost \
               --concurrency=1 \
-              --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output \
+              --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output,GCS_DUBBING_BUCKET=fennai-dubbing-temp,GCP_PROJECT=fennai,QUEUE_LOCATION=us-central1,QUEUE_NAME=voice-generation-queue \
               --quiet \
               --format='value(status.url)')
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
@@ -164,20 +203,39 @@ jobs:
         run: |
           SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
+          gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-dubbing-temp
           echo "✓ Storage permissions granted"
+
+      - name: Grant Cloud Tasks Permissions
+        run: |
+          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
+          gcloud projects add-iam-policy-binding fennai \
+            --member="serviceAccount:${SA}" \
+            --role="roles/cloudtasks.enqueuer"
+          echo "✓ Cloud Tasks permissions granted"
+
+      - name: Enable Required APIs
+        run: |
+          gcloud services enable speech.googleapis.com
+          gcloud services enable translate.googleapis.com
+          gcloud services enable cloudtasks.googleapis.com
+          echo "✓ APIs enabled"
 
       - name: Verify Deployment
         run: |
           echo "Waiting for Cloud Run to be ready..."
-          sleep 10
+          sleep 15
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$HEALTH_URL" || echo "000")
           if [ "$RESPONSE" = "200" ]; then
             echo "✓ Cloud Run is healthy"
           else
             echo "⚠️ Unexpected response: $RESPONSE"
             echo "Cloud Run may still be initializing"
           fi
+
+      # ==================== PROXY FUNCTIONS ====================
+
       - name: Create .env for proxy function
         run: |
           cd functions/proxy
@@ -187,29 +245,43 @@ jobs:
           echo "QUEUE_LOCATION=us-central1" >> .env
           echo "QUEUE_NAME=voice-generation-queue" >> .env
           echo "SERVICE_ACCOUNT_EMAIL=${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}" >> .env
-      - name: Deploy Proxy Function
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+          echo "GCS_DUBBING_BUCKET=fennai-dubbing-temp" >> .env
+
+      - name: Deploy Proxy Functions
         run: |
           firebase deploy \
-              --only functions:voice_clone \
+              --only functions \
               --project fennai \
               --non-interactive
+
+      # ==================== DEPLOYMENT SUMMARY ====================
+
       - name: Deployment Summary
         run: |
-          echo "================================\n"
+          echo "================================"
           echo "🚀 DEPLOYMENT SUCCESSFUL"
-          echo "================================\n"
+          echo "================================"
+          echo ""
           echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
           echo ""
+          echo "Features:"
+          echo " • Voice Cloning (original)"
+          echo " • Script Generator (Gemini 1.5 Pro)"
+          echo " • Audio Dubbing (STT + Resemblyzer + Translation)"
+          echo " • Video Dubbing (FFmpeg audio replacement)"
+          echo ""
           echo "Architecture:"
-          echo " • Model: Baked into Docker image (~3GB)"
-          echo " • Storage: GCS bucket (24hr lifecycle)"
+          echo " • Model: Baked into Docker (~3GB)"
+          echo " • Audio/Video: FFmpeg in container"
+          echo " • Speaker Clustering: Resemblyzer + HDBSCAN"
+          echo " • Storage: 2 GCS buckets (24hr + 7day lifecycle)"
           echo " • Queue: Cloud Tasks (async processing)"
-          echo " • Credits: Reserved on queue, deducted on success"
           echo ""
           echo "Performance:"
-          echo " • Cold start: 10-15s (model loads from disk)"
+          echo " • Cold start: 10-15s (model + FFmpeg)"
           echo " • Warm inference: <2s"
           echo " • Max concurrency: 1 per instance"
           echo " • Max instances: 3"
           echo ""
-          echo "================================\n"
+          echo "================================"

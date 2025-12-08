@@ -6,12 +6,15 @@ import "@/styles/modal.css"; // Ensure standard modal styles are applied
 interface PreviewEventDetail {
   audioBlob: Blob;
   source: string;
+  mediaType?: 'audio' | 'video';
 }
 
 export default function PreviewEditModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [source, setSource] = useState<string>('');
+  const [mediaType, setMediaType] = useState<'audio' | 'video'>('audio');
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
 
   // Playback State
   const [isPlaying, setIsPlaying] = useState(false);
@@ -32,6 +35,7 @@ export default function PreviewEditModal() {
     const handleOpen = (e: CustomEvent<PreviewEventDetail>) => {
       setAudioBlob(e.detail.audioBlob);
       setSource(e.detail.source);
+      setMediaType(e.detail.mediaType || 'audio');
       setIsOpen(true);
       setStartTime(0);
       setEndTime(0);
@@ -280,7 +284,18 @@ export default function PreviewEditModal() {
         </div>
 
         <div className="modal-body">
-          <audio ref={audioRef} />
+          {mediaType === 'video' ? (
+            <video
+              ref={(el) => {
+                setVideoElement(el);
+                if (el && audioBlob) el.src = URL.createObjectURL(audioBlob);
+              }}
+              controls
+              style={{ width: '100%', borderRadius: 'var(--radius-m)' }}
+            />
+          ) : (
+            <audio ref={audioRef} />
+          )}
 
           <div className="waveform-container">
             <canvas

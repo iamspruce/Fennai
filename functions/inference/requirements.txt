@@ -1,9 +1,22 @@
 # Flask for HTTP routing
 Flask==3.0.0
 
-# Google Cloud client libraries
-google-cloud-storage>=2.16.0
-firebase-admin>=6.5.0
+# Firebase & Google Cloud
+firebase-admin==6.2.0
+google-cloud-firestore==2.13.0
+google-cloud-storage==2.13.0
+google-cloud-speech==2.21.0
+google-cloud-translate==3.12.1
+google-cloud-tasks==2.14.0
+
+# Audio/Video Processing
+ffmpeg-python==0.2.0
+pydub==0.25.1
+
+# Speaker Diarization
+resemblyzer==0.1.1.dev0
+scikit-learn==1.3.0
+hdbscan==0.8.33
 
 # Core ML dependencies
 transformers==4.51.3

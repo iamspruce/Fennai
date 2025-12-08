@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Character } from '../types/character';
+import { Icon } from '@iconify/react';
 
 interface CharacterInput {
   id: string;
@@ -18,6 +19,8 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
   const [mainText, setMainText] = useState('');
   const [additionalInputs, setAdditionalInputs] = useState<CharacterInput[]>([]);
   const [showCharacterSelect, setShowCharacterSelect] = useState(false);
+  const mainInputRef = useRef<HTMLTextAreaElement>(null);
+
   const isMultiMode = additionalInputs.length > 0;
   const totalCharacters = 1 + additionalInputs.length;
 
@@ -25,19 +28,28 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
     c => c.id !== character.id && !additionalInputs.some(input => input.characterId === c.id)
   );
 
+  const adjustHeight = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  };
+
+  useEffect(() => {
+    if (mainInputRef.current) adjustHeight(mainInputRef.current);
+  }, [mainText]);
+
+  // ==================== Handlers ====================
+
   const handleAddCharacter = (selectedCharacter: Character) => {
     if (additionalInputs.length >= 3) {
       alert('Maximum 4 characters allowed');
       return;
     }
-
     const newInput: CharacterInput = {
       id: `input_${Date.now()}`,
       characterId: selectedCharacter.id,
       character: selectedCharacter,
       text: ''
     };
-
     setAdditionalInputs([...additionalInputs, newInput]);
     setShowCharacterSelect(false);
   };
@@ -59,7 +71,6 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
       alert('Please enter text for the main character');
       return;
     }
-
     if (isMultiMode) {
       const emptyInputs = additionalInputs.filter(input => !input.text.trim());
       if (emptyInputs.length > 0) {
@@ -68,22 +79,16 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
       }
     }
 
-    // Build character data (no audio fetching)
     const allCharacterData = [
-      {
-        characterId: character.id,
-        text: mainText
-      },
+      { characterId: character.id, text: mainText },
       ...additionalInputs.map((input) => ({
         characterId: input.characterId,
         text: input.text
       }))
     ];
 
-    // Combine all text with delimiters for display
     const combinedText = allCharacterData.map(d => d.text).join(' | ');
 
-    // Open cloning modal immediately
     window.dispatchEvent(
       new CustomEvent('open-cloning-modal', {
         detail: {
@@ -97,226 +102,179 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
     );
   };
 
+  const handleOpenScriptGenerator = () => {
+    window.dispatchEvent(
+      new CustomEvent('open-script-generator', {
+        detail: {
+          character,
+          allCharacters,
+          currentText: mainText,
+          onScriptGenerated: (script: { mainText: string; additionalInputs?: CharacterInput[] }) => {
+            setMainText(script.mainText);
+            if (script.additionalInputs) setAdditionalInputs(script.additionalInputs);
+          }
+        }
+      })
+    );
+  };
+
+  const handleOpenDubbing = () => {
+    window.dispatchEvent(
+      new CustomEvent('open-dubbing-modal', {
+        detail: { character, allCharacters }
+      })
+    );
+  };
+
+  const handleOpenCreateModal = () => {
+    setShowCharacterSelect(false);
+    window.dispatchEvent(new CustomEvent('open-create-character-modal'));
+  };
+
   return (
     <>
       <motion.div
         className="voice-input-section-fixed"
         initial={{ y: 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
+        transition={{ duration: 0.4 }}
       >
         <div className="input-container-wrapper">
-          <AnimatePresence>
-            {isMultiMode && (
-              <motion.div
-                className="multi-mode-banner"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="banner-content">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                  <span>Multi-character dialogue • {totalCharacters} characters will speak in order</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
-          {/* Main Input */}
           <div className="input-container">
-            <motion.div
-              className="voice-input-wrapper main-input"
-              layout
-              transition={{ duration: 0.3 }}
-            >
-              <div className="input-number">1</div>
-              <img
-                src={character.avatarUrl}
-                alt={character.name}
-                className="input-avatar"
-              />
-              <input
-                type="text"
-                value={mainText}
-                onChange={(e) => setMainText(e.target.value)}
-                placeholder={`What should ${character.name} say?`}
-                className="voice-text-input"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleGenerate();
-                  }
-                }}
-              />
+            <motion.div className="voice-input-surface" layout>
 
-              <motion.button
-                className="add-character-btn"
-                onClick={() => setShowCharacterSelect(!showCharacterSelect)}
-                title="Add character"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                disabled={additionalInputs.length >= 3 || availableCharacters.length === 0}
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-              </motion.button>
+              <div className="input-top-area">
+                <div className="avatar-stack">
+                  <div className="input-number">1</div>
+                  <img src={character.avatarUrl} alt={character.name} className="input-avatar" />
+                </div>
+                <textarea
+                  ref={mainInputRef}
+                  value={mainText}
+                  onChange={(e) => setMainText(e.target.value)}
+                  placeholder={`What should ${character.name} say?`}
+                  className="voice-textarea"
+                  rows={1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleGenerate();
+                    }
+                  }}
+                />
+              </div>
 
-              <motion.button
-                className="send-btn"
-                onClick={handleGenerate}
-                title={isMultiMode ? `Generate dialogue (${totalCharacters} characters)` : 'Clone voice'}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                layout
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="m22 2-7 20-4-9-9-4Z" />
-                  <path d="M22 2 11 13" />
-                </svg>
-                {isMultiMode && (
-                  <motion.span
-                    className="character-count"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0 }}
+              <div className="input-toolbar">
+                <div className="tools-left">
+                  <button className="tool-btn" onClick={handleOpenScriptGenerator} title="AI Script">
+                    <Icon icon="lucide:sparkles" width={18} />
+                    <span className="tool-label">Script</span>
+                  </button>
+                  <button className="tool-btn" onClick={handleOpenDubbing} title="Dubbing">
+                    <Icon icon="lucide:video" width={18} />
+                    <span className="tool-label">Dub</span>
+                  </button>
+                  <button
+                    className="tool-btn"
+                    onClick={() => setShowCharacterSelect(!showCharacterSelect)}
+                    disabled={additionalInputs.length >= 3}
+                    title="Add Character"
                   >
-                    {totalCharacters}
-                  </motion.span>
-                )}
-              </motion.button>
+                    <Icon icon="lucide:user-plus" width={18} />
+                    <span className="tool-label">Add</span>
+                  </button>
+                </div>
+
+                <motion.button className="send-btn" onClick={handleGenerate} whileTap={{ scale: 0.95 }}>
+                  <Icon icon="lucide:send" width={18} />
+                  {isMultiMode && <span className="count-badge">{totalCharacters}</span>}
+                </motion.button>
+              </div>
             </motion.div>
 
             {/* Character Selection Dropdown */}
             <AnimatePresence>
-              {showCharacterSelect && availableCharacters.length > 0 && (
+              {showCharacterSelect && (
                 <motion.div
                   className="character-select-dropdown"
-                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
                 >
-                  <div className="dropdown-header">Select a character to add</div>
-                  {availableCharacters.map((char) => (
-                    <motion.button
-                      key={char.id}
-                      className="character-select-item"
-                      onClick={() => handleAddCharacter(char)}
-                      whileHover={{ backgroundColor: 'var(--mauve-5)', x: 4 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <img
-                        src={char.avatarUrl}
-                        alt={char.name}
-                        className="character-select-avatar"
-                      />
-                      <span>{char.name}</span>
-                    </motion.button>
-                  ))}
+                  <div className="dropdown-header">Add to dialogue</div>
+
+                  <div className="dropdown-list">
+                    {availableCharacters.length > 0 ? (
+                      availableCharacters.map((char) => (
+                        <motion.button
+                          key={char.id}
+                          className="character-select-item"
+                          onClick={() => handleAddCharacter(char)}
+                        >
+                          <img src={char.avatarUrl} alt={char.name} className="character-select-avatar" />
+                          <span>{char.name}</span>
+                        </motion.button>
+                      ))
+                    ) : (
+                      <div className="empty-state">No other characters available</div>
+                    )}
+                  </div>
+
+                  <div className="dropdown-divider"></div>
+
+                  <motion.button
+                    className="character-select-item create-new-btn"
+                    onClick={handleOpenCreateModal}
+                  >
+                    <div className="create-icon-wrapper">
+                      <Icon icon="lucide:plus" width={16} />
+                    </div>
+                    <span>Create New Character</span>
+                  </motion.button>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* Additional Character Inputs with Arrows */}
-          <AnimatePresence mode="popLayout">
+          {/* Additional Inputs */}
+          <AnimatePresence>
             {additionalInputs.map((input, index) => (
               <React.Fragment key={input.id}>
-                {/* Curved Arrow */}
                 <motion.div
-                  className="dialogue-arrow"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
+                  className="dialogue-connector"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: '20px', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
                 >
-                  <svg width="60" height="70" viewBox="0 0 60 60" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                    <path
-                      d="M 20 5 C 20 5, 50 10, 50 25 C 50 45, 15 30, 25 20 C 32 12, 30 50, 30 55"
-                      stroke="var(--mauve-12)"
-                      strokeWidth="2.5"
-                      strokeDasharray="5 3"
-                      fill="none"
-                    />
-                    <path
-                      d="M 24 48 L 30 55 L 36 48"
-                      stroke="var(--mauve-12)"
-                      strokeWidth="2.5"
-                      fill="none"
-                    />
-                  </svg>
+                  <div className="connector-line"></div>
                 </motion.div>
-
-                {/* Character Input */}
                 <motion.div
-                  className="voice-input-wrapper additional-input"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
+                  className="voice-input-surface additional-surface"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
                   layout
                 >
-                  <div className="input-number">{index + 2}</div>
-
-                  <motion.button
-                    className="remove-character-btn"
-                    onClick={() => handleRemoveCharacter(input.id)}
-                    title="Remove character"
-                    whileHover={{ scale: 1.1, rotate: 90 }}
-                    whileTap={{ scale: 0.9 }}
-                  >
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </motion.button>
-
-                  <img
-                    src={input.character.avatarUrl}
-                    alt={input.character.name}
-                    className="input-avatar"
-                  />
-
-                  <input
-                    type="text"
-                    value={input.text}
-                    onChange={(e) => handleUpdateText(input.id, e.target.value)}
-                    placeholder={`What should ${input.character.name} say?`}
-                    className="voice-text-input"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleGenerate();
-                      }
-                    }}
-                  />
+                  <div className="input-top-area">
+                    <div className="avatar-stack">
+                      <div className="input-number">{index + 2}</div>
+                      <img src={input.character.avatarUrl} alt={input.character.name} className="input-avatar" />
+                    </div>
+                    <textarea
+                      value={input.text}
+                      onChange={(e) => {
+                        handleUpdateText(input.id, e.target.value);
+                        adjustHeight(e.target);
+                      }}
+                      placeholder={`Next line for ${input.character.name}...`}
+                      className="voice-textarea"
+                      rows={1}
+                    />
+                    <button className="remove-btn" onClick={() => handleRemoveCharacter(input.id)}>
+                      <Icon icon="lucide:x" width={16} />
+                    </button>
+                  </div>
                 </motion.div>
               </React.Fragment>
             ))}
@@ -324,326 +282,88 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
         </div>
 
         <style>{`
+          /* ... Previous container/surface styles ... */
           .voice-input-section-fixed {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            padding: var(--space-2xs) var(--space-s);
+            position: fixed; bottom: 0; left: 0; right: 0;
+            padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
             z-index: 100;
+            background: linear-gradient(to top, var(--mauve-1) 85%, transparent);
+            pointer-events: none;
           }
-
-          .input-container-wrapper {
-            max-width: 900px;
-            margin: 0 auto;
+          .input-container-wrapper { max-width: 800px; margin: 0 auto; pointer-events: auto; display: flex; flex-direction: column; }
+          .voice-input-surface {
+            background: var(--mauve-2); border: 1px solid var(--mauve-6); border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; transition: all 0.2s;
+            display: flex; flex-direction: column;
           }
-
-          .multi-mode-banner {
-            padding: var(--space-3xs);
-            margin-bottom: var(--space-xs);
-            overflow: hidden;
+          .voice-input-surface:focus-within {
+            border-color: var(--pink-8); box-shadow: 0 4px 25px rgba(214, 64, 159, 0.12); background: var(--mauve-1);
           }
-
-          .banner-content {
-            display: flex;
-            gap: var(--space-2xs);
-            color: var(--mauve-11);
-            font-weight: 500;
-          }
-
-          .banner-content span {
-            font-size: calc(var(--step-0) * 0.7);
-          }
-          
-          .banner-content svg {
-            width: calc(var(--step-0) * 0.7);
-            height: calc(var(--step-0) * 0.7);
-          }
-
-          .input-container {
-            position: relative;
-          }
-
-          .voice-input-wrapper {
-            display: flex;
-            align-items: center;
-            gap: var(--space-2xs);
-            padding: var(--space-xs);
-            background: var(--mauve-2);
-            border: 2px solid var(--mauve-6);
-            border-radius: var(--radius-l);
-            transition: all 0.3s ease;
-            position: relative;
-          }
-
-          .voice-text-input:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-          }
-
-          @media (min-width: 768px) {
-            .voice-input-wrapper {
-              gap: var(--space-xs);
-              padding: var(--space-s);
-            }
-          }
-
-          .voice-input-wrapper.main-input {
-            border-color: var(--mauve-6);
-            box-shadow: var(--shadow-box-m);
-          }
-
-          .voice-input-wrapper:focus-within {
-            border-color: var(--pink-9);
-            box-shadow: var(--shadow-box-m);
-          }
-
-          .additional-input {
-            margin-bottom: var(--space-s);
-          }
-
+          .input-top-area { display: flex; align-items: flex-start; padding: 12px 12px 4px 12px; gap: 10px; }
+          .avatar-stack { position: relative; width: 32px; height: 32px; flex-shrink: 0; margin-top: 2px; }
+          .input-avatar { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; border: 1px solid var(--mauve-6); }
           .input-number {
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--mauve-12);
-            color: var(--mauve-1);
-            border-radius: 50%;
-            font-size: 12px;
-            font-weight: 700;
-            flex-shrink: 0;
+            position: absolute; top: -4px; right: -4px; width: 14px; height: 14px;
+            background: var(--mauve-12); color: var(--mauve-1); font-size: 9px; font-weight: bold;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 2;
           }
-
-          @media (min-width: 768px) {
-            .input-number {
-              width: 28px;
-              height: 28px;
-              font-size: 14px;
-            }
+          .voice-textarea {
+            flex: 1; border: none; background: transparent; font-size: 16px; line-height: 1.4;
+            color: var(--mauve-12); padding: 6px 0; min-height: 24px; resize: none; outline: none; font-family: inherit;
           }
-
-          .dialogue-arrow {
-            display: flex;
-            justify-content: center;
-            margin: -8px 0;
-            overflow: hidden;
+          .input-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 8px 8px; }
+          .tools-left { display: flex; align-items: center; gap: 4px; }
+          .tool-btn {
+            display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px;
+            border: none; background: transparent; color: var(--mauve-11); font-size: 13px; font-weight: 500;
+            cursor: pointer; transition: background 0.2s;
           }
-
-          .dialogue-arrow svg {
-            animation: arrowPulse 2s ease-in-out infinite;
-          }
-
-          @keyframes arrowPulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
-          }
-
-          .input-avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: var(--radius-full);
-            border: 2px solid var(--mauve-6);
-            flex-shrink: 0;
-          }
-
-          @media (min-width: 768px) {
-            .input-avatar {
-              width: 44px;
-              height: 44px;
-            }
-          }
-
-          .voice-text-input {
-            flex: 1;
-            background: none;
-            border: none;
-            font-size: 14px;
-            color: var(--mauve-12);
-            outline: none;
-            padding: var(--space-2xs);
-            min-width: 0;
-          }
-
-          .voice-text-input:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-          }
-
-          @media (min-width: 768px) {
-            .voice-text-input {
-              font-size: 15px;
-              padding: var(--space-xs);
-            }
-          }
-
-          .voice-text-input::placeholder {
-            color: var(--mauve-11);
-          }
-
-          .add-character-btn,
+          .tool-btn:hover { background: var(--mauve-4); color: var(--mauve-12); }
+          .tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+          .tool-label { display: none; }
+          @media (min-width: 480px) { .tool-label { display: block; } }
           .send-btn {
-            height: 36px;
-            min-width: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: var(--space-2xs);
-            padding: 0 var(--space-xs);
-            background: var(--mauve-3);
-            border: 1px solid var(--mauve-6);
-            border-radius: var(--radius-full);
-            color: var(--mauve-12);
-            cursor: pointer;
-            transition: all 0.2s;
-            flex-shrink: 0;
-            font-weight: 600;
+            width: 36px; height: 36px; border-radius: 50%; background: var(--pink-9); color: white; border: none;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer;
+            position: relative; box-shadow: 0 2px 8px rgba(214, 64, 159, 0.4);
           }
-
-          @media (min-width: 768px) {
-            .add-character-btn,
-            .send-btn {
-              height: 44px;
-              min-width: 44px;
-              padding: 0 var(--space-s);
-            }
+          .count-badge {
+            position: absolute; top: -2px; right: -2px; background: white; color: var(--pink-9);
+            font-size: 10px; font-weight: bold; width: 14px; height: 14px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
           }
+          .dialogue-connector { display: flex; justify-content: center; align-items: center; width: 40px; margin-left: 12px; }
+          .connector-line { width: 2px; height: 100%; background: var(--mauve-6); }
+          .remove-btn { background: transparent; border: none; color: var(--mauve-8); padding: 4px; cursor: pointer; display: flex; align-items: center; }
+          .remove-btn:hover { color: var(--red-9); }
 
-          .send-btn {
-            background: var(--pink-9);
-            border-color: var(--pink-9);
-            color: white;
-            position: relative;
-          }
-
-          .send-btn svg {
-            width: 18px;
-            height: 18px;
-          }
-
-          @media (min-width: 768px) {
-            .send-btn svg {
-              width: 20px;
-              height: 20px;
-            }
-          }
-
-          .character-count {
-            background: white;
-            color: var(--pink-9);
-            border-radius: 50%;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 700;
-          }
-
-          @media (min-width: 768px) {
-            .character-count {
-              width: 20px;
-              height: 20px;
-              font-size: 12px;
-            }
-          }
-
-          .add-character-btn:disabled,
-          .send-btn:disabled,
-          .remove-character-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-          }
-
-          .add-character-btn:hover:not(:disabled) {
-            background: var(--mauve-5);
-            border-color: var(--mauve-7);
-          }
-
-          .send-btn:hover:not(:disabled) {
-            background: var(--pink-10);
-            box-shadow: 0 4px 12px rgba(214, 64, 159, 0.3);
-          }
-
-          .remove-character-btn {
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--mauve-3);
-            border: 1px solid var(--mauve-6);
-            border-radius: var(--radius-m);
-            color: var(--mauve-11);
-            cursor: pointer;
-            flex-shrink: 0;
-            transition: all 0.2s;
-          }
-
-          @media (min-width: 768px) {
-            .remove-character-btn {
-              width: 36px;
-              height: 36px;
-            }
-          }
-
-          .remove-character-btn:hover:not(:disabled) {
-            background: var(--red-1);
-            border-color: var(--red-9);
-            color: var(--red-9);
-          }
-
+          /* === Dropdown Styles === */
           .character-select-dropdown {
-            position: absolute;
-            bottom: calc(100% + var(--space-s));
-            left: 0;
-            right: 0;
-            background: var(--mauve-2);
-            border: 1px solid var(--mauve-6);
-            border-radius: var(--radius-l);
-            padding: var(--space-2xs);
-            z-index: 10;
-            max-height: 280px;
-            overflow-y: auto;
-            box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.1);
+             position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px;
+             background: var(--mauve-2); border: 1px solid var(--mauve-6); border-radius: 12px;
+             padding: 8px 0; box-shadow: 0 -4px 20px rgba(0,0,0,0.1); z-index: 50;
+             max-height: 60vh; display: flex; flex-direction: column;
           }
-
-          .dropdown-header {
-            padding: var(--space-xs) var(--space-s);
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--mauve-11);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-
+          .dropdown-header { padding: 4px 12px; font-size: 11px; text-transform: uppercase; color: var(--mauve-9); font-weight: 600; }
+          .dropdown-list { overflow-y: auto; max-height: 200px; padding: 0 8px; }
+          .dropdown-divider { height: 1px; background: var(--mauve-5); margin: 6px 0; }
           .character-select-item {
-            display: flex;
-            align-items: center;
-            gap: var(--space-s);
-            width: 100%;
-            padding: var(--space-2xs);
-            background: none;
-            border: none;
-            border-radius: var(--radius-m);
-            color: var(--mauve-12);
-            cursor: pointer;
-            text-align: left;
-            transition: all 0.2s;
-            font-size: 15px;
+             display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px;
+             background: transparent; border: none; border-radius: 8px; color: var(--mauve-12);
+             cursor: pointer; text-align: left; font-size: 14px;
           }
-
-          .character-select-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: var(--radius-m);
-            border: 2px solid var(--mauve-6);
-            flex-shrink: 0;
+          .character-select-item:hover { background: var(--mauve-4); }
+          .character-select-avatar { width: 32px; height: 32px; border-radius: 50%; }
+          
+          .create-new-btn { color: var(--pink-9); font-weight: 500; margin: 0 8px; width: auto; }
+          .create-new-btn:hover { background: var(--pink-3); }
+          .create-icon-wrapper {
+             width: 32px; height: 32px; border-radius: 50%; border: 1px dashed var(--pink-8);
+             display: flex; align-items: center; justify-content: center; color: var(--pink-9);
           }
+          .empty-state { padding: 12px; text-align: center; color: var(--mauve-9); font-size: 13px; font-style: italic; }
         `}</style>
-      </motion.div >
+      </motion.div>
     </>
   );
 }

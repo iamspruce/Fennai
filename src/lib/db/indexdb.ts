@@ -1,22 +1,24 @@
-// src/lib/db/indexdb.ts
+// src/lib/db/indexdb.ts - ENHANCED WITH DUBBING SUPPORT
 import type { DialogueSegment } from '@/types/voice';
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'fennai-voices';
-const DB_VERSION = 4; // ← Critical: bumped for migration
+const DB_VERSION = 5; // ← Bumped for dubbing support
 const VOICE_STORE = 'voices';
 const METADATA_STORE = 'metadata';
+const DUBBING_STORE = 'dubbing_media'; // ← NEW STORE
 
-// NEW: Safe schema — no more raw Blobs from IndexedDB
+// Existing voice record
 export interface VoiceRecord {
     id: string;
     characterId: string;
     text: string;
-    audioData: ArrayBuffer;     // ← Stored safely
-    audioType: string;          // ← e.g. "audio/wav"
-    audioBlob?: Blob;           // ← Reconstructed on read (never stored)
+    audioData: ArrayBuffer;
+    audioType: string;
+    audioBlob?: Blob;
     isMultiCharacter: boolean;
     characterIds?: string[];
+    dialogues?: DialogueSegment[];
     duration: number;
     createdAt: number;
     lastAccessed?: number;
@@ -24,13 +26,18 @@ export interface VoiceRecord {
     isInCloudStorage?: boolean;
 }
 
-// Legacy type for migration
-interface LegacyVoiceRecord {
-    id: string;
-    audioBlob?: Blob;
-    audioData?: ArrayBuffer;
-    audioType?: string;
-    [key: string]: any;
+// NEW: Dubbing media record
+export interface DubbingMediaRecord {
+    id: string; // Job ID
+    mediaType: 'audio' | 'video';
+    audioData: ArrayBuffer;
+    audioType: string;
+    videoData?: ArrayBuffer;
+    videoType?: string;
+    duration: number;
+    fileSize: number;
+    createdAt: number;
+    lastAccessed?: number;
 }
 
 interface StorageMetadata {
@@ -64,8 +71,7 @@ export async function initDB(): Promise<IDBPDatabase> {
 
     dbPromise = openDB(DB_NAME, DB_VERSION, {
         async upgrade(db, oldVersion, newVersion, transaction) {
-
-            // Create stores
+            // Create voice store
             if (!db.objectStoreNames.contains(VOICE_STORE)) {
                 const store = db.createObjectStore(VOICE_STORE, { keyPath: 'id' });
                 store.createIndex('characterId', 'characterId', { unique: false });
@@ -77,14 +83,11 @@ export async function initDB(): Promise<IDBPDatabase> {
 
             const store = transaction.objectStore(VOICE_STORE);
 
-            // MIGRATION: v3 → v4 (convert audioBlob → audioData + audioType)
+            // Migration v3 → v4: Convert Blob → ArrayBuffer
             if (oldVersion < 4) {
-
                 const allKeys = await store.getAllKeys();
-
                 for (const key of allKeys) {
-                    const old: LegacyVoiceRecord = await store.get(key);
-
+                    const old: any = await store.get(key);
                     if (old.audioBlob instanceof Blob && !old.audioData) {
                         try {
                             const arrayBuffer = await old.audioBlob.arrayBuffer();
@@ -92,13 +95,11 @@ export async function initDB(): Promise<IDBPDatabase> {
                                 ...old,
                                 audioData: arrayBuffer,
                                 audioType: old.audioBlob.type || 'audio/wav',
-                                audioBlob: undefined, // Remove old blob
                             };
                             delete migrated.audioBlob;
                             await store.put(migrated);
                         } catch (err) {
                             console.error(`Failed to migrate ${old.id}:`, err);
-                            // Keep old format — will fail in Safari, but won't corrupt DB
                         }
                     }
                 }
@@ -111,22 +112,30 @@ export async function initDB(): Promise<IDBPDatabase> {
                 }
             });
 
+            // Create metadata store
             if (!db.objectStoreNames.contains(METADATA_STORE)) {
                 db.createObjectStore(METADATA_STORE, { keyPath: 'key' });
             }
+
+            // NEW: Create dubbing media store
+            if (!db.objectStoreNames.contains(DUBBING_STORE)) {
+                const dubbingStore = db.createObjectStore(DUBBING_STORE, { keyPath: 'id' });
+                dubbingStore.createIndex('createdAt', 'createdAt', { unique: false });
+                dubbingStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+            }
         },
         blocked() {
-            console.warn('IndexedDB blocked — close other tabs');
+            console.warn('IndexedDB blocked – close other tabs');
         },
         blocking() {
-            console.warn('Newer DB version available — refreshing...');
+            console.warn('Newer DB version available – refreshing...');
         },
     });
 
     return dbPromise;
 }
 
-// Helper: Reconstruct fresh Blob from stored data
+// Helper: Reconstruct Blob
 function reconstructBlob(record: any): Blob | null {
     if (record.audioData instanceof ArrayBuffer) {
         return new Blob([record.audioData], { type: record.audioType || 'audio/wav' });
@@ -134,7 +143,8 @@ function reconstructBlob(record: any): Blob | null {
     return null;
 }
 
-// Save voice — now converts Blob → ArrayBuffer
+// ==================== VOICE FUNCTIONS (EXISTING) ====================
+
 export async function saveVoiceToIndexedDB(voiceInput: {
     id: string;
     characterId: string;
@@ -142,9 +152,7 @@ export async function saveVoiceToIndexedDB(voiceInput: {
     audioBlob: Blob;
     isMultiCharacter: boolean;
     characterIds?: string[];
-    // === ADDED ===
     dialogues?: DialogueSegment[];
-    // === END ADDED ===
     duration: number;
     createdAt: number;
     isInCloudStorage?: boolean;
@@ -158,7 +166,6 @@ export async function saveVoiceToIndexedDB(voiceInput: {
     const arrayBuffer = await voiceInput.audioBlob.arrayBuffer();
     const size = voiceInput.audioBlob.size;
 
-    // Storage check
     const check = await checkStorageAvailable(size);
     if (!check.available) {
         await autoCleanupOldVoices();
@@ -174,9 +181,7 @@ export async function saveVoiceToIndexedDB(voiceInput: {
         audioType: voiceInput.audioBlob.type || 'audio/wav',
         isMultiCharacter: voiceInput.isMultiCharacter,
         characterIds: voiceInput.characterIds,
-        // === ADDED ===
         dialogues: voiceInput.dialogues,
-        // === END ADDED ===
         duration: voiceInput.duration,
         createdAt: voiceInput.createdAt,
         lastAccessed: Date.now(),
@@ -188,7 +193,6 @@ export async function saveVoiceToIndexedDB(voiceInput: {
     await updateStorageMetadata();
 }
 
-// Get single voice — returns fresh Blob
 export async function getVoiceFromIndexedDB(id: string): Promise<VoiceRecord | undefined> {
     const db = await initDB();
     const record = await db.get(VOICE_STORE, id);
@@ -200,7 +204,6 @@ export async function getVoiceFromIndexedDB(id: string): Promise<VoiceRecord | u
         return undefined;
     }
 
-    // Update access time
     record.lastAccessed = Date.now();
     await db.put(VOICE_STORE, record);
 
@@ -285,7 +288,6 @@ export async function clearAllVoices(): Promise<void> {
     await updateStorageMetadata();
 }
 
-// Auto cleanup (unchanged logic)
 export async function autoCleanupOldVoices(): Promise<CleanupResult> {
     const db = await initDB();
     const all = await db.getAll(VOICE_STORE);
@@ -321,6 +323,121 @@ async function updateStorageMetadata() {
     const totalSize = all.reduce((s, v) => s + (v.size || 0), 0);
     await db.put(METADATA_STORE, { key: 'storage', totalSize, voiceCount: all.length, lastCleanup: Date.now() });
 }
+
+export async function deleteVoicesBatch(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+
+    const db = await initDB();
+    const tx = db.transaction(VOICE_STORE, 'readwrite');
+    let deletedCount = 0;
+
+    for (const id of ids) {
+        try {
+            await tx.store.delete(id);
+            deletedCount++;
+        } catch (err) {
+            console.warn(`Failed to delete voice ${id}:`, err);
+        }
+    }
+
+    await tx.done;
+    await updateStorageMetadata();
+
+    return deletedCount;
+}
+
+// ==================== DUBBING MEDIA FUNCTIONS (NEW) ====================
+
+export async function saveDubbingMedia(media: {
+    id: string;
+    mediaType: 'audio' | 'video';
+    audioData: ArrayBuffer;
+    audioType: string;
+    videoData?: ArrayBuffer;
+    videoType?: string;
+    duration: number;
+    fileSize: number;
+    createdAt: number;
+}): Promise<void> {
+    const db = await initDB();
+
+    // Storage check
+    const check = await checkStorageAvailable(media.fileSize);
+    if (!check.available) {
+        await autoCleanupDubbingMedia();
+        const recheck = await checkStorageAvailable(media.fileSize);
+        if (!recheck.available) throw new Error(recheck.warning || 'Storage full');
+    }
+
+    const record: DubbingMediaRecord = {
+        id: media.id,
+        mediaType: media.mediaType,
+        audioData: media.audioData,
+        audioType: media.audioType,
+        videoData: media.videoData,
+        videoType: media.videoType,
+        duration: media.duration,
+        fileSize: media.fileSize,
+        createdAt: media.createdAt,
+        lastAccessed: Date.now(),
+    };
+
+    await db.put(DUBBING_STORE, record);
+}
+
+export async function getDubbingMedia(id: string): Promise<DubbingMediaRecord | undefined> {
+    const db = await initDB();
+    const record = await db.get(DUBBING_STORE, id);
+
+    if (record) {
+        record.lastAccessed = Date.now();
+        await db.put(DUBBING_STORE, record);
+    }
+
+    return record;
+}
+
+export async function deleteDubbingMedia(id: string): Promise<boolean> {
+    const db = await initDB();
+    await db.delete(DUBBING_STORE, id);
+    return true;
+}
+
+export async function getAllDubbingMedia(): Promise<DubbingMediaRecord[]> {
+    const db = await initDB();
+    return await db.getAll(DUBBING_STORE);
+}
+
+export async function autoCleanupDubbingMedia(): Promise<CleanupResult> {
+    const db = await initDB();
+    const all = await db.getAll(DUBBING_STORE);
+
+    // Delete dubbing media older than 7 days
+    const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const toDelete = all.filter(m => m.createdAt < threshold);
+
+    if (toDelete.length === 0) {
+        return { deletedCount: 0, freedSpace: 0, remainingVoices: all.length };
+    }
+
+    const tx = db.transaction(DUBBING_STORE, 'readwrite');
+    let freed = 0;
+
+    for (const m of toDelete) {
+        await tx.store.delete(m.id);
+        freed += m.fileSize || 0;
+    }
+
+    await tx.done;
+
+    return {
+        deletedCount: toDelete.length,
+        freedSpace: freed,
+        remainingVoices: all.length - toDelete.length
+    };
+}
+
+// ==================== STORAGE UTILITIES ====================
 
 export async function getStorageQuota(): Promise<StorageQuota> {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
@@ -358,37 +475,41 @@ export function formatBytes(bytes: number): string {
 
 export async function getStorageStats() {
     const db = await initDB();
-    const all = await db.getAll(VOICE_STORE);
+    const voices = await db.getAll(VOICE_STORE);
+    const dubbingMedia = await db.getAll(DUBBING_STORE);
     const quota = await getStorageQuota();
-    const local = all.filter(v => v.audioData);
-    const totalSize = local.reduce((s, v) => s + (v.size || 0), 0);
 
-    const timestamps = all.map(v => v.createdAt).filter(Boolean);
+    const local = voices.filter(v => v.audioData);
+    const voicesSize = local.reduce((s, v) => s + (v.size || 0), 0);
+    const dubbingSize = dubbingMedia.reduce((s, m) => s + (m.fileSize || 0), 0);
+    const totalSize = voicesSize + dubbingSize;
+
+    const timestamps = voices.map(v => v.createdAt).filter(Boolean);
+
     return {
         voiceCount: local.length,
+        dubbingMediaCount: dubbingMedia.length,
+        voicesSize,
+        dubbingSize,
         totalSize,
-        averageSize: local.length ? totalSize / local.length : 0,
+        averageSize: local.length ? voicesSize / local.length : 0,
         oldestVoice: timestamps.length ? new Date(Math.min(...timestamps)) : null,
         newestVoice: timestamps.length ? new Date(Math.max(...timestamps)) : null,
         quota,
-        cloudStorageCount: all.filter(v => v.isInCloudStorage).length,
+        cloudStorageCount: voices.filter(v => v.isInCloudStorage).length,
     };
 }
 
-/**
- * Get voices that need cleanup (old, unused, or very large)
- */
 export async function getVoicesForCleanup(): Promise<{
     old: VoiceRecord[];
     unused: VoiceRecord[];
     large: VoiceRecord[];
 }> {
-    const allVoices = await getAllVoices(); // ← already reconstructs fresh blobs
+    const allVoices = await getAllVoices();
     const now = Date.now();
     const ageThreshold = now - (AUTO_CLEANUP_AGE_DAYS * 24 * 60 * 60 * 1000);
-    const unusedThreshold = now - (7 * 24 * 60 * 60 * 1000); // 7 days
+    const unusedThreshold = now - (7 * 24 * 60 * 60 * 1000);
 
-    // Calculate median size for "large" classification
     const sizes = allVoices.map(v => v.size || 0).sort((a, b) => a - b);
     const medianSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] || 0 : 0;
     const largeSizeThreshold = medianSize * 2;
@@ -400,7 +521,6 @@ export async function getVoicesForCleanup(): Promise<{
     };
 }
 
-// Optional: export metadata only (no audio blobs)
 export async function exportVoicesMetadata(): Promise<string> {
     const voices = await getAllVoices({ includeCloudOnly: true });
     const metadata = voices.map(v => ({
@@ -416,29 +536,4 @@ export async function exportVoicesMetadata(): Promise<string> {
         isInCloudStorage: v.isInCloudStorage,
     }));
     return JSON.stringify(metadata, null, 2);
-}
-
-/**
- * Delete multiple voices by ID in a single transaction
- */
-export async function deleteVoicesBatch(ids: string[]): Promise<number> {
-    if (ids.length === 0) return 0;
-
-    const db = await initDB();
-    const tx = db.transaction(VOICE_STORE, 'readwrite');
-    let deletedCount = 0;
-
-    for (const id of ids) {
-        try {
-            await tx.store.delete(id);
-            deletedCount++;
-        } catch (err) {
-            console.warn(`Failed to delete voice ${id}:`, err);
-        }
-    }
-
-    await tx.done;
-    await updateStorageMetadata();
-
-    return deletedCount;
 }

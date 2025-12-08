@@ -1,4 +1,4 @@
-# functions/shared/firebase.py
+# functions/proxy/firebase/admin.py
 import firebase_admin
 from firebase_admin import auth, credentials
 from firebase_functions import logger # Import logger

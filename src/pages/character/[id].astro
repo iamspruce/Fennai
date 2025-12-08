@@ -1,4 +1,5 @@
 ---
+// src/pages/character/[id].astro (UPDATED)
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import { getCurrentUser } from "@/lib/firebase/auth";
 import {
@@ -17,8 +18,14 @@ import VoiceCard from "@/islands/VoiceCard";
 import CloningModal from "@/islands/CloningModal";
 import PreviewEditModal from "@/islands/PreviewEditModal";
 import VoiceInputSection from "@/islands/VoiceInputSection";
+import CreateCharacterModal from "@/islands/CreateCharacterModal";
 import VoicesHeader from "@/islands/VoicesHeader";
-import MigrationBanner from "@/islands/MigrationBanner"; // NEW
+import ScriptGeneratorModal from "@/islands/ScriptGeneratorModal";
+import DubMediaSelectModal from "@/islands/dub/DubMediaSelectModal";
+import DubSettingsModal from "@/islands/dub/DubSettingsModal";
+import DubReviewModal from "@/islands/dub/DubReviewModal";
+import DubSegmentSelectorModal from "@/islands/dub/DubSegmentSelectorModal";
+import DubEditScriptModal from "@/islands/dub/DubEditScriptModal";
 
 const { id } = Astro.params;
 const user = await getCurrentUser(Astro);
@@ -28,34 +35,27 @@ if (!user || !id) return Astro.redirect("/profile");
 const character = await getCharacter(id, user.uid);
 if (!character) return Astro.redirect("/profile");
 
-// Pagination & Data Fetching
 const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") || "1");
 const limit = 20;
 
 const { characters: allCharacters } = await getCharacters(user.uid);
-
-// Fetch ALL voices (both cloud and local-only metadata)
 const { voices: allVoices } = await getVoices(id, user.uid, {
   limit: limit * page,
-  storageType: "all", // Get both cloud and local-only
+  storageType: "all",
 });
 
 const startIndex = (page - 1) * limit;
 const voices = allVoices.slice(startIndex, startIndex + limit);
 const hasMore = allVoices.length === limit * page;
 const hasPrevious = page > 1;
+
+const userTier = user.isPro ? "pro" : "free";
 ---
 
 <BaseLayout title={`${character.name} - Fennai`}>
   <StorageWarning />
-  <!-- Migration Banner: Show if Pro + saveAcrossBrowsers enabled -->
-  <MigrationBanner
-    client:load
-    characterId={character.id}
-    isPro={user.isPro}
-    saveAcrossBrowsers={character.saveAcrossBrowsers || false}
-  />
+
   <div class="page-modal">
     <CharacterHeader character={character} voiceCount={character.voiceCount} />
 
@@ -64,7 +64,6 @@ const hasPrevious = page > 1;
         voices.length > 0 && (
           <>
             <VoicesHeader client:only totalVoices={character.voiceCount} />
-
             <div class="voices-list">
               {voices.map((voice) => (
                 <VoiceCard
@@ -75,7 +74,6 @@ const hasPrevious = page > 1;
                 />
               ))}
             </div>
-
             <Pagination
               page={page}
               hasMore={hasMore}
@@ -94,12 +92,32 @@ const hasPrevious = page > 1;
     character={character}
     allCharacters={allCharacters}
   />
+
+  {/* Modals */}
   <CloningModal client:load />
   <PreviewEditModal client:load />
+  <CreateCharacterModal client:load />
+  <ScriptGeneratorModal
+    client:load
+    character={character}
+    allCharacters={allCharacters}
+    userTier={userTier}
+    userCredits={user.credits}
+  />
+  <DubMediaSelectModal
+    client:load
+    character={character}
+    allCharacters={allCharacters}
+    userTier={userTier}
+  />
+  <DubSettingsModal client:load allCharacters={allCharacters} />
+  <DubSegmentSelectorModal client:load />
+  <DubEditScriptModal client:load />
+  <DubReviewModal client:load />
 </BaseLayout>
 
 <script>
-  import { saveVoiceToIndexedDB } from "@/lib/db/indexdb";
+  import { saveVoiceToIndexedDB, initDB } from "@/lib/db/indexdb";
 
   let pendingVoiceData: any = null;
 
@@ -214,18 +232,6 @@ const hasPrevious = page > 1;
       alert(error instanceof Error ? error.message : "Failed to save voice");
     }
   });
-
-  // Initialize IndexedDB on page load
-  import { initDB, getStorageStats } from "@/lib/db/indexdb";
-
-  (async () => {
-    try {
-      await initDB();
-      const stats = await getStorageStats();
-    } catch (error) {
-      console.error("Failed to initialize IndexedDB:", error);
-    }
-  })();
 </script>
 
 <style>

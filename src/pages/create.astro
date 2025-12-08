@@ -3,8 +3,10 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import Button from "../components/ui/Button.astro";
 import Input from "../components/ui/Input.astro";
 import AvatarGrid from "../components/create/AvatarGrid.tsx";
-import VoiceDropzone from "../components/create/VoiceDropzone.tsx";
+import VoiceOptions from "../components/create/VoiceOptions.tsx";
 import PreviewEditModal from "../islands/PreviewEditModal";
+import VoiceLibraryModal from "../islands/VoiceLibraryModal";
+import RecordVoiceModal from "../islands/RecordVoiceModal";
 import { getCurrentUser, checkProStatus } from "../lib/firebase/auth";
 import { generateAvatarUrl } from "../lib/utils/avatar";
 import Logo from "@/components/ui/Logo.astro";
@@ -57,18 +59,18 @@ const userAvatarUrl =
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
                                 class="tooltip-icon"
-                                ><circle cx="12" cy="12" r="10"></circle><path
-                                    d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
-                                ></path><line x1="12" y1="17" x2="12.01" y2="17"
-                                ></line></svg
                             >
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+                                ></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
                             <span class="tooltip-text"
                                 >Choose a visual style that best represents your
                                 AI character's personality.</span
                             >
                         </span>
                     </label>
-                    {/* Hidden input to catch the value from React */}
                     <input
                         type="hidden"
                         name="avatarStyle"
@@ -96,11 +98,12 @@ const userAvatarUrl =
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
                                 class="tooltip-icon"
-                                ><circle cx="12" cy="12" r="10"></circle><path
-                                    d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
-                                ></path><line x1="12" y1="17" x2="12.01" y2="17"
-                                ></line></svg
                             >
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+                                ></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
                             <span class="tooltip-text"
                                 >This name will be used to identify your
                                 character in chats and interactions.</span
@@ -136,18 +139,30 @@ const userAvatarUrl =
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
                                 class="tooltip-icon"
-                                ><circle cx="12" cy="12" r="10"></circle><path
-                                    d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
-                                ></path><line x1="12" y1="17" x2="12.01" y2="17"
-                                ></line></svg
                             >
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+                                ></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
                             <span class="tooltip-text"
-                                >Upload a short audio sample to clone a unique
-                                voice for your character.</span
+                                >Choose how to provide a voice sample for your
+                                character.</span
                             >
                         </span>
                     </label>
-                    <VoiceDropzone client:load />
+
+                    <VoiceOptions client:load />
+
+                    <div
+                        id="selected-voice-preview"
+                        style="display: none; margin-top: var(--space-m);"
+                    >
+                        <div class="voice-preview-card">
+                            <div class="voice-preview-icon">✓</div>
+                            <p>Voice sample selected</p>
+                        </div>
+                    </div>
                 </div>
 
                 {
@@ -179,16 +194,14 @@ const userAvatarUrl =
                                         stroke-linejoin="round"
                                         class="tooltip-icon"
                                     >
-                                        <>
-                                            <circle cx="12" cy="12" r="10" />
-                                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                                            <line
-                                                x1="12"
-                                                y1="17"
-                                                x2="12.01"
-                                                y2="17"
-                                            />
-                                        </>
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                        <line
+                                            x1="12"
+                                            y1="17"
+                                            x2="12.01"
+                                            y2="17"
+                                        />
                                     </svg>
                                     <span class="tooltip-text">
                                         Store your cloned voices in the cloud so
@@ -221,38 +234,44 @@ const userAvatarUrl =
         </main>
 
         <PreviewEditModal client:load />
+        <VoiceLibraryModal isPro={isPro} client:load />
+        <RecordVoiceModal userName={user.displayName || "Friend"} client:load />
     </div>
 
     <script>
         const form = document.getElementById("create-form") as HTMLFormElement;
         const errorMessage = document.getElementById("error-message")!;
+        const voicePreview = document.getElementById("selected-voice-preview")!;
         let selectedFile: File | null = null;
 
-        // 1. Listen for File Updates from React Component
+        // Listen for File Updates
         window.addEventListener("voice-file-updated", ((e: CustomEvent) => {
             selectedFile = e.detail;
 
-            // Also trigger your validation logic immediately here if needed
             if (selectedFile) {
                 const validTypes = [
                     "audio/mpeg",
                     "audio/wav",
                     "audio/ogg",
                     "audio/mp3",
+                    "audio/webm",
                 ];
                 const maxSize = 10 * 1024 * 1024;
+
                 if (
                     !validTypes.includes(selectedFile.type) &&
                     !selectedFile.type.startsWith("audio/")
                 ) {
                     showError("Please upload a valid audio file");
-                    selectedFile = null; // Reset
+                    selectedFile = null;
                 } else if (selectedFile.size > maxSize) {
                     showError("File size must be less than 10MB");
                     selectedFile = null;
                 } else {
                     errorMessage.style.display = "none";
-                    // Trigger Preview Logic
+                    voicePreview.style.display = "block";
+
+                    // Trigger Preview Modal
                     window.dispatchEvent(
                         new CustomEvent("open-preview-modal", {
                             detail: {
@@ -265,36 +284,33 @@ const userAvatarUrl =
             }
         }) as EventListener);
 
-        // 2. Listen for 'Edited' file coming back from the Modal
+        // Listen for Edited Voice
         window.addEventListener("voice-edited", ((e: CustomEvent) => {
             if (e.detail.source === "create-upload") {
                 selectedFile = new File([e.detail.blob], "voice_sample.wav", {
                     type: "audio/wav",
                 });
-                // Note: We don't need to update UI here manually because the React VoiceDropzone
-                // handles its own state. But we could dispatch an event back to React if we wanted the preview to update.
-                // For now, let's assume the user is happy with the flow.
+                voicePreview.style.display = "block";
             }
         }) as EventListener);
 
         function showError(message: string) {
             errorMessage.textContent = message;
             errorMessage.style.display = "block";
+            voicePreview.style.display = "none";
         }
 
-        // 3. Form Submission
+        // Form Submission
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
 
             if (!selectedFile) {
-                showError("Please upload a voice sample");
+                showError("Please provide a voice sample");
                 return;
             }
 
             const formData = new FormData(form);
-            // Manually append the file because it lives in JS memory, not the form DOM
             formData.append("voiceFile", selectedFile);
-            // Rename characterName to match API expectation if needed
             formData.append("name", formData.get("characterName") as string);
 
             const submitBtn = form.querySelector(
@@ -325,179 +341,213 @@ const userAvatarUrl =
             }
         });
     </script>
+</BaseLayout>
 
-    <style>
-        .create-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: var(--space-2xl);
-            padding: var(--space-2xs);
-        }
+<style>
+    .create-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-2xl);
+        padding: var(--space-2xs);
+    }
 
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            border: 1px solid var(--mauve-6);
-        }
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 1px solid var(--mauve-6);
+    }
 
-        .create-main {
-            max-width: 700px;
-            margin: 0 auto;
-            padding: var(--space-3xs);
-        }
+    .create-main {
+        max-width: 700px;
+        margin: 0 auto;
+        padding: var(--space-3xs);
+    }
 
-        .page-title {
-            font-size: var(--step-4);
-            font-weight: 700;
-            margin-bottom: var(--space-2xl);
-            color: var(--mauve-12);
-            text-align: center;
-        }
+    .page-title {
+        font-size: var(--step-4);
+        font-weight: 700;
+        margin-bottom: var(--space-2xl);
+        color: var(--mauve-12);
+        text-align: center;
+    }
 
-        .create-form {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-xl);
-        }
+    .create-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xl);
+    }
 
-        .section-label {
-            font-size: var(--step-0);
-            font-weight: 600;
-            color: var(--mauve-12);
-            margin-bottom: var(--space-s);
-            display: flex;
-            align-items: center;
-        }
+    .section-label {
+        font-size: var(--step-0);
+        font-weight: 600;
+        color: var(--mauve-12);
+        margin-bottom: var(--space-s);
+        display: flex;
+        align-items: center;
+    }
 
-        .tooltip-container {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-            margin-left: 8px;
-            cursor: help;
-        }
+    .voice-preview-card {
+        display: flex;
+        align-items: center;
+        gap: var(--space-m);
+        padding: var(--space-m);
+        background: var(--green-2);
+        border: 1px solid var(--green-6);
+        border-radius: var(--radius-m);
+    }
 
-        .tooltip-icon {
-            width: 16px;
-            height: 16px;
-            color: var(--mauve-11);
-            transition: color 0.2s;
-        }
+    .voice-preview-icon {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--green-9);
+        color: white;
+        border-radius: 50%;
+        font-size: 20px;
+        font-weight: bold;
+    }
 
-        .tooltip-container:hover .tooltip-icon {
-            color: var(--pink-9);
-        }
+    .voice-preview-card p {
+        color: var(--green-11);
+        font-weight: 600;
+        margin: 0;
+    }
 
-        .tooltip-text {
-            visibility: hidden;
-            width: 220px;
-            background-color: var(--mauve-12);
-            color: var(--mauve-1);
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px 12px;
-            position: absolute;
-            z-index: 10;
-            bottom: 135%;
-            left: 50%;
-            margin-left: -110px;
+    .tooltip-container {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        margin-left: 8px;
+        cursor: help;
+    }
+
+    .tooltip-icon {
+        width: 16px;
+        height: 16px;
+        color: var(--mauve-11);
+        transition: color 0.2s;
+    }
+
+    .tooltip-container:hover .tooltip-icon {
+        color: var(--pink-9);
+    }
+
+    .tooltip-text {
+        visibility: hidden;
+        width: 220px;
+        background-color: var(--mauve-12);
+        color: var(--mauve-1);
+        text-align: center;
+        border-radius: 6px;
+        padding: 8px 12px;
+        position: absolute;
+        z-index: 10;
+        bottom: 135%;
+        left: 50%;
+        margin-left: -110px;
+        opacity: 0;
+        transition:
+            opacity 0.3s,
+            transform 0.3s;
+        transform: translateY(5px);
+        font-size: 0.8rem;
+        font-weight: normal;
+        pointer-events: none;
+        box-shadow: var(--shadow-box-m);
+        line-height: 1.4;
+    }
+
+    .tooltip-text::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: var(--mauve-12) transparent transparent transparent;
+    }
+
+    .tooltip-container:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .fade-in {
+        opacity: 0;
+        animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    @keyframes fadeInUp {
+        from {
             opacity: 0;
-            transition:
-                opacity 0.3s,
-                transform 0.3s;
-            transform: translateY(5px);
-            font-size: 0.8rem;
-            font-weight: normal;
-            pointer-events: none;
-            box-shadow: var(--shadow-box-m);
-            line-height: 1.4;
+            transform: translateY(20px);
         }
-
-        .tooltip-text::after {
-            content: "";
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            margin-left: -5px;
-            border-width: 5px;
-            border-style: solid;
-            border-color: var(--mauve-12) transparent transparent transparent;
-        }
-
-        .tooltip-container:hover .tooltip-text {
-            visibility: visible;
+        to {
             opacity: 1;
             transform: translateY(0);
         }
+    }
 
-        /* Simple Entry Animation for Astro components */
-        .fade-in {
-            opacity: 0;
-            animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: var(--space-m);
+        cursor: pointer;
+    }
 
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+    .toggle-input {
+        display: none;
+    }
 
-        /* Toggle Switch Styles (Kept as vanilla CSS) */
-        .toggle-label {
-            display: flex;
-            align-items: center;
-            gap: var(--space-m);
-            cursor: pointer;
-        }
-        .toggle-input {
-            display: none;
-        }
-        .toggle-switch {
-            position: relative;
-            width: 48px;
-            height: 24px;
-            background: var(--mauve-7);
-            border-radius: 12px;
-            transition: background 0.3s ease;
-        }
-        .toggle-switch::after {
-            content: "";
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            width: 20px;
-            height: 20px;
-            background: white;
-            border-radius: 50%;
-            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .toggle-input:checked + .toggle-switch {
-            background: var(--pink-9);
-        }
-        .toggle-input:checked + .toggle-switch::after {
-            transform: translateX(24px);
-        }
-        .toggle-text {
-            color: var(--mauve-12);
-            font-size: var(--space-0);
-        }
+    .toggle-switch {
+        position: relative;
+        width: 48px;
+        height: 24px;
+        background: var(--mauve-7);
+        border-radius: 12px;
+        transition: background 0.3s ease;
+    }
 
-        .error-display {
-            padding: var(--space-m);
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid #ef4444;
-            border-radius: var(--radius-m);
-            color: #dc2626;
-        }
-        .submit-btn {
-            width: 100%;
-        }
-    </style>
-</BaseLayout>
+    .toggle-switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .toggle-input:checked + .toggle-switch {
+        background: var(--pink-9);
+    }
+
+    .toggle-input:checked + .toggle-switch::after {
+        transform: translateX(24px);
+    }
+
+    .toggle-text {
+        color: var(--mauve-12);
+        font-size: var(--space-0);
+    }
+
+    .error-display {
+        padding: var(--space-m);
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #ef4444;
+        border-radius: var(--radius-m);
+        color: #dc2626;
+    }
+
+    .submit-btn {
+        width: 100%;
+    }
+</style>

@@ -1,4 +1,4 @@
-# functions/shared/credits.py
+# functions/proxy/firebase/credits.py
 from firebase_admin import firestore
 from typing import Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
