@@ -4,7 +4,7 @@ Input validation using Pydantic models.
 Ensures type safety and validates constraints before processing.
 """
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, Field, field_validator, ValidationError
 import logging
 
 from config import config
@@ -18,19 +18,21 @@ class InferenceRequest(BaseModel):
     job_id: str = Field(..., min_length=1, max_length=100)
     uid: str = Field(..., min_length=1, max_length=100)
     text: str = Field(..., min_length=1, max_length=config.MAX_TEXT_LENGTH)
-    voice_samples: List[str] = Field(..., min_items=1, max_items=config.MAX_VOICE_SAMPLES)
+    voice_samples: List[str] = Field(..., min_length=1, max_length=config.MAX_VOICE_SAMPLES)
     cost: int = Field(..., ge=1, le=1000)
     chunk_id: Optional[int] = Field(None, ge=0)
     total_chunks: int = Field(1, ge=1, le=config.MAX_CHUNKS)
     
-    @validator('text')
+    @field_validator('text')
+    @classmethod
     def validate_text(cls, v):
         v = v.strip()
         if not v:
             raise ValueError('Text cannot be empty')
         return v
     
-    @validator('voice_samples')
+    @field_validator('voice_samples')
+    @classmethod
     def validate_voice_samples(cls, v):
         if not v:
             raise ValueError('At least one voice sample required')
@@ -47,7 +49,7 @@ class ExtractAudioRequest(BaseModel):
     job_id: str = Field(..., min_length=1, max_length=100)
     uid: str = Field(..., min_length=1, max_length=100)
     media_path: str = Field(..., min_length=1)
-    media_type: str = Field("audio", regex="^(audio|video)$")
+    media_type: str = Field("audio", pattern="^(audio|video)$")
     
     class Config:
         extra = 'ignore'
@@ -70,13 +72,14 @@ class CloneAudioRequest(BaseModel):
     job_id: str = Field(..., min_length=1, max_length=100)
     uid: str = Field(..., min_length=1, max_length=100)
     chunk_id: int = Field(..., ge=0)
-    speakers: List[str] = Field(..., min_items=1, max_items=4)
+    speakers: List[str] = Field(..., min_length=1, max_length=4)
     text: str = Field(..., min_length=1)
-    voice_samples: Dict[str, str] = Field(..., min_items=1)
+    voice_samples: Dict[str, str] = Field(..., min_length=1)
     
-    @validator('voice_samples')
-    def validate_voice_samples(cls, v, values):
-        speakers = values.get('speakers', [])
+    @field_validator('voice_samples')
+    @classmethod
+    def validate_voice_samples(cls, v, info):
+        speakers = info.data.get('speakers', [])
         missing = [s for s in speakers if s not in v]
         if missing:
             raise ValueError(f'Missing voice samples for speakers: {missing}')
