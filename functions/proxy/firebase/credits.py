@@ -8,7 +8,7 @@ from typing import Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
 
-from config import config
+from utils import MULTI_CHARACTER_MULTIPLIER, SECONDS_PER_CREDIT, DUBBING_TRANSLATION_MULTIPLIER, DUBBING_VIDEO_MULTIPLIER, PENDING_CREDIT_TIMEOUT_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ def calculate_cost_from_duration(
     is_multi_character: bool = False
 ) -> int:
     """Calculate cost based on audio duration"""
-    base_cost = max(1, int(duration_seconds / config.SECONDS_PER_CREDIT))
-    multiplier = config.MULTI_CHARACTER_MULTIPLIER if is_multi_character else 1.0
+    base_cost = max(1, int(duration_seconds / SECONDS_PER_CREDIT))
+    multiplier = MULTI_CHARACTER_MULTIPLIER if is_multi_character else 1.0
     return max(1, int(base_cost * multiplier))
 
 
@@ -36,9 +36,9 @@ def calculate_dubbing_cost(
     is_video: bool
 ) -> int:
     """Calculate dubbing cost with multipliers"""
-    base_credits = max(1, int(duration_seconds / config.SECONDS_PER_CREDIT))
-    translation_mult = config.DUBBING_TRANSLATION_MULTIPLIER if has_translation else 1.0
-    video_mult = config.DUBBING_VIDEO_MULTIPLIER if is_video else 1.0
+    base_credits = max(1, int(duration_seconds / SECONDS_PER_CREDIT))
+    translation_mult = DUBBING_TRANSLATION_MULTIPLIER if has_translation else 1.0
+    video_mult = DUBBING_VIDEO_MULTIPLIER if is_video else 1.0
     return max(1, int(base_credits * translation_mult * video_mult))
 
 
@@ -101,7 +101,7 @@ def reserve_credits(
             "isMultiCharacter": bool(job_data.get("character_texts")),
             "createdAt": firestore.SERVER_TIMESTAMP,
             "updatedAt": firestore.SERVER_TIMESTAMP,
-            "pendingCreditExpiry": datetime.utcnow() + timedelta(hours=config.PENDING_CREDIT_TIMEOUT_HOURS),
+            "pendingCreditExpiry": datetime.utcnow() + timedelta(hours=PENDING_CREDIT_TIMEOUT_HOURS),
             "creditsReserved": True,
             "creditsConfirmed": False,
         }
