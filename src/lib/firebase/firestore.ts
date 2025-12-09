@@ -11,8 +11,8 @@ import {
     getDoc,
     Timestamp,
 } from 'firebase/firestore';
-import type { Character } from '../../types/character';
-import type { DialogueSegment, Voice } from '../../types/voice';
+import type { Character } from '@/types/character';
+import type { DialogueSegment, Voice } from '@/types/voice';
 import type { LibraryVoice } from '@/types/voiceLibrary';
 
 // Performance monitoring utility
