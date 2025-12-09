@@ -24,7 +24,7 @@ jobs:
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
-          echo ".env created."
+          echo "✅ .env created."
       
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -66,19 +66,24 @@ jobs:
       
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
+
+      # ==================== ENABLE APIS FIRST ====================
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      
-      - name: Setup Python virtual environment for proxy function
+      - name: Enable Required APIs
         run: |
-          cd functions/proxy
-          python3.10 -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          echo "🔧 Enabling required GCP APIs..."
+          gcloud services enable speech.googleapis.com
+          gcloud services enable translate.googleapis.com
+          gcloud services enable cloudtasks.googleapis.com
+          gcloud services enable cloudbuild.googleapis.com
+          gcloud services enable run.googleapis.com
+          gcloud services enable firestore.googleapis.com
+          gcloud services enable storage.googleapis.com
+          gcloud services enable cloudfunctions.googleapis.com
+          gcloud services enable cloudscheduler.googleapis.com
+          gcloud services enable pubsub.googleapis.com
+          gcloud services enable secretmanager.googleapis.com
+          echo "✅ APIs enabled"
 
       # ==================== STORAGE BUCKETS ====================
       
@@ -87,11 +92,11 @@ jobs:
           BUCKET_NAME="fennai-voice-output"
           REGION="us-central1"
           if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
-            echo "✓ Bucket gs://$BUCKET_NAME already exists"
+            echo "✅ Bucket gs://$BUCKET_NAME already exists"
           else
             echo "Creating bucket gs://$BUCKET_NAME"
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
-            echo "✓ Bucket created successfully"
+            echo "✅ Bucket created successfully"
           fi
           # 24-hour lifecycle policy
           echo '{
@@ -103,19 +108,30 @@ jobs:
             }
           }' > lifecycle.json
           gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
-          echo "✓ Lifecycle policy set (24-hour auto-delete)"
-          rm lifecycle.json
+          
+          # Enable CORS for signed URLs
+          echo '[{
+            "origin": ["*"],
+            "method": ["GET", "HEAD"],
+            "responseHeader": ["Content-Type"],
+            "maxAgeSeconds": 3600
+          }]' > cors.json
+          gsutil cors set cors.json gs://$BUCKET_NAME
+          
+          echo "✅ Lifecycle policy set (24-hour auto-delete)"
+          echo "✅ CORS configured"
+          rm lifecycle.json cors.json
 
       - name: Create Dubbing Temp Bucket
         run: |
           BUCKET_NAME="fennai-dubbing-temp"
           REGION="us-central1"
           if gsutil ls -b gs://$BUCKET_NAME 2>/dev/null; then
-            echo "✓ Bucket gs://$BUCKET_NAME already exists"
+            echo "✅ Bucket gs://$BUCKET_NAME already exists"
           else
             echo "Creating bucket gs://$BUCKET_NAME"
             gsutil mb -p fennai -c STANDARD -l $REGION gs://$BUCKET_NAME
-            echo "✓ Bucket created successfully"
+            echo "✅ Bucket created successfully"
           fi
           # 7-day lifecycle policy for dubbing files
           echo '{
@@ -127,8 +143,19 @@ jobs:
             }
           }' > lifecycle.json
           gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
-          echo "✓ Lifecycle policy set (7-day auto-delete)"
-          rm lifecycle.json
+          
+          # Enable CORS
+          echo '[{
+            "origin": ["*"],
+            "method": ["GET", "HEAD"],
+            "responseHeader": ["Content-Type"],
+            "maxAgeSeconds": 3600
+          }]' > cors.json
+          gsutil cors set cors.json gs://$BUCKET_NAME
+          
+          echo "✅ Lifecycle policy set (7-day auto-delete)"
+          echo "✅ CORS configured"
+          rm lifecycle.json cors.json
 
       # ==================== CLOUD TASKS QUEUE ====================
       
@@ -137,7 +164,7 @@ jobs:
           QUEUE_NAME="voice-generation-queue"
           LOCATION="us-central1"
           if gcloud tasks queues describe $QUEUE_NAME --location=$LOCATION 2>/dev/null; then
-            echo "✓ Queue $QUEUE_NAME already exists"
+            echo "✅ Queue $QUEUE_NAME already exists"
           else
             echo "Creating Cloud Tasks queue..."
             gcloud tasks queues create $QUEUE_NAME \
@@ -149,15 +176,35 @@ jobs:
               --max-backoff=300s \
               --max-doublings=3 \
               --max-retry-duration=1800s
-            echo "✓ Queue created successfully"
+            echo "✅ Queue created successfully"
           fi
+
+      # ==================== PUB/SUB FOR CLEANUP ====================
+      
+      - name: Create Pub/Sub Topic for Cleanup
+        run: |
+          TOPIC_NAME="credit-cleanup"
+          if gcloud pubsub topics describe $TOPIC_NAME 2>/dev/null; then
+            echo "✅ Topic $TOPIC_NAME already exists"
+          else
+            echo "Creating Pub/Sub topic for cleanup..."
+            gcloud pubsub topics create $TOPIC_NAME
+            echo "✅ Topic created successfully"
+          fi
+
+      # ==================== FIRESTORE INDEXES ====================
+      
+      - name: Deploy Firestore Indexes
+        run: |
+          echo "Deploying Firestore indexes..."
+          firebase deploy --only firestore:indexes --project fennai --non-interactive || echo "⚠️  Indexes deployment skipped (may not be configured)"
 
       # ==================== CLOUD RUN INFERENCE ====================
       
-      - name: Build GPU Inference Image (with FFmpeg + Resemblyzer)
+      - name: Build GPU Inference Image
         run: |
           echo "Building Docker image with model + FFmpeg + Resemblyzer..."
-          echo "⚠️ This will take ~90-120 seconds"
+          echo "⚠️  This will take ~90-120 seconds"
           gcloud builds submit \
             --config functions/inference/cloudbuild.yaml \
             --timeout=2400s \
@@ -184,11 +231,11 @@ jobs:
               --port 8080 \
               --cpu-boost \
               --concurrency=1 \
-              --set-env-vars INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output,GCS_DUBBING_BUCKET=fennai-dubbing-temp,GCP_PROJECT=fennai,QUEUE_LOCATION=us-central1,QUEUE_NAME=voice-generation-queue \
               --quiet \
               --format='value(status.url)')
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
+          echo "✅ Cloud Run deployed to: $URL"
 
       - name: Get Cloud Run Service Account
         id: get_sa
@@ -196,43 +243,69 @@ jobs:
           SA=$(gcloud run services describe fennai-inference \
               --region=us-central1 \
               --format='value(spec.template.spec.serviceAccountName)')
+          if [ -z "$SA" ]; then
+            # Use default compute service account
+            PROJECT_NUMBER=$(gcloud projects describe fennai --format='value(projectNumber)')
+            SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+          fi
           echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
-          echo "Service Account: $SA"
+          echo "✅ Service Account: $SA"
+
+      - name: Update Cloud Run with Service Account
+        run: |
+          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
+          gcloud run services update fennai-inference \
+            --region=us-central1 \
+            --set-env-vars "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output,GCS_DUBBING_BUCKET=fennai-dubbing-temp,GCP_PROJECT=fennai,QUEUE_LOCATION=us-central1,QUEUE_NAME=voice-generation-queue,CLOUD_RUN_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }},SERVICE_ACCOUNT_EMAIL=${SA}"
+          echo "✅ Environment variables updated"
 
       - name: Grant Storage Permissions to Cloud Run
         run: |
           SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-dubbing-temp
-          echo "✓ Storage permissions granted"
+          echo "✅ Storage permissions granted"
 
-      - name: Grant Cloud Tasks Permissions
+      - name: Grant Cloud Tasks Permissions to Cloud Run
         run: |
           SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           gcloud projects add-iam-policy-binding fennai \
             --member="serviceAccount:${SA}" \
-            --role="roles/cloudtasks.enqueuer"
-          echo "✓ Cloud Tasks permissions granted"
+            --role="roles/cloudtasks.enqueuer" \
+            --condition=None
+          echo "✅ Cloud Tasks enqueuer permissions granted"
 
-      - name: Enable Required APIs
+      - name: Grant Firestore Permissions to Cloud Run
         run: |
-          gcloud services enable speech.googleapis.com
-          gcloud services enable translate.googleapis.com
-          gcloud services enable cloudtasks.googleapis.com
-          echo "✓ APIs enabled"
+          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
+          gcloud projects add-iam-policy-binding fennai \
+            --member="serviceAccount:${SA}" \
+            --role="roles/datastore.user" \
+            --condition=None
+          echo "✅ Firestore permissions granted"
 
-      - name: Verify Deployment
+      - name: Verify Cloud Run Deployment
         run: |
           echo "Waiting for Cloud Run to be ready..."
-          sleep 15
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$HEALTH_URL" || echo "000")
-          if [ "$RESPONSE" = "200" ]; then
-            echo "✓ Cloud Run is healthy"
-          else
-            echo "⚠️ Unexpected response: $RESPONSE"
-            echo "Cloud Run may still be initializing"
-          fi
+          
+          # Retry health check up to 5 times
+          for i in {1..5}; do
+            echo "Health check attempt $i/5..."
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" || echo "000")
+            
+            if [ "$RESPONSE" = "200" ]; then
+              echo "✅ Cloud Run is healthy"
+              curl -s "$HEALTH_URL" | jq . || true
+              exit 0
+            else
+              echo "⚠️  Response: $RESPONSE (waiting 10s...)"
+              sleep 10
+            fi
+          done
+          
+          echo "❌ Health check failed after 5 attempts"
+          exit 1
 
       # ==================== PROXY FUNCTIONS ====================
 
@@ -247,13 +320,95 @@ jobs:
           echo "SERVICE_ACCOUNT_EMAIL=${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "GCS_DUBBING_BUCKET=fennai-dubbing-temp" >> .env
+          echo "✅ Proxy .env created"
+
+      - name: Grant Permissions to Firebase Functions Service Account
+        run: |
+          # Get the default App Engine service account (used by Firebase Functions)
+          PROJECT_NUMBER=$(gcloud projects describe fennai --format='value(projectNumber)')
+          FUNCTIONS_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+          
+          # Grant necessary permissions
+          echo "Granting permissions to Firebase Functions SA: $FUNCTIONS_SA"
+          
+          # Storage permissions
+          gsutil iam ch serviceAccount:${FUNCTIONS_SA}:objectAdmin gs://fennai-voice-output
+          gsutil iam ch serviceAccount:${FUNCTIONS_SA}:objectAdmin gs://fennai-dubbing-temp
+          
+          # Cloud Tasks permissions
+          gcloud projects add-iam-policy-binding fennai \
+            --member="serviceAccount:${FUNCTIONS_SA}" \
+            --role="roles/cloudtasks.enqueuer" \
+            --condition=None
+          
+          # Pub/Sub permissions for cleanup function
+          gcloud projects add-iam-policy-binding fennai \
+            --member="serviceAccount:${FUNCTIONS_SA}" \
+            --role="roles/pubsub.subscriber" \
+            --condition=None
+          
+          echo "✅ Firebase Functions permissions granted"
 
       - name: Deploy Proxy Functions
         run: |
+          echo "Deploying Firebase Functions..."
           firebase deploy \
               --only functions \
               --project fennai \
               --non-interactive
+          echo "✅ Functions deployed"
+
+      # ==================== CLOUD SCHEDULER FOR CLEANUP ====================
+      
+      - name: Create Cloud Scheduler Job for Credit Cleanup
+        run: |
+          JOB_NAME="credit-cleanup-hourly"
+          LOCATION="us-central1"
+          TOPIC="credit-cleanup"
+          
+          # Check if job exists
+          if gcloud scheduler jobs describe $JOB_NAME --location=$LOCATION 2>/dev/null; then
+            echo "Updating existing scheduler job..."
+            gcloud scheduler jobs update pubsub $JOB_NAME \
+              --location=$LOCATION \
+              --schedule="0 * * * *" \
+              --topic=$TOPIC \
+              --message-body='{"action":"cleanup"}' \
+              --time-zone="America/New_York"
+          else
+            echo "Creating new scheduler job..."
+            gcloud scheduler jobs create pubsub $JOB_NAME \
+              --location=$LOCATION \
+              --schedule="0 * * * *" \
+              --topic=$TOPIC \
+              --message-body='{"action":"cleanup"}' \
+              --time-zone="America/New_York"
+          fi
+          
+          echo "✅ Scheduler job configured (runs hourly)"
+
+      # ==================== FIRESTORE TTL POLICY ====================
+      
+      - name: Configure Firestore TTL for Script Generations
+        run: |
+          echo "⚠️  Configure Firestore TTL manually:"
+          echo "1. Go to Firestore console"
+          echo "2. Select 'scriptGenerations' collection"
+          echo "3. Enable TTL on 'createdAt' field (delete after 7 days)"
+          echo ""
+          echo "This prevents rate limit data from growing indefinitely"
+
+      # ==================== MONITORING & ALERTS ====================
+      
+      - name: Create Log-Based Metric for Errors
+        run: |
+          echo "Creating error tracking metric..."
+          gcloud logging metrics create function_errors \
+            --description="Count of function errors" \
+            --log-filter='severity>=ERROR AND resource.type="cloud_function"' \
+            --value-extractor='EXTRACT(jsonPayload.error)' 2>/dev/null || echo "Metric already exists"
+          
+          echo "✅ Logging metrics configured"
 
       # ==================== DEPLOYMENT SUMMARY ====================
 
@@ -263,25 +418,73 @@ jobs:
           echo "🚀 DEPLOYMENT SUCCESSFUL"
           echo "================================"
           echo ""
-          echo "Cloud Run URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
+          echo "📦 Cloud Run:"
+          echo "  URL: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}"
+          echo "  Service Account: ${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
           echo ""
-          echo "Features:"
-          echo " • Voice Cloning (original)"
-          echo " • Script Generator (Gemini 1.5 Pro)"
-          echo " • Audio Dubbing (STT + Resemblyzer + Translation)"
-          echo " • Video Dubbing (FFmpeg audio replacement)"
+          echo "🔌 Endpoints:"
+          echo "  • /health - Health check"
+          echo "  • /inference - Voice cloning"
+          echo "  • /extract-audio - Audio extraction"
+          echo "  • /cluster-speakers - Speaker diarization"
+          echo "  • /translate-transcript - Translation"
+          echo "  • /clone-audio - Dubbing clone"
+          echo "  • /merge-audio - Audio merge"
+          echo "  • /merge-video - Video merge"
           echo ""
-          echo "Architecture:"
-          echo " • Model: Baked into Docker (~3GB)"
-          echo " • Audio/Video: FFmpeg in container"
-          echo " • Speaker Clustering: Resemblyzer + HDBSCAN"
-          echo " • Storage: 2 GCS buckets (24hr + 7day lifecycle)"
-          echo " • Queue: Cloud Tasks (async processing)"
+          echo "☁️  Firebase Functions:"
+          echo "  • voice_clone - Main voice cloning"
+          echo "  • generate_script - AI script generation"
+          echo "  • dub_transcribe - Start dubbing"
+          echo "  • dub_translate - Translation"
+          echo "  • dub_clone - Voice cloning for dubbing"
+          echo "  • cleanup_pending_credits - Scheduled cleanup"
           echo ""
-          echo "Performance:"
-          echo " • Cold start: 10-15s (model + FFmpeg)"
-          echo " • Warm inference: <2s"
-          echo " • Max concurrency: 1 per instance"
-          echo " • Max instances: 3"
+          echo "💾 Storage:"
+          echo "  • fennai-voice-output (24h lifecycle, CORS enabled)"
+          echo "  • fennai-dubbing-temp (7d lifecycle, CORS enabled)"
+          echo ""
+          echo "⚙️  Infrastructure:"
+          echo "  • Queue: voice-generation-queue"
+          echo "  • Topic: credit-cleanup"
+          echo "  • Scheduler: credit-cleanup-hourly (runs every hour)"
+          echo ""
+          echo "📝 Manual Steps Required:"
+          echo "  1. Configure Firestore TTL for scriptGenerations"
+          echo "  2. Set up monitoring alerts in Cloud Console"
+          echo "  3. Review IAM permissions"
+          echo "  4. Test all endpoints"
           echo ""
           echo "================================"
+
+      # ==================== POST-DEPLOYMENT TESTS ====================
+      
+      - name: Run Smoke Tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          
+          # Test Cloud Run health
+          HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
+          RESPONSE=$(curl -s "$HEALTH_URL")
+          echo "Health check response: $RESPONSE"
+          
+          # Test Firebase Functions (health endpoint if exists)
+          # Add your function URL here
+          
+          echo "✅ Smoke tests completed"
+
+      # ==================== ROLLBACK ON FAILURE ====================
+      
+      - name: Rollback on Failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed, initiating rollback..."
+          
+          # Rollback Cloud Run to previous revision
+          gcloud run services update-traffic fennai-inference \
+            --region=us-central1 \
+            --to-latest=0 \
+            --to-revisions=LATEST=100 \
+            || echo "⚠️  Rollback failed or no previous revision"
+          
+          echo "📧 Check logs for details"

@@ -51,12 +51,13 @@ from middleware import (
 )
 
 # Import route handlers
+from routes.inference import inference_route
 from routes.extract_audio import extract_audio_route
 from routes.cluster_speakers import cluster_speakers_route
+from routes.translate_transcript import translate_transcript_route
 from routes.clone_audio import clone_audio_route
 from routes.merge_audio import merge_audio_route
 from routes.merge_video import merge_video_route
-from routes.inference import inference_route
 
 
 def load_model_async():
@@ -187,42 +188,7 @@ def health():
 # Register route handlers
 # ============================================================================
 
-@app.route("/extract-audio", methods=["POST"])
-@require_internal_token
-@validate_payload_size
-@handle_job_errors(collection="dubbingJobs")
-def extract_audio():
-    return extract_audio_route()
-
-
-@app.route("/cluster-speakers", methods=["POST"])
-@require_internal_token
-@handle_job_errors(collection="dubbingJobs")
-def cluster_speakers():
-    return cluster_speakers_route()
-
-
-@app.route("/clone-audio", methods=["POST"])
-@require_internal_token
-@handle_job_errors(collection="dubbingJobs")
-def clone_audio():
-    return clone_audio_route()
-
-
-@app.route("/merge-audio", methods=["POST"])
-@require_internal_token
-@handle_job_errors(collection="dubbingJobs")
-def merge_audio():
-    return merge_audio_route()
-
-
-@app.route("/merge-video", methods=["POST"])
-@require_internal_token
-@handle_job_errors(collection="dubbingJobs")
-def merge_video():
-    return merge_video_route()
-
-
+# Voice Cloning Routes
 @app.route("/inference", methods=["POST"])
 @require_internal_token
 @validate_payload_size
@@ -233,6 +199,56 @@ def inference():
     needs custom error handling for GPU OOM and credit management.
     """
     return inference_route(processor, model)
+
+
+# Dubbing Pipeline Routes
+@app.route("/extract-audio", methods=["POST"])
+@require_internal_token
+@validate_payload_size
+@handle_job_errors(collection="dubbingJobs")
+def extract_audio():
+    """Extract audio from video and start STT transcription"""
+    return extract_audio_route()
+
+
+@app.route("/cluster-speakers", methods=["POST"])
+@require_internal_token
+@handle_job_errors(collection="dubbingJobs")
+def cluster_speakers():
+    """Cluster speakers using voice embeddings"""
+    return cluster_speakers_route()
+
+
+@app.route("/translate-transcript", methods=["POST"])
+@require_internal_token
+@handle_job_errors(collection="dubbingJobs")
+def translate_transcript():
+    """Translate transcript to target language"""
+    return translate_transcript_route()
+
+
+@app.route("/clone-audio", methods=["POST"])
+@require_internal_token
+@handle_job_errors(collection="dubbingJobs")
+def clone_audio():
+    """Clone audio for dubbing chunk"""
+    return clone_audio_route()
+
+
+@app.route("/merge-audio", methods=["POST"])
+@require_internal_token
+@handle_job_errors(collection="dubbingJobs")
+def merge_audio():
+    """Merge all cloned audio chunks"""
+    return merge_audio_route()
+
+
+@app.route("/merge-video", methods=["POST"])
+@require_internal_token
+@handle_job_errors(collection="dubbingJobs")
+def merge_video():
+    """Replace video audio track with dubbed audio"""
+    return merge_video_route()
 
 
 if __name__ == "__main__":

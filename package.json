@@ -10,9 +10,8 @@
     "astro": "astro",
     "emulators": "firebase emulators:start --import=./firebase-data --export-on-exit",
     "emulators:start": "firebase emulators:start",
-    "dev:emulators": "concurrently \"npm run emulators\" \"npm run dev\"",
-    "seed": "node scripts/seed-emulator.js"
-  },
+    "dev:emulators": "concurrently \"npm run emulators\" \"npm run dev\""
+    },
   "dependencies": {
     "@astrojs/node": "^9.5.1",
     "@astrojs/react": "^4.4.2",
