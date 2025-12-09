@@ -22,8 +22,9 @@ setup_logging(config.LOG_LEVEL)
 import logging
 logger = logging.getLogger(__name__)
 
-# Initialize Firebase
-if not len(firestore.client._apps):
+# Initialize Firebase - FIXED
+import firebase_admin
+if not firebase_admin._apps:
     cred = credentials.ApplicationDefault()
     initialize_app(cred)
 
