@@ -70,6 +70,8 @@ COPY --chown=appuser:appuser vibevoice ./vibevoice
 COPY --chown=appuser:appuser utils ./utils
 COPY --chown=appuser:appuser routes ./routes
 COPY --chown=appuser:appuser firebase ./firebase
+COPY --chown=appuser:appuser config.py .
+COPY --chown=appuser:appuser middleware.py .
 
 EXPOSE 8080
 
