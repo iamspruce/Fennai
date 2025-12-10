@@ -192,13 +192,6 @@ jobs:
             echo "✅ Topic created successfully"
           fi
 
-      # ==================== FIRESTORE INDEXES ====================
-      
-      - name: Deploy Firestore Indexes
-        run: |
-          echo "Deploying Firestore indexes..."
-          firebase deploy --only firestore:indexes --project fennai --non-interactive || echo "⚠️  Indexes deployment skipped (may not be configured)"
-
       # ==================== CLOUD RUN INFERENCE ====================
       
       - name: Build GPU Inference Image

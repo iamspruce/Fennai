@@ -83,10 +83,7 @@ class Config:
         
         if not self.INTERNAL_TOKEN:
             errors.append("INTERNAL_TOKEN environment variable not set")
-        
-        if not self.CLOUD_RUN_URL:
-            errors.append("CLOUD_RUN_URL environment variable not set")
-        
+   
         if not self.GCP_PROJECT:
             errors.append("GCP_PROJECT environment variable not set")
         

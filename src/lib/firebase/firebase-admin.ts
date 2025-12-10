@@ -19,7 +19,7 @@ const storageBucket = getEnv('APP_FIREBASE_STORAGE_BUCKET');
 const privateKey = getEnv('APP_FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n');
 const clientEmail = getEnv('APP_FIREBASE_CLIENT_EMAIL');
 
-
+// Only initialize if not already initialized
 if (!getApps().length) {
     try {
         if (isEmulator) {
@@ -34,10 +34,11 @@ if (!getApps().length) {
             console.log('Firebase Admin → using emulators');
         } else {
             // Production mode
-            // Use service account credentials if available, otherwise use application default
+            // Use service account credentials if explicitly provided, otherwise use application default
 
             if (privateKey && clientEmail && projectId) {
                 // Explicit service account credentials are provided
+                console.log('Firebase Admin → initializing with service account credentials');
                 initializeApp({
                     credential: cert({
                         projectId,
@@ -49,7 +50,8 @@ if (!getApps().length) {
                 });
                 console.log('Firebase Admin → production mode (service account)');
             } else {
-                // Use application default credentials (works in Cloud Functions/Cloud Run)
+                // Use application default credentials (automatic in Cloud Functions/Cloud Run)
+                console.log('Firebase Admin → initializing with application default credentials');
                 initializeApp({
                     credential: applicationDefault(),
                     projectId: projectId || 'fennai',
@@ -60,6 +62,14 @@ if (!getApps().length) {
         }
     } catch (error) {
         console.error('Firebase Admin initialization error:', error);
+        console.error('Environment check:', {
+            isEmulator,
+            hasProjectId: !!projectId,
+            hasStorageBucket: !!storageBucket,
+            hasPrivateKey: !!privateKey,
+            hasClientEmail: !!clientEmail,
+            nodeEnv: process.env.NODE_ENV,
+        });
         // Re-throw to make the error visible
         throw error;
     }
