@@ -1,80 +1,116 @@
 // lib/firebase/firebase-admin.ts
+import { initializeApp, cert, getApps, type App } from "firebase-admin/app";
+import {
+    FieldValue,
+    getFirestore,
+    type Firestore,
+} from "firebase-admin/firestore";
+import { getAuth, type Auth } from "firebase-admin/auth";
+import { getStorage, type Storage } from "firebase-admin/storage";
 
-import { initializeApp, getApps, cert, applicationDefault } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getStorage } from 'firebase-admin/storage';
-
-const getEnv = (key: string) => {
-    // Check both import.meta.env and process.env
-    if (typeof import.meta !== 'undefined' && import.meta.env?.[key]) {
+export const getEnv = (key: string, defaultValue?: string) => {
+    if (
+        typeof import.meta !== "undefined" &&
+        import.meta.env?.[key] !== undefined
+    ) {
         return import.meta.env[key];
     }
-    return process.env[key];
+    return process.env[key] ?? defaultValue;
 };
 
-const isEmulator = getEnv('PUBLIC_USE_FIREBASE_EMULATORS') === 'true';
-const projectId = getEnv('APP_FIREBASE_PROJECT_ID');
-const storageBucket = getEnv('APP_FIREBASE_STORAGE_BUCKET');
-const privateKey = getEnv('APP_FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n');
-const clientEmail = getEnv('APP_FIREBASE_CLIENT_EMAIL');
 
-// Only initialize if not already initialized
-if (!getApps().length) {
-    try {
-        if (isEmulator) {
-            // Emulator mode
-            process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
-            process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+const isDev = process.env.NODE_ENV === "development";
+const isEmulator = process.env.PUBLIC_USE_FIREBASE_EMULATORS === "true" && isDev;
 
-            initializeApp({
-                projectId: projectId || 'demo-project',
-                storageBucket: storageBucket || 'fennai.firebasestorage.app',
-            });
-            console.log('Firebase Admin → using emulators');
-        } else {
-            // Production mode
-            // Use service account credentials if explicitly provided, otherwise use application default
+// Singleton pattern - only initialize once
+let app: App;
+let adminDb: Firestore;
+let adminAuth: Auth;
+let adminStorage: Storage;
 
-            if (privateKey && clientEmail && projectId) {
-                // Explicit service account credentials are provided
-                console.log('Firebase Admin → initializing with service account credentials');
-                initializeApp({
-                    credential: cert({
-                        projectId,
-                        clientEmail,
-                        privateKey,
-                    }),
-                    projectId,
-                    storageBucket
-                });
-                console.log('Firebase Admin → production mode (service account)');
-            } else {
-                // Use application default credentials (automatic in Cloud Functions/Cloud Run)
-                console.log('Firebase Admin → initializing with application default credentials');
-                initializeApp({
-                    credential: applicationDefault(),
-                    projectId: projectId || 'fennai',
-                    storageBucket: storageBucket || 'fennai.firebasestorage.app',
-                });
-                console.log('Firebase Admin → production mode (application default)');
-            }
-        }
-    } catch (error) {
-        console.error('Firebase Admin initialization error:', error);
-        console.error('Environment check:', {
-            isEmulator,
-            hasProjectId: !!projectId,
-            hasStorageBucket: !!storageBucket,
-            hasPrivateKey: !!privateKey,
-            hasClientEmail: !!clientEmail,
-            nodeEnv: process.env.NODE_ENV,
-        });
-        // Re-throw to make the error visible
-        throw error;
+function initializeFirebase() {
+    // Return existing instance if already initialized
+    if (getApps().length > 0) {
+        const existingApp = getApps()[0];
+        return {
+            app: existingApp,
+            adminDb: getFirestore(existingApp),
+            adminAuth: getAuth(existingApp),
+            adminStorage: getStorage(existingApp),
+        };
     }
+
+    // Configure emulator settings
+    if (isEmulator) {
+        process.env.FIRESTORE_EMULATOR_HOST =
+            process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8081";
+        process.env.FIREBASE_AUTH_EMULATOR_HOST =
+            process.env.FIREBASE_AUTH_EMULATOR_HOST || "127.0.0.1:9099";
+        process.env.FIREBASE_STORAGE_EMULATOR_HOST =
+            process.env.FIREBASE_STORAGE_EMULATOR_HOST || "127.0.0.1:9199";
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = ""; // Not needed for emulators
+
+        const storageBucket = getEnv("PUBLIC_FIREBASE_STORAGE_BUCKET");
+
+        app = initializeApp({
+            projectId: getEnv("APP_FIREBASE_PROJECT_ID", "demo-project"),
+            storageBucket: storageBucket || undefined,
+        });
+    } else if (isDev) {
+        const projectId = getEnv("APP_FIREBASE_PROJECT_ID");
+        const clientEmail = getEnv("APP_FIREBASE_CLIENT_EMAIL");
+        const privateKey = getEnv("APP_FIREBASE_PRIVATE_KEY");
+        const storageBucket = getEnv("PUBLIC_FIREBASE_STORAGE_BUCKET");
+
+        if (!projectId || !clientEmail || !privateKey) {
+            throw new Error(
+                "Missing required Firebase Admin credentials for dev (non-emulator) mode. Check environment variables."
+            );
+        }
+
+        app = initializeApp({
+            credential: cert({
+                projectId,
+                clientEmail,
+                privateKey: privateKey.replace(/\\n/g, "\n"),
+            }),
+            storageBucket,
+        });
+    } else {
+        const storageBucket = getEnv("PUBLIC_FIREBASE_STORAGE_BUCKET");
+
+        app = initializeApp({
+            storageBucket: storageBucket || undefined,
+        });
+    }
+
+    // Initialize services
+    adminDb = getFirestore(app);
+    adminAuth = getAuth(app);
+    adminStorage = getStorage(app);
+
+    // Configure Firestore settings for better performance
+    if (!isEmulator) {
+        adminDb.settings({
+            ignoreUndefinedProperties: true,
+            preferRest: false,
+        });
+    }
+
+    return { app, adminDb, adminAuth, adminStorage };
 }
 
-export const adminAuth = getAuth();
-export const adminDb = getFirestore();
-export const adminStorage = getStorage();
+// Initialize and export (No changes here)
+try {
+    const firebase = initializeFirebase();
+    app = firebase.app;
+    adminDb = firebase.adminDb;
+    adminAuth = firebase.adminAuth;
+    adminStorage = firebase.adminStorage;
+} catch (error) {
+    console.error("❌ Failed to initialize Firebase Admin SDK:", error);
+    throw error;
+}
+
+export { app, adminDb, adminAuth, adminStorage, FieldValue };
+
