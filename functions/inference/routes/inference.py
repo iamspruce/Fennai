@@ -10,7 +10,7 @@ import numpy as np
 from io import BytesIO
 
 import soundfile as sf
-from flask import request, jsonify
+from flask import request, jsonify, g
 from firebase_admin import firestore
 from pydantic import ValidationError
 
@@ -59,7 +59,7 @@ def inference_route(processor, model):
     chunk_id = req.chunk_id
     total_chunks = req.total_chunks
     
-    request.job_id = job_id
+    g.job_id = job_id
     is_multi_chunk = chunk_id is not None
     
     if is_multi_chunk:

@@ -60,11 +60,11 @@ def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
     except auth.ExpiredIdTokenError:
         logger.error("Authentication failed: Token has expired")
         return None
-    except auth.InvalidIdTokenError:
-        logger.error("Authentication failed: Token is invalid (malformed or revoked)")
-        return None
     except auth.RevokedIdTokenError:
         logger.error("Authentication failed: Token has been revoked")
+        return None
+    except auth.InvalidIdTokenError:
+        logger.error("Authentication failed: Token is invalid")
         return None
     except Exception as e:
         # Catch other errors (e.g. wrong project config, connection issues)

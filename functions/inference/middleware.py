@@ -9,12 +9,20 @@ import traceback
 from functools import wraps
 from typing import Callable, Optional, Tuple, Any
 from flask import request, abort, jsonify, g, Request
-
+from google.cloud.firestore import SERVER_TIMESTAMP
 from config import config
 from firebase_admin import firestore
 
+
 logger = logging.getLogger(__name__)
-db = firestore.client()
+_db = None
+
+def get_db():
+    """Lazy load Firestore client"""
+    global _db
+    if _db is None:
+        _db = firestore.client()
+    return _db
 
 
 def require_internal_token(f: Callable) -> Callable:
@@ -94,7 +102,7 @@ def handle_job_errors(collection: str = "voiceJobs", release_credits: bool = Tru
             
             # Set job_id for logging
             if job_id:
-                request.job_id = job_id
+                g.job_id = job_id
             
             try:
                 return f(*args, **kwargs)
@@ -113,12 +121,12 @@ def handle_job_errors(collection: str = "voiceJobs", release_credits: bool = Tru
                 # Update job status
                 if job_id:
                     try:
-                        job_ref = db.collection(collection).document(job_id)
+                        job_ref = get_db().collection(collection).document(job_id)
                         job_ref.update({
                             "status": "failed",
                             "error": str(e),
                             "errorDetails": traceback.format_exc()[:1000],  # Limit size
-                            "updatedAt": firestore.SERVER_TIMESTAMP
+                            "updatedAt": SERVER_TIMESTAMP
                         })
                     except Exception as update_error:
                         logger.error(f"Failed to update job status: {update_error}")
@@ -128,11 +136,12 @@ def handle_job_errors(collection: str = "voiceJobs", release_credits: bool = Tru
                     try:
                         from firebase.credits import release_credits as release_credits_func
                         
-                        job_ref = db.collection(collection).document(job_id)
+                        job_ref = get_db().collection(collection).document(job_id)
                         job_doc = job_ref.get()
                         
                         if job_doc.exists:
-                            cost = job_doc.to_dict().get("cost", 0)
+                            data = job_doc.to_dict() or {}
+                            cost = data.get("cost", 0)
                             if cost > 0:
                                 release_credits_func(uid, job_id, cost)
                     except Exception as credit_error:
@@ -161,7 +170,7 @@ def extract_job_info() -> Tuple[Optional[str], Optional[str], dict]:
     
     # Set job_id for logging
     if job_id:
-        request.job_id = job_id
+        g.job_id = job_id
     
     return job_id, uid, data
 
@@ -237,13 +246,13 @@ def get_job_document(job_id: str, collection: str = "voiceJobs") -> Tuple[Any, d
     Raises:
         ValueError: If job not found
     """
-    job_ref = db.collection(collection).document(job_id)
+    job_ref = get_db().collection(collection).document(job_id)
     job_doc = job_ref.get()
     
     if not job_doc.exists:
         raise ValueError(f"Job {job_id} not found")
     
-    return job_ref, job_doc.to_dict()
+    return job_ref, job_doc.to_dict() or {}
 
 
 def update_job_status(
@@ -267,7 +276,7 @@ def update_job_status(
     """
     updates = {
         "status": status,
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     }
     
     if step:
@@ -278,7 +287,7 @@ def update_job_status(
     
     updates.update(extra_fields)
     
-    job_ref = db.collection(collection).document(job_id)
+    job_ref = get_db().collection(collection).document(job_id)
     job_ref.update(updates)
     
     logger.info(f"Job {job_id}: Updated status to {status}")

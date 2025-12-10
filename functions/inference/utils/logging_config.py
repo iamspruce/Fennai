@@ -15,7 +15,7 @@ class RequestContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if has_request_context():
             record.request_id = getattr(g, 'request_id', 'NO_REQUEST_ID')
-            record.job_id = getattr(request, 'job_id', 'NO_JOB')
+            record.job_id = getattr(g, 'job_id', 'NO_JOB')
         else:
             record.request_id = 'NO_REQUEST_ID'
             record.job_id = 'NO_JOB'
@@ -75,7 +75,7 @@ def get_request_id() -> str:
 def get_job_id() -> str:
     """Get current job ID"""
     if has_request_context():
-        return getattr(request, 'job_id', 'NO_JOB')
+        return getattr(g, 'job_id', 'NO_JOB')
     return 'NO_JOB'
 
 

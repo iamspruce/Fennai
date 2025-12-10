@@ -79,26 +79,36 @@ def load_model_async():
             processor = VibeVoiceProcessor.from_pretrained(str(MODEL_DIR))
             
             dtype = torch.float16 if config.DEVICE == "cuda" else torch.float32
-            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+            loaded_model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 str(MODEL_DIR),
                 torch_dtype=dtype,
             )
             
-            model.to(config.DEVICE)
-            model.eval()
-            model.set_ddpm_inference_steps(config.DDPM_INFERENCE_STEPS)
+            if isinstance(loaded_model, tuple):
+                _model = loaded_model[0]
+            else:
+                _model = loaded_model
+            
+            # Ensure model is a Module (helps type checker and runtime safety)
+            if not isinstance(_model, torch.nn.Module):
+                raise TypeError(f"Expected model to be torch.nn.Module, got {type(_model)}")
+            
+            _model.to(config.DEVICE)
+            _model.eval()
+            _model.set_ddpm_inference_steps(config.DDPM_INFERENCE_STEPS)
             
             # Set attention mode
             from utils import get_optimal_attention_mode
             attn_mode = get_optimal_attention_mode()
-            if hasattr(model.config, "attention_type"):
-                model.config.attention_type = attn_mode
+            if hasattr(_model.config, "attention_type"):
+                _model.config.attention_type = attn_mode
             
             # Compile model for performance
             if config.DEVICE == "cuda":
                 logger.info("Compiling model...")
-                model = torch.compile(model, mode=config.MODEL_COMPILE_MODE, fullgraph=True)
+                _model = torch.compile(_model, mode=config.MODEL_COMPILE_MODE, fullgraph=True)
             
+            model = _model
             model_ready.set()
             
             gpu_mem = torch.cuda.memory_allocated() / 1e9 if config.DEVICE == "cuda" else 0
@@ -117,7 +127,7 @@ threading.Thread(target=load_model_async, daemon=True).start()
 @app.before_request
 def before_request():
     """Run before each request"""
-    from flask import request
+    from flask import request, g
     
     # Add request ID for tracing
     add_request_id()
@@ -127,7 +137,7 @@ def before_request():
         return jsonify({"error": "Model not ready"}), 503
     
     # Initialize job_id
-    request.job_id = "NO_JOB"
+    g.job_id = "NO_JOB"
 
 
 @app.after_request

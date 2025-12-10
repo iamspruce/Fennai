@@ -28,6 +28,7 @@ if (!getApps().length) {
 
             initializeApp({
                 projectId: projectId || 'demo-project',
+                storageBucket: storageBucket || 'fennai.firebasestorage.app',
             });
             console.log('Firebase Admin → using emulators');
         } else {

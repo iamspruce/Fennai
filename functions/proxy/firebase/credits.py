@@ -4,6 +4,7 @@ Enhanced credit management with race condition prevention.
 All credit operations are atomic and idempotent.
 """
 from firebase_admin import firestore
+from google.cloud.firestore import transactional, SERVER_TIMESTAMP, Increment
 from typing import Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
@@ -56,7 +57,7 @@ def reserve_credits(
     user_ref = db.collection("users").document(uid)
     job_ref = db.collection("voiceJobs").document(job_id)
     
-    @firestore.transactional
+    @transactional
     def update_in_transaction(transaction):
         # Check if job already exists (prevent double reservation)
         job_doc = transaction.get(job_ref)
@@ -83,12 +84,15 @@ def reserve_credits(
             )
         
         # Reserve credits by incrementing pendingCredits
-        user_updates = {
-            "updatedAt": firestore.SERVER_TIMESTAMP
+        user_updates: Dict[str, Any] = {
+            "updatedAt": SERVER_TIMESTAMP
         }
         
         if not is_pro:
-            user_updates["pendingCredits"] = firestore.Increment(cost)
+            user_updates = {
+                "pendingCredits": Increment(cost),
+                "updatedAt": SERVER_TIMESTAMP
+            }
         
         transaction.update(user_ref, user_updates)
         
@@ -99,8 +103,8 @@ def reserve_credits(
             "cost": cost,
             "text": job_data.get("text", ""),
             "isMultiCharacter": bool(job_data.get("character_texts")),
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
             "pendingCreditExpiry": datetime.utcnow() + timedelta(hours=PENDING_CREDIT_TIMEOUT_HOURS),
             "creditsReserved": True,
             "creditsConfirmed": False,
@@ -135,7 +139,7 @@ def confirm_credit_deduction(
     user_ref = db.collection("users").document(uid)
     job_ref = db.collection("voiceJobs").document(job_id)
     
-    @firestore.transactional
+    @transactional
     def update_in_transaction(transaction):
         # Check if already confirmed (idempotency)
         job_doc = transaction.get(job_ref)
@@ -159,22 +163,22 @@ def confirm_credit_deduction(
         is_pro = user_data.get("isPro", False)
         
         # Update user credits
-        updates = {
-            "totalVoicesGenerated": firestore.Increment(1),
-            "updatedAt": firestore.SERVER_TIMESTAMP
+        updates: Dict[str, Any] = {
+            "totalVoicesGenerated": Increment(1),
+            "updatedAt": SERVER_TIMESTAMP
         }
         
         if not is_pro:
             # Deduct from actual credits and remove from pending
-            updates["credits"] = firestore.Increment(-cost)
-            updates["pendingCredits"] = firestore.Increment(-cost)
+            updates["credits"] = Increment(-cost)
+            updates["pendingCredits"] = Increment(-cost)
         
         transaction.update(user_ref, updates)
         
         # Mark credits as confirmed in job
         transaction.update(job_ref, {
             "creditsConfirmed": True,
-            "creditsConfirmedAt": firestore.SERVER_TIMESTAMP
+            "creditsConfirmedAt": SERVER_TIMESTAMP
         })
         
         logger.info(f"Confirmed {cost} credit deduction for user {uid}, job {job_id}")
@@ -204,7 +208,7 @@ def release_credits(
     user_ref = db.collection("users").document(uid)
     job_ref = db.collection("voiceJobs").document(job_id)
     
-    @firestore.transactional
+    @transactional
     def update_in_transaction(transaction):
         # Check job status
         job_doc = transaction.get(job_ref)
@@ -239,15 +243,15 @@ def release_credits(
         # Release credits
         if not is_pro:
             updates = {
-                "pendingCredits": firestore.Increment(-cost),
-                "updatedAt": firestore.SERVER_TIMESTAMP
+                "pendingCredits": Increment(-cost),
+                "updatedAt": SERVER_TIMESTAMP
             }
             transaction.update(user_ref, updates)
         
         # Mark credits as released in job
         transaction.update(job_ref, {
             "creditsReleased": True,
-            "creditsReleasedAt": firestore.SERVER_TIMESTAMP
+            "creditsReleasedAt": SERVER_TIMESTAMP
         })
         
         logger.info(f"Released {cost} credits for user {uid}, job {job_id}")
@@ -330,7 +334,7 @@ def cleanup_stale_pending_credits() -> Dict[str, Any]:
                 job_doc.reference.update({
                     "status": "expired",
                     "error": "Job expired - credits released",
-                    "updatedAt": firestore.SERVER_TIMESTAMP
+                    "updatedAt": SERVER_TIMESTAMP
                 })
                 cleaned_count += 1
                 logger.info(f"Cleaned up expired job {job_doc.id}")
