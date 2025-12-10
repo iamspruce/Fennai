@@ -29,36 +29,24 @@
     ],
     "frameworksBackend": {
       "region": "us-central1"
-    },
-"rewrites": [
-  {
-    "source": "/api/proxy/voice-clone",
-    "function": "voice_clone"
-  },
-  {
-    "source": "/api/proxy/generate-script",
-    "function": "generate_script"
-  },
-  {
-    "source": "/api/proxy/dub/transcribe",
-    "function": "dub_transcribe"
-  },
-  {
-    "source": "/api/proxy/dub/translate",
-    "function": "dub_translate"
-  },
-  {
-    "source": "/api/proxy/dub/clone",
-    "function": "dub_clone"
-  }
-]
+    }
   },
   "emulators": {
-    "auth": { "port": 9099 },
-    "firestore": { "port": 8080 },
-    "storage": { "port": 9199 },
-    "functions": { "port": 5005 },
-    "ui": { "enabled": true },
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "functions": {
+      "port": 5005
+    },
+    "ui": {
+      "enabled": true
+    },
     "singleProjectMode": true
   }
 }
