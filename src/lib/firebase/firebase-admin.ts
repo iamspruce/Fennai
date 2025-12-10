@@ -34,16 +34,16 @@ if (!getApps().length) {
             console.log('Firebase Admin → using emulators');
         } else {
             // Production mode
-            // Check if we have explicit credentials or use 
+            // Use service account credentials if available, otherwise use application default
 
-            if (!privateKey || !clientEmail || !projectId) {
-                // If service account JSON is provided as string, parse it
+            if (privateKey && clientEmail && projectId) {
+                // Explicit service account credentials are provided
                 initializeApp({
                     credential: cert({
                         projectId,
                         clientEmail,
                         privateKey,
-                    } as any),
+                    }),
                     projectId,
                     storageBucket
                 });
