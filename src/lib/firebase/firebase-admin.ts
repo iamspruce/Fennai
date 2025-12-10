@@ -19,6 +19,7 @@ const storageBucket = getEnv('APP_FIREBASE_STORAGE_BUCKET');
 const privateKey = getEnv('APP_FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n');
 const clientEmail = getEnv('APP_FIREBASE_CLIENT_EMAIL');
 
+
 if (!getApps().length) {
     try {
         if (isEmulator) {
