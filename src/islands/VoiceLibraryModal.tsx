@@ -272,8 +272,8 @@ export default function VoiceLibraryModal({ isPro }: VoiceLibraryModalProps) {
                     width: 36px;
                     height: 36px;
                     border-radius: 50%;
-                    background: var(--pink-3);
-                    color: var(--pink-9);
+                    background: var(--orange-3);
+                    color: var(--orange-9);
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -341,7 +341,7 @@ export default function VoiceLibraryModal({ isPro }: VoiceLibraryModalProps) {
                 }
 
                 .filter-pill.active {
-                    background: var(--pink-9);
+                    background: var(--orange-9);
                     color: white;
                     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 }

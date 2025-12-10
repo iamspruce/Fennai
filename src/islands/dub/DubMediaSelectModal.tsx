@@ -243,7 +243,7 @@ export default function DubMediaSelectModal({
 
                 <div className="modal-header">
                     <div className="modal-title-group">
-                        <Icon icon="lucide:video" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+                        <Icon icon="lucide:video" width={20} height={20} style={{ color: 'var(--orange-9)' }} />
                         <h3 className="modal-title">
                             Hi! Use {character.name} to dub videos easily
                         </h3>
@@ -402,13 +402,13 @@ export default function DubMediaSelectModal({
           }
 
           .upload-zone:hover {
-            border-color: var(--pink-9);
-            background: var(--pink-2);
+            border-color: var(--orange-9);
+            background: var(--orange-2);
           }
 
           .upload-zone.dragging {
-            border-color: var(--pink-9);
-            background: var(--pink-3);
+            border-color: var(--orange-9);
+            background: var(--orange-3);
             transform: scale(1.02);
           }
 
@@ -526,18 +526,18 @@ export default function DubMediaSelectModal({
             align-items: center;
             gap: var(--space-2xs);
             padding: 4px 8px;
-            background: var(--pink-4);
-            border: 1px solid var(--pink-7);
+            background: var(--orange-4);
+            border: 1px solid var(--orange-7);
             border-radius: var(--radius-s);
             font-size: 13px;
-            color: var(--pink-11);
+            color: var(--orange-11);
           }
 
           .tag button {
             background: none;
             border: none;
             padding: 0;
-            color: var(--pink-11);
+            color: var(--orange-11);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -573,12 +573,12 @@ export default function DubMediaSelectModal({
           }
 
           .btn-primary {
-            background: var(--pink-9);
+            background: var(--orange-9);
             color: white;
           }
 
           .btn-primary:hover:not(:disabled) {
-            background: var(--pink-10);
+            background: var(--orange-10);
           }
 
           .btn-full {

@@ -326,8 +326,8 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
                     width: 36px;
                     height: 36px;
                     border-radius: 50%;
-                    background: var(--pink-3);
-                    color: var(--pink-9);
+                    background: var(--orange-3);
+                    color: var(--orange-9);
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -357,9 +357,9 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
                     transition: all 0.2s;
                 }
                 .language-card:hover {
-                    border-color: var(--pink-7);
-                    background: var(--pink-2);
-                    color: var(--pink-11);
+                    border-color: var(--orange-7);
+                    background: var(--orange-2);
+                    color: var(--orange-11);
                 }
 
                 .active-recording-container {
@@ -440,7 +440,7 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
                     transition: all 0.3s;
                 }
                 .btn-record-large:hover {
-                    border-color: var(--pink-9);
+                    border-color: var(--orange-9);
                     transform: scale(1.05);
                 }
                 
@@ -477,7 +477,7 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
 
                 .progress-fill {
                     height: 100%;
-                    background: var(--pink-9);
+                    background: var(--orange-9);
                     transition: width 0.3s ease;
                 }
                 
@@ -530,7 +530,7 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
                     border: none;
                     width: 100%;
                 }
-                .btn-primary { background: var(--pink-9); color: white; }
+                .btn-primary { background: var(--orange-9); color: white; }
                 .btn-secondary { background: var(--mauve-3); color: var(--mauve-12); }
             `}</style>
         </div>

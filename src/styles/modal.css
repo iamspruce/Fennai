@@ -203,8 +203,8 @@
 }
 
 .chip-input-container:focus-within {
-  border-color: var(--pink-9);
-  box-shadow: 0 0 0 2px var(--pink-4);
+  border-color: var(--orange-9);
+  box-shadow: 0 0 0 2px var(--orange-4);
   background: var(--mauve-1);
 }
 
@@ -213,9 +213,9 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: var(--pink-3);
-  border: 1px solid var(--pink-6);
-  color: var(--pink-11);
+  background: var(--orange-3);
+  border: 1px solid var(--orange-6);
+  color: var(--orange-11);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
@@ -227,12 +227,12 @@
   padding: 0;
   margin: 0;
   display: flex;
-  color: var(--pink-11);
+  color: var(--orange-11);
   cursor: pointer;
 }
 
 .input-chip button:hover {
-  color: var(--pink-9);
+  color: var(--orange-9);
 }
 
 .ghost-input {
@@ -251,7 +251,7 @@
 
 /* --- Audio editor Specifics --- */
 .waveform-container {
-  background: var(--mauve-2);
+  background: var(--mauve-12);
   border-radius: var(--radius-m);
   border: 1px solid var(--mauve-4);
   padding: var(--space-xs);
@@ -315,7 +315,7 @@
   font-family: monospace;
   font-variant-numeric: tabular-nums;
   font-size: 14px;
-  color: var(--pink-9);
+  color: var(--orange-9);
   font-weight: 600;
 }
 
@@ -323,7 +323,7 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--pink-9);
+  background: var(--orange-9);
   color: white;
   border: none;
   display: flex;
@@ -354,6 +354,7 @@
   pointer-events: none;
   /* Let clicks pass through to bottom slider if needed */
   top: 0;
+  background-color: var(--orange-9);
 }
 
 .range-input::-webkit-slider-thumb {
@@ -363,8 +364,8 @@
   height: 24px;
   width: 16px;
   border-radius: 4px;
-  background: var(--mauve-12);
-  border: 2px solid white;
+  background: var(--orange-12);
+  border: 2px solid var(--orange-9);
   cursor: col-resize;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   margin-top: -10px;
@@ -377,8 +378,8 @@
   height: 24px;
   width: 16px;
   border-radius: 4px;
-  background: var(--mauve-12);
-  border: 2px solid white;
+  background: var(--orange-12);
+  border: 2px solid var(--orange-9);
   cursor: col-resize;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }

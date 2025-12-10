@@ -231,7 +231,7 @@ export default function ScriptGeneratorModal({
 
                 <div className="modal-header">
                     <div className="modal-title-group">
-                        <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+                        <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--orange-9)' }} />
                         <h3 className="modal-title">AI Script Generator</h3>
                     </div>
                     <button className="modal-close" onClick={handleClose}>
@@ -629,12 +629,12 @@ export default function ScriptGeneratorModal({
           }
 
           .btn-primary {
-            background: var(--pink-9);
+            background: var(--orange-9);
             color: white;
           }
 
           .btn-primary:hover:not(:disabled) {
-            background: var(--pink-10);
+            background: var(--orange-10);
           }
 
           .btn-secondary {

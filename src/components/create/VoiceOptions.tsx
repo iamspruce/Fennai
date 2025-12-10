@@ -86,8 +86,8 @@ export default function VoiceOptions() {
                 }
 
                 .voice-option-card:hover {
-                    border-color: var(--pink-7);
-                    background: var(--pink-2);
+                    border-color: var(--orange-7);
+                    background: var(--orange-2);
                     transform: translateY(-2px);
                     box-shadow: var(--shadow-box-m);
                 }
@@ -98,14 +98,14 @@ export default function VoiceOptions() {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: var(--pink-3);
-                    color: var(--pink-9);
+                    background: var(--orange-3);
+                    color: var(--orange-9);
                     border-radius: var(--radius-m);
                 }
 
                 .voice-option-card:hover .voice-option-icon {
-                    background: var(--pink-4);
-                    color: var(--pink-10);
+                    background: var(--orange-4);
+                    color: var(--orange-10);
                 }
 
                 .voice-option-card h4 {

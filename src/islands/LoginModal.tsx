@@ -115,7 +115,7 @@ export default function LoginModal() {
 
         <div className="modal-header">
           <div className="modal-title-group">
-            <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+            <Icon icon="lucide:sparkles" width={20} height={20} style={{ color: 'var(--orange-9)' }} />
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
             <Icon icon="lucide:x" width={20} height={20} />

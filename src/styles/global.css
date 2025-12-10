@@ -93,7 +93,7 @@ body {
 }
 
 ::selection {
-  background: var(--pink-5);
+  background: var(--orange-5);
 }
 
 h1,

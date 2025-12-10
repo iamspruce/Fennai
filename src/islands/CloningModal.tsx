@@ -75,7 +75,7 @@ export default function CloningModal() {
 
         <div className="modal-header">
           <div className="modal-title-group">
-            <Icon icon="lucide:wand-2" width={20} style={{ color: 'var(--pink-9)' }} />
+            <Icon icon="lucide:wand-2" width={20} style={{ color: 'var(--orange-9)' }} />
             <h3 className="modal-title">Voice Cloning</h3>
           </div>
           {!isCloning && (

@@ -234,10 +234,10 @@ export default function PreviewEditModal() {
       let isPlayed = i <= playX && isActive;
 
       if (isActive) {
-        ctx.fillStyle = isPlayed ? 'var(--pink-9)' : 'var(--mauve-11)';
+        ctx.fillStyle = isPlayed ? 'var(--orange-9)' : 'var(--orange-11)';
         ctx.globalAlpha = 1;
       } else {
-        ctx.fillStyle = 'var(--mauve-8)';
+        ctx.fillStyle = 'var(--orange-11)';
         ctx.globalAlpha = 0.3; // Dim trimmed areas
       }
 
@@ -253,7 +253,7 @@ export default function PreviewEditModal() {
     // Playhead Line
     if (playX >= startX && playX <= endX) {
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = '#fff';
+      ctx.strokeStyle = 'var(--orange-9)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(playX, 0);
@@ -275,7 +275,7 @@ export default function PreviewEditModal() {
 
         <div className="modal-header">
           <div className="modal-title-group">
-            <Icon icon="lucide:scissors" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+            <Icon icon="lucide:scissors" width={20} height={20} style={{ color: 'var(--orange-9)' }} />
             <h3 className="modal-title">Edit Audio</h3>
           </div>
           <button className="modal-close" onClick={handleClose}>

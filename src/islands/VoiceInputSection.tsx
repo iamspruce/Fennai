@@ -297,7 +297,7 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
             display: flex; flex-direction: column;
           }
           .voice-input-surface:focus-within {
-            border-color: var(--pink-8); box-shadow: 0 4px 25px rgba(214, 64, 159, 0.12); background: var(--mauve-1);
+            border-color: var(--orange-8); box-shadow: 0 4px 25px rgba(214, 64, 159, 0.12); background: var(--mauve-1);
           }
           .input-top-area { display: flex; align-items: flex-start; padding: 12px 12px 4px 12px; gap: 10px; }
           .avatar-stack { position: relative; width: 32px; height: 32px; flex-shrink: 0; margin-top: 2px; }
@@ -323,12 +323,12 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
           .tool-label { display: none; }
           @media (min-width: 480px) { .tool-label { display: block; } }
           .send-btn {
-            width: 36px; height: 36px; border-radius: 50%; background: var(--pink-9); color: white; border: none;
+            width: 36px; height: 36px; border-radius: 50%; background: var(--orange-9); color: white; border: none;
             display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer;
             position: relative; box-shadow: 0 2px 8px rgba(214, 64, 159, 0.4);
           }
           .count-badge {
-            position: absolute; top: -2px; right: -2px; background: white; color: var(--pink-9);
+            position: absolute; top: -2px; right: -2px; background: white; color: var(--orange-9);
             font-size: 10px; font-weight: bold; width: 14px; height: 14px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
           }
@@ -355,11 +355,11 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
           .character-select-item:hover { background: var(--mauve-4); }
           .character-select-avatar { width: 32px; height: 32px; border-radius: 50%; }
           
-          .create-new-btn { color: var(--pink-9); font-weight: 500; margin: 0 8px; width: auto; }
-          .create-new-btn:hover { background: var(--pink-3); }
+          .create-new-btn { color: var(--orange-9); font-weight: 500; margin: 0 8px; width: auto; }
+          .create-new-btn:hover { background: var(--orange-3); }
           .create-icon-wrapper {
-             width: 32px; height: 32px; border-radius: 50%; border: 1px dashed var(--pink-8);
-             display: flex; align-items: center; justify-content: center; color: var(--pink-9);
+             width: 32px; height: 32px; border-radius: 50%; border: 1px dashed var(--orange-8);
+             display: flex; align-items: center; justify-content: center; color: var(--orange-9);
           }
           .empty-state { padding: 12px; text-align: center; color: var(--mauve-9); font-size: 13px; font-style: italic; }
         `}</style>

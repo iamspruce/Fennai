@@ -15,10 +15,10 @@
     position: absolute;
     inset: -4px;
     /* Expand outside */
-    border: 2px solid var(--pink-9);
+    border: 2px solid var(--orange-9);
     border-radius: var(--radius-m);
     /* Slightly larger radius */
-    box-shadow: 0 0 0 4px var(--pink-3);
+    box-shadow: 0 0 0 4px var(--orange-3);
     pointer-events: none;
     /* Let clicks pass through */
     z-index: 0;

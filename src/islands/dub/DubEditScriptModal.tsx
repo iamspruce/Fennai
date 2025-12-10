@@ -67,7 +67,7 @@ export default function DubEditScriptModal() {
     const speakerColors = [
         'var(--blue-9)',
         'var(--green-9)',
-        'var(--pink-9)',
+        'var(--orange-9)',
         'var(--orange-9)',
         'var(--purple-9)',
         'var(--cyan-9)',

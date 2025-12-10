@@ -90,7 +90,7 @@ export default function StorageManager() {
                 {/* Header */}
                 <div className="modal-header">
                     <div className="modal-title-group">
-                        <Icon icon="lucide:hard-drive" width={20} height={20} style={{ color: 'var(--pink-9)' }} />
+                        <Icon icon="lucide:hard-drive" width={20} height={20} style={{ color: 'var(--orange-9)' }} />
                         <h2 className="modal-title">Storage Manager</h2>
                     </div>
                     <button className="modal-close" onClick={() => setIsOpen(false)} aria-label="Close">
@@ -133,7 +133,7 @@ export default function StorageManager() {
 
                     {loading ? (
                         <div style={{ textAlign: 'center', padding: 'var(--space-2xl)' }}>
-                            <Icon icon="lucide:loader-2" className="animate-spin" width={32} height={32} style={{ color: 'var(--pink-9)', margin: '0 auto' }} />
+                            <Icon icon="lucide:loader-2" className="animate-spin" width={32} height={32} style={{ color: 'var(--orange-9)', margin: '0 auto' }} />
                             <p style={{ color: 'var(--mauve-11)', marginTop: 'var(--space-m)' }}>Analyzing storage...</p>
                         </div>
                     ) : selectedTab === 'overview' ? (

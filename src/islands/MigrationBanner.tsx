@@ -383,9 +383,9 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: var(--pink-4);
+                    background: var(--orange-4);
                     border-radius: var(--radius-full);
-                    color: var(--pink-11);
+                    color: var(--orange-11);
                 }
 
                 .banner-content {
@@ -426,7 +426,7 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
 
                 .migration-progress { margin-top: var(--space-s); }
                 .progress-bar { width: 100%; height: 8px; background: var(--mauve-6); border-radius: var(--radius-full); overflow: hidden; margin-bottom: var(--space-xs); }
-                .progress-fill { height: 100%; background: linear-gradient(90deg, var(--pink-9) 0%, var(--violet-9) 100%); border-radius: var(--radius-full); transition: width 0.3s ease; }
+                .progress-fill { height: 100%; background: linear-gradient(90deg, var(--orange-9) 0%, var(--violet-9) 100%); border-radius: var(--radius-full); transition: width 0.3s ease; }
                 .progress-text { font-size: 0.9rem; color: var(--mauve-12); font-weight: 500; }
 
                 .banner-actions {
@@ -451,10 +451,10 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                 }
 
                 .btn-primary {
-                    background: var(--pink-9);
+                    background: var(--orange-9);
                     color: white;
                 }
-                .btn-primary:hover { background: var(--pink-10); transform: translateY(-1px); }
+                .btn-primary:hover { background: var(--orange-10); transform: translateY(-1px); }
 
                 .btn-ghost {
                     background: var(--mauve-5);
@@ -466,7 +466,7 @@ export default function MigrationBanner({ characterId, isPro, saveAcrossBrowsers
                     width: 24px;
                     height: 24px;
                     border: 3px solid var(--mauve-6);
-                    border-top: 3px solid var(--pink-9);
+                    border-top: 3px solid var(--orange-9);
                     border-radius: 50%;
                     animation: spin 1s linear infinite;
                 }

@@ -32,7 +32,7 @@ export default function VoiceDropzone() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => document.getElementById("voice-upload-hidden")?.click()}
-            animate={isDragging ? { scale: 1.02, backgroundColor: "var(--pink-2)" } : { scale: 1 }}
+            animate={isDragging ? { scale: 1.02, backgroundColor: "var(--orange-2)" } : { scale: 1 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
         >
             <AnimatePresence mode="wait">

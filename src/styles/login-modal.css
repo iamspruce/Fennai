@@ -25,9 +25,9 @@
 }
 
 .welcome-text .highlight {
-  color: var(--pink-9);
+  color: var(--orange-9);
   /* Optional: Adds a subtle glow to the highlight */
-  text-shadow: 0 0 20px var(--pink-4);
+  text-shadow: 0 0 20px var(--orange-4);
 }
 
 /* Form Layout */
@@ -78,8 +78,8 @@
   outline: none;
   background: var(--mauve-1);
   /* Lightens on focus for clarity */
-  border-color: var(--pink-8);
-  box-shadow: 0 0 0 4px var(--pink-3);
+  border-color: var(--orange-8);
+  box-shadow: 0 0 0 4px var(--orange-3);
   /* Modern focus ring */
 }
 
@@ -183,7 +183,7 @@
 .link-button {
   background: none;
   border: none;
-  color: var(--pink-9);
+  color: var(--orange-9);
   font-size: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -193,7 +193,7 @@
 }
 
 .link-button:hover {
-  color: var(--pink-11);
+  color: var(--orange-11);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
