@@ -2,12 +2,16 @@
 interface Props {
     title: string;
     description?: string;
+    isPro?: boolean;
+    userName?: string;
     image?: string; // Added for social sharing cards
 }
 
 const {
     title,
     description = "Voice cloning should not be rocket science. Create realistic text-to-speech models instantly.",
+    isPro,
+    userName,
     image = "/og-image.png", // You should have a default image in your public folder
 } = Astro.props;
 
@@ -16,6 +20,9 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
 import StorageManager from "@/islands/StorageManager";
 import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
+import PreviewEditModal from "@/islands/PreviewEditModal";
+import RecordVoiceModal from "@/islands/RecordVoiceModal";
+import VoiceLibraryModal from "@/islands/VoiceLibraryModal";
 ---
 
 <!doctype html>
@@ -67,6 +74,9 @@ import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
         <slot />
         <StorageManager client:load />
         <DeleteConfirmationModal client:load />
+        <PreviewEditModal client:load />
+        <VoiceLibraryModal isPro={isPro!} client:load />
+        <RecordVoiceModal userName={userName || "Friend"} client:load />
 
         <script is:inline>
             if ("serviceWorker" in navigator) {

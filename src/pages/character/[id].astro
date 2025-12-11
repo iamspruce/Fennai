@@ -53,7 +53,11 @@ const hasPrevious = page > 1;
 const userTier = user.isPro ? "pro" : "free";
 ---
 
-<BaseLayout title={`${character.name} - Fennai`}>
+<BaseLayout
+  title={`${character.name} - Fennai`}
+  isPro={user.isPro}
+  userName={user.displayName}
+>
   <StorageWarning />
 
   <div class="page-modal">

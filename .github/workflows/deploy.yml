@@ -346,7 +346,7 @@ jobs:
         run: |
           echo "Deploying Firebase Functions..."
           firebase deploy \
-              --only functions \
+              --only functions:proxy \
               --project fennai \
               --non-interactive
           echo "✅ Functions deployed"
