@@ -188,6 +188,45 @@
   flex-direction: column;
 }
 
+/* Scrollbar styling */
+.modal-body::-webkit-scrollbar,
+.ios-select-menu::-webkit-scrollbar,
+.script-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+.ios-select-menu::-webkit-scrollbar-track,
+.script-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.ios-select-menu::-webkit-scrollbar-thumb,
+.script-content::-webkit-scrollbar-thumb {
+  background: var(--mauve-7, #ccc);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+.ios-select-menu::-webkit-scrollbar-thumb:hover,
+.script-content::-webkit-scrollbar-thumb:hover {
+  background: var(--mauve-8, #999);
+}
+
+@media (max-width: 640px) {
+  .modal-content {
+    max-width: 100%;
+    margin: 0;
+    border-radius: var(--radius-l, 16px) var(--radius-l, 16px) 0 0;
+    max-height: 95vh;
+  }
+
+  .action-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- New Input with Chips Style --- */
 .chip-input-container {
   display: flex;

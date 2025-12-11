@@ -292,12 +292,12 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
           }
           .input-container-wrapper { max-width: 800px; margin: 0 auto; pointer-events: auto; display: flex; flex-direction: column; }
           .voice-input-surface {
-            background: var(--mauve-2); border: 1px solid var(--mauve-6); border-radius: 16px;
+            background: var(--mauve-3); border: 1px solid var(--mauve-6); border-radius: 16px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; transition: all 0.2s;
             display: flex; flex-direction: column;
           }
           .voice-input-surface:focus-within {
-            border-color: var(--orange-8); box-shadow: 0 4px 25px rgba(214, 64, 159, 0.12); background: var(--mauve-1);
+            border-color: var(--orange-9); box-shadow: 0 4px 25px rgba(214, 64, 159, 0.12); background: var(--mauve-1);
           }
           .input-top-area { display: flex; align-items: flex-start; padding: 12px 12px 4px 12px; gap: 10px; }
           .avatar-stack { position: relative; width: 32px; height: 32px; flex-shrink: 0; margin-top: 2px; }
@@ -340,9 +340,11 @@ export default function VoiceInputSection({ character, allCharacters }: VoiceInp
           /* === Dropdown Styles === */
           .character-select-dropdown {
              position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px;
-             background: var(--mauve-2); border: 1px solid var(--mauve-6); border-radius: 12px;
+             background: var(--mauve-3); border: 1px solid var(--mauve-6); border-radius: 12px;
              padding: 8px 0; box-shadow: 0 -4px 20px rgba(0,0,0,0.1); z-index: 50;
              max-height: 60vh; display: flex; flex-direction: column;
+             max-width: 900px;
+margin: 0 auto;
           }
           .dropdown-header { padding: 4px 12px; font-size: 11px; text-transform: uppercase; color: var(--mauve-9); font-weight: 600; }
           .dropdown-list { overflow-y: auto; max-height: 200px; padding: 0 8px; }

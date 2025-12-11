@@ -102,13 +102,17 @@ class VibeVoiceProcessor:
             language_model_pretrained_name = config.get("language_model_pretrained_name", None) or kwargs.pop("language_model_pretrained_name", "Qwen/Qwen2.5-1.5B")
             logger.info(f"Loading tokenizer from HuggingFace: {language_model_pretrained_name}")
 
-        if 'qwen' in language_model_pretrained_name.lower():
+        # Try to load as Qwen tokenizer (most common case)
+        try:
+            logger.info(f"Attempting to load tokenizer from {language_model_pretrained_name}")
             tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
                 language_model_pretrained_name,
                 **kwargs
             )
-        else:
-            raise ValueError(f"Unsupported tokenizer type for {language_model_pretrained_name}. Supported types: Qwen, Llama, Gemma.")
+            logger.info("✅ Tokenizer loaded successfully")
+        except Exception as e:
+            # If Qwen fails, could add fallbacks for Llama/Gemma here
+            raise ValueError(f"Failed to load tokenizer from {language_model_pretrained_name}: {str(e)}")
         
         # Load audio processor
         if "audio_processor" in config:
