@@ -24,9 +24,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Enable ultra-fast download mode
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
-# Download model at build time
+# Download model AND tokenizer at build time
 ARG HF_TOKEN
 ENV HF_TOKEN=${HF_TOKEN}
+
+# Download VibeVoice model
 RUN python -c "\
 from huggingface_hub import snapshot_download; \
 snapshot_download( \
@@ -36,7 +38,15 @@ snapshot_download( \
     token='${HF_TOKEN}', \
     ignore_patterns=['*.msgpack', '*.h5', '*.safetensors'] \
 )" && \
-    echo "Model baked successfully (~60–90 sec thanks to hf-transfer!)"
+echo "✅ VibeVoice model downloaded"
+
+# Download Qwen tokenizer
+RUN python -c "\
+from transformers import AutoTokenizer; \
+tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B'); \
+tokenizer.save_pretrained('/app/models/VibeVoice-1.5B/tokenizer'); \
+print('✅ Qwen tokenizer downloaded and saved')" && \
+echo "✅ All models baked successfully (~60–90 sec thanks to hf-transfer!)"
 
 # ============= Runtime Stage =============
 FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
