@@ -36,7 +36,7 @@ snapshot_download( \
     local_dir='/app/models/VibeVoice-1.5B', \
     local_dir_use_symlinks=False, \
     token='${HF_TOKEN}', \
-    ignore_patterns=['*.msgpack', '*.h5', '*.safetensors'] \
+    ignore_patterns=['*.msgpack', '*.h5', '*.onnx', '*.tflite'] \
 )" && \
 echo "✅ VibeVoice model downloaded"
 

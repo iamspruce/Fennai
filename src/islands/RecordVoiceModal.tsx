@@ -370,7 +370,7 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
                 }
 
                 .waveform-box {
-                    background: var(--mauve-2);
+                    background: var(--mauve-3);
                     border-radius: var(--radius-l);
                     height: 140px;
                     position: relative;
@@ -387,7 +387,7 @@ export default function RecordVoiceModal({ userName }: RecordVoiceModalProps) {
 
                 .waveform-placeholder {
                     position: absolute;
-                    color: var(--mauve-6);
+                    color: var(--mauve-11);
                 }
 
                 .info-area {

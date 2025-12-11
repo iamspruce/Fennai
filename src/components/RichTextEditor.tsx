@@ -16,13 +16,16 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [activeFormats, setActiveFormats] = useState<Set<string>>(new Set());
-  const isInitialMount = useRef(true);
 
-  // Initialize content only once
+  // Fixed: Update content whenever initialValue changes
   useEffect(() => {
-    if (editorRef.current && initialValue && isInitialMount.current) {
-      editorRef.current.innerHTML = initialValue;
-      isInitialMount.current = false;
+    if (editorRef.current) {
+      // Only update the innerHTML if the new value is different from the current content.
+      // This prevents the cursor from jumping to the start if the parent component 
+      // is updating the state on every keystroke, but allows full replacements (like templates).
+      if (editorRef.current.innerHTML !== initialValue) {
+        editorRef.current.innerHTML = initialValue;
+      }
     }
   }, [initialValue]);
 

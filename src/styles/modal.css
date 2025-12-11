@@ -652,3 +652,81 @@
   gap: var(--space-s);
   margin-top: var(--space-m);
 }
+
+/* --- iOS Select --- */
+.ios-select-wrapper {
+  position: relative;
+}
+
+.ios-select-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--mauve-3, #fafafa);
+  border: 1px solid var(--mauve-6, #ddd);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  transition: all 0.2s;
+}
+
+.ios-select-button:hover {
+  background: var(--mauve-4, #f5f5f5);
+  border-color: var(--mauve-9, #bbb);
+}
+
+.ios-select-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--mauve-12, #000);
+  font-weight: 500;
+}
+
+.ios-select-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--mauve-1);
+  border: 1px solid var(--mauve-6, #ddd);
+  border-radius: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  z-index: 50;
+}
+
+.ios-select-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--mauve-3, #f5f5f5);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.ios-select-item:hover {
+  background: var(--mauve-2, #fafafa);
+}
+
+.ios-select-item.selected {
+  background: var(--orange-2, #fff3e0);
+}
+
+.ios-select-item-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.check-icon {
+  color: var(--orange-9, #ff6b35);
+}

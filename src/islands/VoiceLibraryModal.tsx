@@ -478,6 +478,7 @@ export default function VoiceLibraryModal({ isPro }: VoiceLibraryModalProps) {
                     padding: 8px 20px;
                     border: 1px solid var(--mauve-6);
                     background: var(--mauve-12);
+                    color: var(--mauve-1);
                     border-radius: var(--radius-m);
                     font-weight: 600;
                     cursor: pointer;
