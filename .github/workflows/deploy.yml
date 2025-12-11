@@ -314,6 +314,22 @@ jobs:
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "GCS_DUBBING_BUCKET=fennai-dubbing-temp" >> .env
           echo "✅ Proxy .env created"
+      
+
+            
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Setup Python virtual environment for proxy function
+        run: |
+          cd functions/proxy
+          python3.10 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      
 
       - name: Grant Permissions to Firebase Functions Service Account
         run: |
