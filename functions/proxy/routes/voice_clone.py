@@ -24,7 +24,6 @@ from utils import (
 from utils.task_helper import create_cloud_task
 
 logger = logging.getLogger(__name__)
-db = get_db()
 
 
 def get_user_tier(user_data: Optional[Dict[str, Any]]) -> str:
@@ -197,6 +196,9 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
     """
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Voice clone request received. Method: {req.method}")
+    
+    db = get_db()
+
     
     # Health check
     if req.path == "/health" or req.path.endswith("/health"):

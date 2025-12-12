@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import type { DubbingJob, TranscriptSegment, SegmentFilter } from '@/types/dubbing';
-import RichTextEditor from '@/components/RichTextEditor';
+import RichTextEditor from '@/components/ui/RichTextEditor';
 import { translateDubbing } from '@/lib/api/apiClient';
 
 export default function DubSegmentSelectorModal() {

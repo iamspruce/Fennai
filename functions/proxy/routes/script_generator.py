@@ -26,15 +26,13 @@ MAX_CHARACTERS = 10
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_PER_WINDOW = 10
 
-db = get_db()
-
-
 def check_rate_limit(uid: str) -> tuple[bool, str]:
     """Check if user has exceeded rate limit."""
     try:
         now = time.time()
         cutoff = now - RATE_LIMIT_WINDOW
         
+        db = get_db()
         recent_scripts = (
             db.collection("scriptGenerations")
             .where("uid", "==", uid)
@@ -93,6 +91,7 @@ def validate_script_request(data: dict) -> tuple[bool, str]:
 def log_script_generation(uid: str, generation_id: str, data: dict):
     """Log script generation for analytics."""
     try:
+        db = get_db()
         db.collection("scriptGenerations").document(generation_id).set({
             "uid": uid,
             "mode": data.get("mode"),

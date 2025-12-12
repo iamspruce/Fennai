@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Character } from '@/types/character';
-import RichTextEditor from '@/components/RichTextEditor';
+import RichTextEditor from '@/components/ui/RichTextEditor';
 import { generateScript } from '@/lib/api/apiClient';
 
 // --- Configuration & Types ---

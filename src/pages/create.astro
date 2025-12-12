@@ -18,9 +18,7 @@ const userAvatarUrl =
 
 <BaseLayout
     title="Create Character - Fennai"
-    ,
     isPro={isPro}
-    ,
     userName={user.displayName}
 >
     <div class="page-modal">
@@ -43,7 +41,7 @@ const userAvatarUrl =
                 {user.displayName}, Create a New Character
             </h1>
 
-            <form id="create-form" class="create-form">
+            <form id="create-form" class="create-form" novalidate>
                 <div
                     class="form-section fade-in"
                     style="animation-delay: 0.1s;"
@@ -86,6 +84,7 @@ const userAvatarUrl =
                 <div
                     class="form-section fade-in"
                     style="animation-delay: 0.2s;"
+                    id="name-section"
                 >
                     <label class="section-label">
                         Give your character a name
@@ -118,15 +117,19 @@ const userAvatarUrl =
                         id="character-name"
                         name="characterName"
                         placeholder="e.g., Sarah, John, Robot..."
-                        required
                         minlength={2}
                         maxlength={50}
+                        class="name-input"
                     />
+                    <span class="error-msg-inline" id="name-error"
+                        >Please enter a name</span
+                    >
                 </div>
 
                 <div
                     class="form-section fade-in"
                     style="animation-delay: 0.3s;"
+                    id="voice-section"
                 >
                     <label class="section-label">
                         Give your character a voice
@@ -155,17 +158,12 @@ const userAvatarUrl =
                         </span>
                     </label>
 
-                    <VoiceOptions client:load />
-
-                    <div
-                        id="selected-voice-preview"
-                        style="display: none; margin-top: var(--space-m);"
-                    >
-                        <div class="voice-preview-card">
-                            <div class="voice-preview-icon">✓</div>
-                            <p>Voice sample selected</p>
-                        </div>
+                    <div id="voice-options-wrapper">
+                        <VoiceOptions client:load />
                     </div>
+                    <span class="error-msg-inline" id="voice-error"
+                        >Please provide a voice sample</span
+                    >
                 </div>
 
                 {
@@ -240,12 +238,31 @@ const userAvatarUrl =
     <script>
         const form = document.getElementById("create-form") as HTMLFormElement;
         const errorMessage = document.getElementById("error-message")!;
-        const voicePreview = document.getElementById("selected-voice-preview")!;
+        const nameInput = document.getElementById(
+            "character-name",
+        ) as HTMLInputElement;
+        const voiceOptionsWrapper = document.getElementById(
+            "voice-options-wrapper",
+        )!;
+
         let selectedFile: File | null = null;
+        let selectedSource: string | null = null;
+
+        // Clear Name Error on Type
+        nameInput.addEventListener("input", () => {
+            nameInput.classList.remove("input-error");
+            document.getElementById("name-error")!.style.display = "none";
+        });
 
         // Listen for File Updates
         window.addEventListener("voice-file-updated", ((e: CustomEvent) => {
-            selectedFile = e.detail;
+            // Handle both structure: {file, source} and legacy File object
+            selectedFile = e.detail.file || e.detail;
+            selectedSource = e.detail.source || "upload";
+
+            // Clear visual errors for voice
+            voiceOptionsWrapper.classList.remove("section-error");
+            document.getElementById("voice-error")!.style.display = "none";
 
             if (selectedFile) {
                 const validTypes = [
@@ -268,48 +285,88 @@ const userAvatarUrl =
                     selectedFile = null;
                 } else {
                     errorMessage.style.display = "none";
-                    voicePreview.style.display = "block";
 
-                    // Trigger Preview Modal
-                    window.dispatchEvent(
-                        new CustomEvent("open-preview-modal", {
-                            detail: {
-                                audioBlob: selectedFile,
-                                source: "create-upload",
-                            },
-                        }),
-                    );
+                    // Trigger Preview Modal (only if it's an upload, avoid double preview for recordings)
+                    // If source is 'record', the modal was already open and user clicked "Use Recording"
+                    if (selectedSource !== "record") {
+                        window.dispatchEvent(
+                            new CustomEvent("open-preview-modal", {
+                                detail: {
+                                    audioBlob: selectedFile,
+                                    source: selectedSource,
+                                },
+                            }),
+                        );
+                    }
                 }
             }
         }) as EventListener);
 
         // Listen for Edited Voice
         window.addEventListener("voice-edited", ((e: CustomEvent) => {
-            if (e.detail.source === "create-upload") {
-                selectedFile = new File([e.detail.blob], "voice_sample.wav", {
-                    type: "audio/wav",
-                });
-                voicePreview.style.display = "block";
-            }
+            // If we trimmed a file in the generic preview modal
+            selectedFile = new File([e.detail.blob], "voice_sample.wav", {
+                type: "audio/wav",
+            });
+            voiceOptionsWrapper.classList.remove("section-error");
+
+            // Re-dispatch to update the VoiceOptions UI with the edited file
+            window.dispatchEvent(
+                new CustomEvent("voice-file-updated", {
+                    detail: {
+                        file: selectedFile,
+                        source: e.detail.source || "upload",
+                    },
+                }),
+            );
         }) as EventListener);
 
         function showError(message: string) {
             errorMessage.textContent = message;
             errorMessage.style.display = "block";
-            voicePreview.style.display = "none";
+        }
+
+        function validateForm() {
+            let isValid = true;
+            let firstErrorElement = null;
+
+            // Validate Name
+            if (!nameInput.value.trim()) {
+                nameInput.classList.add("input-error");
+                document.getElementById("name-error")!.style.display = "block";
+                isValid = false;
+                if (!firstErrorElement)
+                    firstErrorElement = document.getElementById("name-section");
+            }
+
+            // Validate Voice
+            if (!selectedFile) {
+                voiceOptionsWrapper.classList.add("section-error");
+                document.getElementById("voice-error")!.style.display = "block";
+                isValid = false;
+                if (!firstErrorElement)
+                    firstErrorElement =
+                        document.getElementById("voice-section");
+            }
+
+            if (firstErrorElement) {
+                firstErrorElement.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center",
+                });
+            }
+
+            return isValid;
         }
 
         // Form Submission
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
 
-            if (!selectedFile) {
-                showError("Please provide a voice sample");
-                return;
-            }
+            if (!validateForm()) return;
 
             const formData = new FormData(form);
-            formData.append("voiceFile", selectedFile);
+            formData.append("voiceFile", selectedFile!);
             formData.append("name", formData.get("characterName") as string);
 
             const submitBtn = form.querySelector(
@@ -343,6 +400,7 @@ const userAvatarUrl =
 </BaseLayout>
 
 <style>
+    /* ... (Same as previous response, just ensuring consistency) ... */
     .create-header {
         display: flex;
         align-items: center;
@@ -350,20 +408,17 @@ const userAvatarUrl =
         margin-bottom: var(--space-2xl);
         padding: var(--space-2xs);
     }
-
     .user-avatar {
         width: 40px;
         height: 40px;
         border-radius: 50%;
         border: 1px solid var(--mauve-6);
     }
-
     .create-main {
         max-width: 700px;
         margin: 0 auto;
         padding: var(--space-3xs);
     }
-
     .page-title {
         font-size: var(--step-4);
         font-weight: 700;
@@ -371,13 +426,11 @@ const userAvatarUrl =
         color: var(--mauve-12);
         text-align: center;
     }
-
     .create-form {
         display: flex;
         flex-direction: column;
         gap: var(--space-xl);
     }
-
     .section-label {
         font-size: var(--step-0);
         font-weight: 600;
@@ -387,33 +440,32 @@ const userAvatarUrl =
         align-items: center;
     }
 
-    .voice-preview-card {
-        display: flex;
-        align-items: center;
-        gap: var(--space-m);
-        padding: var(--space-m);
-        background: var(--green-2);
-        border: 1px solid var(--green-6);
-        border-radius: var(--radius-m);
+    :global(.input-error) {
+        border-color: var(--red-9) !important;
+        box-shadow: 0 0 0 1px var(--red-9) !important;
     }
-
-    .voice-preview-icon {
-        width: 40px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--green-9);
-        color: white;
-        border-radius: 50%;
-        font-size: 20px;
-        font-weight: bold;
+    .section-error :global(.voice-options) {
+        box-shadow: 0 0 0 2px var(--red-9);
+        border-radius: var(--radius-l);
+        background: rgba(239, 68, 68, 0.05);
     }
-
-    .voice-preview-card p {
-        color: var(--green-11);
-        font-weight: 600;
-        margin: 0;
+    .error-msg-inline {
+        display: none;
+        color: var(--red-9);
+        font-size: 13px;
+        margin-top: 6px;
+        font-weight: 500;
+        animation: slideDown 0.2s ease;
+    }
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-5px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .tooltip-container {
@@ -423,18 +475,15 @@ const userAvatarUrl =
         margin-left: 8px;
         cursor: help;
     }
-
     .tooltip-icon {
         width: 16px;
         height: 16px;
         color: var(--mauve-11);
         transition: color 0.2s;
     }
-
     .tooltip-container:hover .tooltip-icon {
         color: var(--orange-9);
     }
-
     .tooltip-text {
         visibility: hidden;
         width: 220px;
@@ -459,7 +508,6 @@ const userAvatarUrl =
         box-shadow: var(--shadow-box-m);
         line-height: 1.4;
     }
-
     .tooltip-text::after {
         content: "";
         position: absolute;
@@ -470,18 +518,15 @@ const userAvatarUrl =
         border-style: solid;
         border-color: var(--mauve-12) transparent transparent transparent;
     }
-
     .tooltip-container:hover .tooltip-text {
         visibility: visible;
         opacity: 1;
         transform: translateY(0);
     }
-
     .fade-in {
         opacity: 0;
         animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-
     @keyframes fadeInUp {
         from {
             opacity: 0;
@@ -492,18 +537,15 @@ const userAvatarUrl =
             transform: translateY(0);
         }
     }
-
     .toggle-label {
         display: flex;
         align-items: center;
         gap: var(--space-m);
         cursor: pointer;
     }
-
     .toggle-input {
         display: none;
     }
-
     .toggle-switch {
         position: relative;
         width: 48px;
@@ -512,7 +554,6 @@ const userAvatarUrl =
         border-radius: 12px;
         transition: background 0.3s ease;
     }
-
     .toggle-switch::after {
         content: "";
         position: absolute;
@@ -524,28 +565,23 @@ const userAvatarUrl =
         border-radius: 50%;
         transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-
     .toggle-input:checked + .toggle-switch {
         background: var(--orange-9);
     }
-
     .toggle-input:checked + .toggle-switch::after {
         transform: translateX(24px);
     }
-
     .toggle-text {
         color: var(--mauve-12);
         font-size: var(--space-0);
     }
-
     .error-display {
         padding: var(--space-m);
         background: rgba(239, 68, 68, 0.1);
-        border: 1px solid #ef4444;
+        border: 1px solid var(--red-9);
         border-radius: var(--radius-m);
-        color: #dc2626;
+        color: var(--red-9);
     }
-
     .submit-btn {
         width: 100%;
     }

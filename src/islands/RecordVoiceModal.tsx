@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Icon } from '@iconify/react';
+import AudioPlayer from '@/components/ui/AudioPlayer';
+import { getPromptsForLanguage } from '@/lib/constants/recordingPrompts';
 
 interface RecordVoiceModalProps {
     userName?: string;
@@ -22,26 +24,6 @@ const SUPPORTED_LANGUAGES = [
     { code: 'vi', name: 'Vietnamese' },
 ];
 
-// Sample prompts - you should import from your actual prompts file
-const PROMPTS_BY_LANGUAGE: Record<string, string[]> = {
-    en: [
-        "The quick brown fox jumps over the lazy dog.",
-        "Hello, my name is Claude and I'm here to help.",
-        "Technology is rapidly changing our world.",
-        "Every person deserves kindness and respect.",
-    ],
-    es: [
-        "El rápido zorro marrón salta sobre el perro perezoso.",
-        "Hola, mi nombre es Claude y estoy aquí para ayudar.",
-        "La tecnología está cambiando rápidamente nuestro mundo.",
-        "Cada persona merece bondad y respeto.",
-    ],
-    // Add other languages as needed
-};
-
-const getPromptsForLanguage = (langCode: string): string[] => {
-    return PROMPTS_BY_LANGUAGE[langCode] || PROMPTS_BY_LANGUAGE.en;
-};
 
 export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceModalProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -51,16 +33,24 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
     const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
     const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 
+    // Refs
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const isRecordingRef = useRef(false);
+    const promptIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Visualizer refs
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animationFrameRef = useRef<number | null>(null);
-    const promptIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const prompts = selectedLanguage ? getPromptsForLanguage(selectedLanguage) : [];
+
+    useEffect(() => {
+        isRecordingRef.current = isRecording;
+    }, [isRecording]);
 
     useEffect(() => {
         const handleOpen = () => {
@@ -86,12 +76,16 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
         };
     }, [isRecording]);
 
-    // Listen for voice-edited event to get the trimmed audio back
+    // Handle external edits (trimming)
     useEffect(() => {
         const handleVoiceEdited = (e: CustomEvent) => {
             if (e.detail.source === 'record-modal') {
                 const file = new File([e.detail.blob], 'recorded_voice.wav', { type: 'audio/wav' });
-                window.dispatchEvent(new CustomEvent('voice-file-updated', { detail: file }));
+                // Dispatch with source info for VoiceOptions
+                window.dispatchEvent(new CustomEvent('voice-file-updated', {
+                    detail: { file, source: 'record' }
+                }));
+                handleClose();
             }
         };
 
@@ -125,50 +119,51 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
         setCurrentPromptIndex(0);
         setRecordedBlob(null);
         audioChunksRef.current = [];
-        cleanup();
+        if (promptIntervalRef.current) clearInterval(promptIntervalRef.current);
     };
 
     const requestMicPermission = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    sampleRate: 44100
-                }
+                audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 44100 }
             });
 
             streamRef.current = stream;
             setHasPermission(true);
 
-            // Set up audio context for visualization
-            audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            audioContextRef.current = new AudioContextClass();
             analyserRef.current = audioContextRef.current.createAnalyser();
             analyserRef.current.fftSize = 2048;
 
             const source = audioContextRef.current.createMediaStreamSource(stream);
             source.connect(analyserRef.current);
 
-            // Set up media recorder
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-                ? 'audio/webm'
-                : 'audio/mp4';
-
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
             mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
 
             mediaRecorderRef.current.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    audioChunksRef.current.push(e.data);
-                }
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
             };
 
             mediaRecorderRef.current.onstop = () => {
                 const blob = new Blob(audioChunksRef.current, { type: mimeType });
                 setRecordedBlob(blob);
+                setIsRecording(false);
             };
         } catch (error) {
             console.error('Mic permission denied:', error);
             alert('Microphone access is required to record your voice.');
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecordingRef.current) {
+            mediaRecorderRef.current.stop();
+            if (promptIntervalRef.current) {
+                clearInterval(promptIntervalRef.current);
+                promptIntervalRef.current = null;
+            }
         }
     };
 
@@ -180,37 +175,20 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
         setIsRecording(true);
         setCurrentPromptIndex(0);
 
-        // Auto-advance through prompts every 4 seconds
         promptIntervalRef.current = setInterval(() => {
             setCurrentPromptIndex((prev) => {
                 const nextIndex = prev + 1;
                 if (nextIndex >= prompts.length) {
-                    // We've reached the end, stop recording
                     if (promptIntervalRef.current) {
                         clearInterval(promptIntervalRef.current);
                         promptIntervalRef.current = null;
                     }
-                    // Stop recording after a short delay to capture the last prompt
-                    setTimeout(() => {
-                        stopRecording();
-                    }, 500);
+                    setTimeout(() => stopRecording(), 800);
                     return prev;
                 }
                 return nextIndex;
             });
         }, 4000);
-    };
-
-    const stopRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            setIsRecording(false);
-
-            if (promptIntervalRef.current) {
-                clearInterval(promptIntervalRef.current);
-                promptIntervalRef.current = null;
-            }
-        }
     };
 
     const drawWaveform = () => {
@@ -223,6 +201,8 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
 
         const dpr = window.devicePixelRatio || 1;
         const rect = canvas.getBoundingClientRect();
+        if (rect.width === 0) return;
+
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         ctx.scale(dpr, dpr);
@@ -233,13 +213,11 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
         const dataArray = new Uint8Array(bufferLength);
 
         const draw = () => {
-            if (!isRecording) return;
-
+            if (!isRecordingRef.current) return;
             animationFrameRef.current = requestAnimationFrame(draw);
             analyser.getByteTimeDomainData(dataArray);
 
             ctx.clearRect(0, 0, width, height);
-
             ctx.lineWidth = 3;
             ctx.strokeStyle = '#e93d82';
             ctx.beginPath();
@@ -250,35 +228,29 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
             for (let i = 0; i < bufferLength; i++) {
                 const v = dataArray[i] / 128.0;
                 const y = (v * height) / 2;
-
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                 x += sliceWidth;
             }
 
             ctx.lineTo(width, height / 2);
             ctx.stroke();
         };
-
         draw();
     };
 
     const handleUseRecording = () => {
         if (!recordedBlob) return;
 
-        // Option 1: Trigger preview/edit modal (if you want users to edit)
-        window.dispatchEvent(new CustomEvent('open-preview-modal', {
+        // Convert blob to file for consistency
+        const file = new File([recordedBlob], 'recorded_voice.webm', { type: recordedBlob.type });
+
+        // Dispatch updated event with source identifying this as a recording
+        window.dispatchEvent(new CustomEvent('voice-file-updated', {
             detail: {
-                audioBlob: recordedBlob,
-                source: 'record-modal',
-                mediaType: 'audio'
+                file: file,
+                source: 'record'
             }
         }));
-
-        // Option 2: Or directly dispatch the file (uncomment if you don't want editing)
-        // const file = new File([recordedBlob], 'recorded_voice.webm', { type: recordedBlob.type });
-        // window.dispatchEvent(new CustomEvent('voice-file-updated', { detail: file }));
 
         handleClose();
     };
@@ -395,8 +367,13 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
                                 Recording Complete
                             </h3>
 
+                            {/* REPLACED HTML AUDIO WITH CUSTOM AUDIO PLAYER */}
                             <div className="audio-preview">
-                                <audio controls src={URL.createObjectURL(recordedBlob)} />
+                                <AudioPlayer
+                                    audioBlob={recordedBlob}
+                                    waveColor="#E2E8F0"
+                                    progressColor="#E93D82"
+                                />
                             </div>
 
                             <div className="review-actions">
@@ -410,257 +387,41 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
                         </div>
                     )}
                 </div>
-
+                {/* Keep existing styles */}
                 <style>{`
-          .icon-circle {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            background: var(--orange-3);
-            color: var(--orange-9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          
-          .step-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--mauve-12);
-            margin-bottom: var(--space-m);
-            text-align: center;
-          }
-
-          .language-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap: var(--space-s);
-          }
-
-          .language-card {
-            padding: var(--space-m);
-            background: var(--mauve-2);
-            border: 2px solid var(--mauve-6);
-            border-radius: var(--radius-m);
-            color: var(--mauve-11);
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-          }
-          .language-card:hover {
-            border-color: var(--orange-7);
-            background: var(--orange-2);
-            color: var(--orange-11);
-            transform: translateY(-2px);
-          }
-
-          .active-recording-container {
-            display: flex;
-            flex-direction: column;
-            gap: var(--space-l);
-          }
-
-          .waveform-box {
-            background: var(--mauve-12);
-            border-radius: var(--radius-l);
-            height: 140px;
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid var(--mauve-6);
-          }
-
-          .waveform-canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-          }
-
-          .waveform-placeholder {
-            position: absolute;
-            color: var(--mauve-11);
-          }
-
-          .info-area {
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-          }
-          
-          .permission-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: var(--space-m);
-          }
-          
-          .permission-state p {
-            color: var(--mauve-11);
-            font-size: 15px;
-          }
-          
-          .ready-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-          }
-
-          .language-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 14px;
-            background: var(--mauve-3);
-            border-radius: 20px;
-            font-size: 13px;
-            color: var(--mauve-11);
-            margin-bottom: var(--space-s);
-            font-weight: 500;
-          }
-
-          .btn-record-large {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            border: 4px solid var(--mauve-6);
-            background: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            margin-top: var(--space-s);
-            transition: all 0.3s;
-          }
-          .btn-record-large:hover {
-            border-color: var(--red-9);
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(233, 61, 130, 0.3);
-          }
-          
-          .inner-red-dot {
-            width: 56px;
-            height: 56px;
-            background: var(--red-9);
-            border-radius: 50%;
-          }
-
-          .recording-state {
-            width: 100%;
-          }
-
-          .prompt-card {
-            margin-bottom: var(--space-l);
-            min-height: 100px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: var(--space-m);
-            background: var(--mauve-2);
-            border-radius: var(--radius-m);
-            border: 2px solid var(--mauve-6);
-          }
-
-          .prompt-text {
-            font-size: 20px;
-            font-weight: 600;
-            line-height: 1.4;
-            color: var(--mauve-12);
-            margin: 0;
-          }
-
-          .progress-bar-container {
-            width: 100%;
-            height: 8px;
-            background: var(--mauve-4);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: var(--space-s);
-          }
-
-          .progress-fill {
-            height: 100%;
-            background: var(--orange-9);
-            transition: width 0.5s ease;
-          }
-          
-          .step-counter {
-            font-size: 14px;
-            color: var(--mauve-10);
-            font-variant-numeric: tabular-nums;
-            font-weight: 600;
-            margin: 0;
-          }
-
-          .review-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: var(--space-l) 0;
-          }
-
-          .success-icon {
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
-            background: var(--green-3);
-            color: var(--green-9);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: var(--space-m);
-            border: 3px solid var(--green-6);
-          }
-
-          .audio-preview {
-            width: 100%;
-            margin: var(--space-l) 0;
-          }
-          
-          .audio-preview audio {
-            width: 100%;
-            border-radius: var(--radius-m);
-          }
-
-          .review-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--space-s);
-            width: 100%;
-            margin-top: var(--space-m);
-          }
-
-          .btn-primary, .btn-secondary {
-            padding: 14px;
-            border-radius: var(--radius-m);
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-            font-size: 15px;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .btn-primary { 
-            background: var(--orange-9); 
-            color: white; 
-          }
-          .btn-primary:hover {
-            background: var(--orange-10);
-          }
-          .btn-secondary { 
-            background: var(--mauve-3); 
-            color: var(--mauve-12);
-            border: 1px solid var(--mauve-6);
-          }
-          .btn-secondary:hover {
-            background: var(--mauve-4);
-          }
-        `}</style>
+                    .icon-circle { width: 36px; height: 36px; border-radius: 50%; background: var(--orange-3); color: var(--orange-9); display: flex; align-items: center; justify-content: center; }
+                    .step-title { font-size: 18px; font-weight: 600; color: var(--mauve-12); margin-bottom: var(--space-m); text-align: center; }
+                    .language-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: var(--space-s); }
+                    .language-card { padding: var(--space-m); background: var(--mauve-2); border: 2px solid var(--mauve-6); border-radius: var(--radius-m); color: var(--mauve-11); font-weight: 500; cursor: pointer; transition: all 0.2s; }
+                    .language-card:hover { border-color: var(--orange-7); background: var(--orange-2); color: var(--orange-11); transform: translateY(-2px); }
+                    .active-recording-container { display: flex; flex-direction: column; gap: var(--space-l); }
+                    .waveform-box { background: var(--mauve-12); border-radius: var(--radius-l); height: 140px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid var(--mauve-6); }
+                    .waveform-canvas { width: 100%; height: 100%; display: block; }
+                    .waveform-placeholder { position: absolute; color: var(--mauve-11); }
+                    .info-area { text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+                    .permission-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-m); }
+                    .permission-state p { color: var(--mauve-11); font-size: 15px; }
+                    .ready-state { display: flex; flex-direction: column; align-items: center; }
+                    .language-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: var(--mauve-3); border-radius: 20px; font-size: 13px; color: var(--mauve-11); margin-bottom: var(--space-s); font-weight: 500; }
+                    .btn-record-large { width: 80px; height: 80px; border-radius: 50%; border: 4px solid var(--mauve-6); background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-top: var(--space-s); transition: all 0.3s; }
+                    .btn-record-large:hover { border-color: var(--red-9); transform: scale(1.05); box-shadow: 0 4px 12px rgba(233, 61, 130, 0.3); }
+                    .inner-red-dot { width: 56px; height: 56px; background: var(--red-9); border-radius: 50%; }
+                    .recording-state { width: 100%; }
+                    .prompt-card { margin-bottom: var(--space-l); min-height: 100px; display: flex; align-items: center; justify-content: center; padding: var(--space-m); background: var(--mauve-2); border-radius: var(--radius-m); border: 2px solid var(--mauve-6); }
+                    .prompt-text { font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--mauve-12); margin: 0; }
+                    .progress-bar-container { width: 100%; height: 8px; background: var(--mauve-4); border-radius: 4px; overflow: hidden; margin-bottom: var(--space-s); }
+                    .progress-fill { height: 100%; background: var(--orange-9); transition: width 0.5s ease; }
+                    .step-counter { font-size: 14px; color: var(--mauve-10); font-variant-numeric: tabular-nums; font-weight: 600; margin: 0; }
+                    .review-state { display: flex; flex-direction: column; align-items: center; padding: var(--space-l) 0; }
+                    .success-icon { width: 72px; height: 72px; border-radius: 50%; background: var(--green-3); color: var(--green-9); display: flex; align-items: center; justify-content: center; margin-bottom: var(--space-m); border: 3px solid var(--green-6); }
+                    .audio-preview { width: 100%; margin: var(--space-l) 0; }
+                    .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-s); width: 100%; margin-top: var(--space-m); }
+                    .btn-primary, .btn-secondary { padding: 14px; border-radius: var(--radius-m); font-weight: 600; cursor: pointer; border: none; font-size: 15px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+                    .btn-primary { background: var(--orange-9); color: white; }
+                    .btn-primary:hover { background: var(--orange-10); }
+                    .btn-secondary { background: var(--mauve-3); color: var(--mauve-12); border: 1px solid var(--mauve-6); }
+                    .btn-secondary:hover { background: var(--mauve-4); }
+                `}</style>
             </div>
         </div>
     );

@@ -1,6 +1,6 @@
 // src/islands/VoiceCard.tsx - Updated with storageType handling
 import React, { useEffect, useState } from "react";
-import AudioPlayer from "@/islands/AudioPlayer";
+import AudioPlayer from "@/components/ui/AudioPlayer";
 import { getVoiceFromIndexedDB, deleteVoiceFromIndexedDB } from "@/lib/db/indexdb";
 import { truncateText } from "@/lib/utils/validation";
 import "../styles/voice-card.css"

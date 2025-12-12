@@ -16,7 +16,6 @@ from utils.task_helper import create_cloud_task
 from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
-db = get_db()
 
 
 def chunk_dialogue_for_inference(transcript: List[Dict]) -> List[Dict[str, Any]]:
@@ -97,6 +96,9 @@ def dub_clone(req: https_fn.Request) -> https_fn.Response:
     """
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Dubbing clone request received")
+
+    db = get_db()
+
     
     # CORS
     if req.method == "OPTIONS":

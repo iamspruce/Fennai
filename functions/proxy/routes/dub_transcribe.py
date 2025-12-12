@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 # Environment
 GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")
 
-db = get_db()
 gcs = GCSHelper(GCS_DUBBING_BUCKET)
 
 # Constants
@@ -116,6 +115,9 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
     """
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Dubbing transcribe request received")
+
+    db = get_db()
+
     
     # CORS
     if req.method == "OPTIONS":

@@ -15,7 +15,6 @@ from utils import ResponseBuilder
 from utils.task_helper import create_cloud_task
 
 logger = logging.getLogger(__name__)
-db = get_db()
 
 # Supported languages for translation
 SUPPORTED_LANGUAGES = {
@@ -70,6 +69,9 @@ def dub_translate(req: https_fn.Request) -> https_fn.Response:
     """
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Dubbing translate request received")
+
+    db = get_db()
+
     
     # CORS
     if req.method == "OPTIONS":

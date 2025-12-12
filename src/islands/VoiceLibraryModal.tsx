@@ -1,7 +1,7 @@
 // src/islands/VoiceLibraryModal.tsx
 import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify/react';
-import AudioPlayer from '@/islands/AudioPlayer';
+import AudioPlayer from '@/components/ui/AudioPlayer';
 import type { LibraryVoice, VoiceFilter } from '@/types/voiceLibrary';
 import { FILTER_CATEGORIES, LANGUAGE_FLAGS } from '@/types/voiceLibrary';
 import "@/styles/modal.css";
