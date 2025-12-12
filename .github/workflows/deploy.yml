@@ -307,7 +307,6 @@ jobs:
           cd functions/proxy
           echo "CLOUD_RUN_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}" > .env
           echo "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}" >> .env
-          echo "GCP_PROJECT=fennai" >> .env
           echo "QUEUE_LOCATION=us-central1" >> .env
           echo "QUEUE_NAME=voice-generation-queue" >> .env
           echo "SERVICE_ACCOUNT_EMAIL=${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}" >> .env

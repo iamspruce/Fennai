@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 # Environment variables
 CLOUD_RUN_URL = os.environ.get("CLOUD_RUN_URL")
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
-GCP_PROJECT = os.environ.get("GCP_PROJECT", "fennai")
+
+GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT") or "fennai"
+
 QUEUE_LOCATION = os.environ.get("QUEUE_LOCATION", "us-central1")
 QUEUE_NAME = os.environ.get("QUEUE_NAME", "voice-generation-queue")
 SERVICE_ACCOUNT = os.environ.get("SERVICE_ACCOUNT_EMAIL")
@@ -32,6 +34,7 @@ def get_tasks_client() -> tasks_v2.CloudTasksClient:
         client = tasks_v2.CloudTasksClient()
         _tasks_client = client
         _queue_path = client.queue_path(GCP_PROJECT, QUEUE_LOCATION, QUEUE_NAME)
+        logger.info(f"Initialized Cloud Tasks client for project: {GCP_PROJECT}")
         return client
     
     return _tasks_client
