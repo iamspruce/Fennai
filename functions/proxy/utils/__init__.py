@@ -50,15 +50,24 @@ class GCSHelper:
     """Helper class for Google Cloud Storage operations with retry logic."""
     
     def __init__(self, bucket_name: str):
-        """
-        Initialize GCS helper.
-        
-        Args:
-            bucket_name: Name of the GCS bucket
-        """
-        self.client = storage.Client()
-        self.bucket = self.client.bucket(bucket_name)
+        """Initialize GCS helper with lazy client creation."""
         self.bucket_name = bucket_name
+        self._client = None
+        self._bucket = None
+    
+    @property
+    def client(self):
+        """Lazy-load storage client."""
+        if self._client is None:
+            self._client = storage.Client()
+        return self._client
+    
+    @property
+    def bucket(self):
+        """Lazy-load bucket."""
+        if self._bucket is None:
+            self._bucket = self.client.bucket(self.bucket_name)
+        return self._bucket
     
     def upload_file(
         self, 
@@ -224,15 +233,18 @@ def validate_duration(duration_seconds: float, max_duration: float) -> Tuple[boo
     
     Args:
         duration_seconds: Duration in seconds
-        max_duration: Maximum allowed duration
+        max_duration: Maximum allowed duration (can be float('inf') for unlimited)
         
     Returns:
         Tuple of (is_valid, error_message)
     """
+    # ✅ Handle unlimited duration for enterprise tier
+    if max_duration == float('inf'):
+        return True, None
+    
     if duration_seconds > max_duration:
         return False, f"Duration ({duration_seconds:.1f}s) exceeds limit of {max_duration}s"
     return True, None
-
 
 def cleanup_temp_files(file_paths: List[str]):
     """

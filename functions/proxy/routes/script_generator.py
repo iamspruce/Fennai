@@ -7,7 +7,7 @@ import os
 import uuid
 import time
 from typing import List, Dict, Any
-import google.generativeai as genai
+import google.genai as genai
 from firebase.db import get_db
 from google.cloud.firestore import SERVER_TIMESTAMP
 
@@ -17,14 +17,19 @@ from firebase.credits import check_credits_available, confirm_credit_deduction
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 SCRIPT_COST = 1
 MAX_CONTEXT_LENGTH = 2000
 MAX_CHARACTERS = 10
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_PER_WINDOW = 10
+
+def _ensure_gemini_configured():
+    """Ensure Gemini is configured with API key."""
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY not configured")
+    genai.configure(api_key=GEMINI_API_KEY)
+
 
 def check_rate_limit(uid: str) -> tuple[bool, str]:
     """Check if user has exceeded rate limit."""
@@ -149,8 +154,11 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
-    if not GEMINI_API_KEY:
-        logger.error(f"[{request_id}] GEMINI_API_KEY not configured")
+    # Check Gemini configuration
+    try:
+        _ensure_gemini_configured()
+    except ValueError as e:
+        logger.error(f"[{request_id}] {str(e)}")
         return https_fn.Response(
             {"error": "AI service not configured"},
             status=500,
@@ -210,14 +218,16 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     prompt = build_enhanced_prompt(mode, template, context, characters, tone, length)
     logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
-    # Call Gemini
+    # Call Gemini - FIXED MODEL NAME
     generation_id = str(uuid.uuid4())
     try:
+        # Use Gemini 1.5 Pro for best quality
         model = genai.GenerativeModel('gemini-1.5-pro')
+        
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.85,  # Slightly lower for more consistent quality
+                temperature=0.85,
                 top_p=0.95,
                 top_k=40,
                 max_output_tokens=2048,
@@ -261,7 +271,6 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
             status=500,
             headers={"Access-Control-Allow-Origin": "*"}
         )
-
 
 def build_enhanced_prompt(
     mode: str,

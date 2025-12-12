@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-
-import { AVATAR_STYLES, generateAvatarUrl, type AvatarStyle } from '@/lib/utils/avatar';
+// Import the shared component
+import VoiceOptions from '@components/create/VoiceOptions';
+import { AVATAR_STYLES, generateAvatarUrl, type AvatarStyle } from '@lib/utils/avatar';
 
 interface CreateCharacterModalProps {
     isPro?: boolean;
@@ -21,9 +22,6 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Voice option state
-    const [showVoicePreview, setShowVoicePreview] = useState(false);
-
     useEffect(() => {
         const handleOpen = () => {
             setIsOpen(true);
@@ -34,15 +32,18 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
         return () => window.removeEventListener('open-create-character-modal', handleOpen);
     }, []);
 
-    // Listen for voice file updates
+    // Listen for voice file updates (Fixes "Invalid Audio" bug)
     useEffect(() => {
         const handleVoiceUpdate = (e: CustomEvent) => {
-            const file = e.detail as File;
+            // Handle both structure: {file, source} and legacy File object
+            const detail = e.detail;
+            const file = detail.file || detail;
 
             if (file) {
                 const validTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3', 'audio/webm'];
                 const maxSize = 10 * 1024 * 1024;
 
+                // Check type safely
                 if (!validTypes.includes(file.type) && !file.type.startsWith('audio/')) {
                     setError('Please upload a valid audio file');
                     setSelectedFile(null);
@@ -51,9 +52,11 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                     setSelectedFile(null);
                 } else {
                     setSelectedFile(file);
-                    setShowVoicePreview(true);
                     setError(null);
                 }
+            } else {
+                // If null is dispatched (reset), clear file
+                setSelectedFile(null);
             }
         };
 
@@ -65,8 +68,13 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
     useEffect(() => {
         const handleVoiceEdited = (e: CustomEvent) => {
             if (e.detail.source === 'modal-upload') {
-                setSelectedFile(new File([e.detail.blob], 'voice_sample.wav', { type: 'audio/wav' }));
-                setShowVoicePreview(true);
+                const newFile = new File([e.detail.blob], 'voice_sample.wav', { type: 'audio/wav' });
+                setSelectedFile(newFile);
+
+                // Dispatch back to update VoiceOptions UI
+                window.dispatchEvent(new CustomEvent('voice-file-updated', {
+                    detail: { file: newFile, source: 'upload' }
+                }));
             }
         };
 
@@ -79,31 +87,11 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
         setSelectedAvatar(AVATAR_STYLES[0]);
         setCharacterName('');
         setSelectedFile(null);
-        setShowVoicePreview(false);
         setSaveAcrossBrowsers(false);
         setError(null);
-    };
 
-    const handleUploadClick = () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'audio/*';
-        input.onchange = (e: Event) => {
-            const target = e.target as HTMLInputElement;
-            const file = target.files?.[0];
-            if (file) {
-                window.dispatchEvent(new CustomEvent('voice-file-updated', { detail: file }));
-            }
-        };
-        input.click();
-    };
-
-    const handleLibraryClick = () => {
-        window.dispatchEvent(new Event('open-voice-library'));
-    };
-
-    const handleRecordClick = () => {
-        window.dispatchEvent(new Event('open-record-modal'));
+        // Reset the VoiceOptions UI visually
+        window.dispatchEvent(new CustomEvent('voice-file-updated', { detail: null }));
     };
 
     const canProceedToName = () => (selectedAvatar as string) !== '';
@@ -243,11 +231,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                                     gap: 'var(--space-2xs)'
                                 }}>
                                     Pick an avatar style
-                                    <span style={{
-                                        fontSize: '12px',
-                                        color: 'var(--mauve-11)',
-                                        fontWeight: 'normal'
-                                    }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--mauve-11)', fontWeight: 'normal' }}>
                                         (Step 1 of 3)
                                     </span>
                                 </h4>
@@ -278,7 +262,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                                         >
                                             {selectedAvatar === style && (
                                                 <motion.div
-                                                    layoutId="avatar-ring"
+                                                    layoutId="avatar-ring-modal"
                                                     style={{
                                                         position: 'absolute',
                                                         inset: 0,
@@ -293,12 +277,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                                             <img
                                                 src={generateAvatarUrl(`character-${style}`, style)}
                                                 alt={style}
-                                                style={{
-                                                    width: '100%',
-                                                    height: '100%',
-                                                    objectFit: 'cover',
-                                                    display: 'block'
-                                                }}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                                             />
                                         </motion.div>
                                     ))}
@@ -343,11 +322,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                                     gap: 'var(--space-2xs)'
                                 }}>
                                     Name your character
-                                    <span style={{
-                                        fontSize: '12px',
-                                        color: 'var(--mauve-11)',
-                                        fontWeight: 'normal'
-                                    }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--mauve-11)', fontWeight: 'normal' }}>
                                         (Step 2 of 3)
                                     </span>
                                 </h4>
@@ -445,7 +420,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                             </motion.div>
                         )}
 
-                        {/* Step 3: Voice Selection */}
+                        {/* Step 3: Voice Selection (Updated with VoiceOptions) */}
                         {currentStep === 'voice' && (
                             <motion.div
                                 key="voice-step"
@@ -463,198 +438,15 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                                     gap: 'var(--space-2xs)'
                                 }}>
                                     Give your character a voice
-                                    <span style={{
-                                        fontSize: '12px',
-                                        color: 'var(--mauve-11)',
-                                        fontWeight: 'normal'
-                                    }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--mauve-11)', fontWeight: 'normal' }}>
                                         (Step 3 of 3)
                                     </span>
                                 </h4>
 
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                                    gap: 'var(--space-s)',
-                                    marginBottom: 'var(--space-m)'
-                                }}>
-                                    <button
-                                        type="button"
-                                        onClick={handleUploadClick}
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            gap: 'var(--space-xs)',
-                                            padding: 'var(--space-m)',
-                                            background: 'var(--mauve-2)',
-                                            border: '2px solid var(--mauve-6)',
-                                            borderRadius: 'var(--radius-m)',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--orange-7)';
-                                            e.currentTarget.style.background = 'var(--orange-2)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--mauve-6)';
-                                            e.currentTarget.style.background = 'var(--mauve-2)';
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: '48px',
-                                            height: '48px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'var(--orange-3)',
-                                            color: 'var(--orange-9)',
-                                            borderRadius: 'var(--radius-m)'
-                                        }}>
-                                            <Icon icon="lucide:upload" width={24} height={24} />
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--mauve-12)' }}>
-                                                Upload
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--mauve-11)' }}>
-                                                From computer
-                                            </div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={handleLibraryClick}
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            gap: 'var(--space-xs)',
-                                            padding: 'var(--space-m)',
-                                            background: 'var(--mauve-2)',
-                                            border: '2px solid var(--mauve-6)',
-                                            borderRadius: 'var(--radius-m)',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--orange-7)';
-                                            e.currentTarget.style.background = 'var(--orange-2)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--mauve-6)';
-                                            e.currentTarget.style.background = 'var(--mauve-2)';
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: '48px',
-                                            height: '48px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'var(--orange-3)',
-                                            color: 'var(--orange-9)',
-                                            borderRadius: 'var(--radius-m)'
-                                        }}>
-                                            <Icon icon="lucide:library" width={24} height={24} />
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--mauve-12)' }}>
-                                                Library
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--mauve-11)' }}>
-                                                Pre-made voices
-                                            </div>
-                                        </div>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={handleRecordClick}
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            gap: 'var(--space-xs)',
-                                            padding: 'var(--space-m)',
-                                            background: 'var(--mauve-2)',
-                                            border: '2px solid var(--mauve-6)',
-                                            borderRadius: 'var(--radius-m)',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--orange-7)';
-                                            e.currentTarget.style.background = 'var(--orange-2)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--mauve-6)';
-                                            e.currentTarget.style.background = 'var(--mauve-2)';
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: '48px',
-                                            height: '48px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'var(--orange-3)',
-                                            color: 'var(--orange-9)',
-                                            borderRadius: 'var(--radius-m)'
-                                        }}>
-                                            <Icon icon="lucide:mic" width={24} height={24} />
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--mauve-12)' }}>
-                                                Record
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--mauve-11)' }}>
-                                                Your voice
-                                            </div>
-                                        </div>
-                                    </button>
+                                {/* REPLACED: Use VoiceOptions Component */}
+                                <div style={{ marginBottom: 'var(--space-m)' }}>
+                                    <VoiceOptions hasError={!!error && !selectedFile} />
                                 </div>
-
-                                {showVoicePreview && selectedFile && (
-                                    <motion.div
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 'var(--space-s)',
-                                            padding: 'var(--space-m)',
-                                            background: 'var(--green-2)',
-                                            border: '1px solid var(--green-6)',
-                                            borderRadius: 'var(--radius-m)',
-                                            marginBottom: 'var(--space-m)'
-                                        }}
-                                    >
-                                        <div style={{
-                                            width: '32px',
-                                            height: '32px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            background: 'var(--green-9)',
-                                            color: 'white',
-                                            borderRadius: '50%',
-                                            fontWeight: 'bold'
-                                        }}>
-                                            ✓
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--green-11)' }}>
-                                                Voice sample selected
-                                            </div>
-                                            <div style={{ fontSize: '12px', color: 'var(--green-11)' }}>
-                                                {selectedFile.name}
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                )}
 
                                 {isPro && (
                                     <label style={{

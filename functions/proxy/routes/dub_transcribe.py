@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 # Environment
 GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")
 
-gcs = GCSHelper(GCS_DUBBING_BUCKET)
+# ✅ REMOVED: Global GCS initialization
+# OLD: gcs = GCSHelper(GCS_DUBBING_BUCKET)
 
 # Constants
 MAX_BASE64_SIZE = 500 * 1024 * 1024  # 500MB in bytes
@@ -87,10 +88,10 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     # Validate tier limits
     limits = UPLOAD_LIMITS[user_tier]
     
-    # Check duration limit
-    is_valid, error = validate_duration(duration, limits['maxDurationSeconds'])
-    if not is_valid:
-        return False, f"{error} (Your {user_tier} tier limit)"
+    # ✅ FIX #2: Check duration limit (handles infinity)
+    max_duration = limits['maxDurationSeconds']
+    if max_duration != float('inf') and duration > max_duration:
+        return False, f"Duration ({duration:.1f}s) exceeds limit of {max_duration}s (Your {user_tier} tier limit)"
     
     # Check file size limit
     is_valid, error = validate_file_size(int(file_size_mb * 1024 * 1024), limits['maxFileSizeMB'])
@@ -117,7 +118,8 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
     logger.info(f"[{request_id}] Dubbing transcribe request received")
 
     db = get_db()
-
+    # ✅ FIX #1: Lazy GCS initialization - only create when needed
+    gcs = GCSHelper(GCS_DUBBING_BUCKET)
     
     # CORS
     if req.method == "OPTIONS":

@@ -11,10 +11,11 @@ from flask import Request
 
 logger = logging.getLogger(__name__)
 
-# Initialize only once
-if not firebase_admin._apps:
-    cred = credentials.ApplicationDefault()
-    firebase_admin.initialize_app(cred)
+def _ensure_firebase_initialized():
+    """Ensure Firebase is initialized (lazy initialization)."""
+    if not firebase_admin._apps:
+        cred = credentials.ApplicationDefault()
+        firebase_admin.initialize_app(cred)
 
 # Constants
 TOKEN_EXPIRY_WARNING_SECONDS = 300  # 5 minutes
@@ -30,6 +31,8 @@ def get_current_user(request: Request) -> Optional[Dict[str, Any]]:
     Returns:
         Decoded token dictionary if valid, None otherwise
     """
+    _ensure_firebase_initialized()
+    
     auth_header = request.headers.get("Authorization")
     
     if not auth_header:
