@@ -5,6 +5,7 @@ import { db } from '@/lib/firebase/config';
 import { doc, updateDoc } from 'firebase/firestore';
 import type { DubbingJob, TranscriptSegment } from '@/types/dubbing';
 
+
 export default function DubEditScriptModal() {
     const [isOpen, setIsOpen] = useState(false);
     const [jobId, setJobId] = useState('');

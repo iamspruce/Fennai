@@ -2,10 +2,11 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import { db } from '@/lib/firebase/config';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import type { Character } from '@/types/character';
 import type { DubbingJob, VoiceMapEntry } from '@/types/dubbing';
 import { SUPPORTED_LANGUAGES } from '@/types/dubbing';
+import { cloneDubbing } from '@/lib/api/apiClient';
 
 interface DubSettingsModalProps {
     allCharacters: Character[];
@@ -19,6 +20,7 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
     const [translateAll, setTranslateAll] = useState(false);
     const [voiceMapping, setVoiceMapping] = useState<Record<string, VoiceMapEntry>>({});
     const [isProcessing, setIsProcessing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     // Listen to job status
     useEffect(() => {
@@ -107,35 +109,37 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
         setIsProcessing(true);
 
         try {
-            // Update job with settings
-            await fetch(`/api/jobs/${jobId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    targetLanguage,
-                    translateAll,
-                    voiceMapping
-                })
+            // Update job settings in Firestore (you might have a separate function for this)
+            await updateJobSettings(jobId, {
+                targetLanguage,
+                translateAll,
+                voiceMapping
             });
 
-            // Start cloning
-            const response = await fetch('/api/proxy/dub/clone', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId })
-            });
+            // Start cloning via API
+            const result = await cloneDubbing({ jobId });
 
-            if (!response.ok) throw new Error('Failed to start cloning');
+            // Modal will close automatically when Firestore status changes to 'cloning'
 
-            // Modal will close automatically when status changes to 'cloning'
-
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to start cloning:', err);
-            alert('Failed to start voice cloning');
+            setError(err.message || 'Failed to start voice cloning');
         } finally {
             setIsProcessing(false);
         }
     };
+
+    // Helper function to update job settings
+    const updateJobSettings = async (
+        jobId: string,
+        settings: { targetLanguage: string; translateAll: boolean; voiceMapping: any }
+    ) => {
+        // This could be a Firestore update or an API call
+        // For now, assuming you update via Firestore directly:
+        const jobRef = doc(db, 'dubbingJobs', jobId);
+        await updateDoc(jobRef, settings);
+    };
+
 
     if (!isOpen || !job) return null;
 
@@ -256,6 +260,14 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
                             Edit Script
                         </button>
                     </div>
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="error-message">
+                            <Icon icon="lucide:alert-circle" width={18} />
+                            <span>{error}</span>
+                        </div>
+                    )}
 
                     {/* Continue Button */}
                     <button

@@ -6,15 +6,16 @@ from firebase_functions import https_fn
 import logging
 import os
 import uuid
-from typing import List, Dict, Any, Optional
-from firebase_admin import firestore
+from typing import Optional
+from firebase.db import get_db
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
 from utils import ResponseBuilder
 from utils.task_helper import create_cloud_task
 
 logger = logging.getLogger(__name__)
-db = firestore.client()
+db = get_db()
 
 # Supported languages for translation
 SUPPORTED_LANGUAGES = {
@@ -118,13 +119,20 @@ def dub_translate(req: https_fn.Request) -> https_fn.Response:
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
         return https_fn.Response(
-            ResponseBuilder.error(error_msg, request_id=request_id),
+            ResponseBuilder.error(error_msg or "Invalid request", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     job_id = data.get("jobId")
     target_language = data.get("targetLanguage")
+
+    if not isinstance(job_id, str) or not isinstance(target_language, str):
+        return https_fn.Response(
+            ResponseBuilder.error("Invalid job ID or target language", request_id=request_id),
+            status=400,
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        )
     
     # Get job document
     try:
@@ -140,6 +148,14 @@ def dub_translate(req: https_fn.Request) -> https_fn.Response:
             )
         
         job_data = job_doc.to_dict()
+
+        if not job_data:
+            logger.error(f"[{request_id}] Job data is None for {job_id}")
+            return https_fn.Response(
+                ResponseBuilder.error("Job data not found", request_id=request_id),
+                status=500,
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            )
         
         # Verify ownership
         if job_data.get("uid") != uid:
@@ -185,7 +201,7 @@ def dub_translate(req: https_fn.Request) -> https_fn.Response:
             "step": f"Translating to {SUPPORTED_LANGUAGES[target_language]}...",
             "progress": 60,
             "targetLanguage": target_language,
-            "updatedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP
         })
         
         logger.info(
@@ -235,7 +251,7 @@ def dub_translate(req: https_fn.Request) -> https_fn.Response:
             "status": "failed",
             "error": "Failed to queue translation",
             "errorDetails": str(e),
-            "updatedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP
         })
         
         return https_fn.Response(

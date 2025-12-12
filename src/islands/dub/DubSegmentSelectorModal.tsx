@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import type { DubbingJob, TranscriptSegment, SegmentFilter } from '@/types/dubbing';
 import RichTextEditor from '@/components/RichTextEditor';
+import { translateDubbing } from '@/lib/api/apiClient';
 
 export default function DubSegmentSelectorModal() {
     const [isOpen, setIsOpen] = useState(false);
@@ -13,6 +14,7 @@ export default function DubSegmentSelectorModal() {
     ]);
     const [filteredScript, setFilteredScript] = useState('');
     const [isTranslating, setIsTranslating] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
@@ -76,6 +78,7 @@ export default function DubSegmentSelectorModal() {
         if (!job?.transcript) return;
 
         setIsTranslating(true);
+        setError(null);
 
         try {
             // Get segment indices that match filters
@@ -95,18 +98,12 @@ export default function DubSegmentSelectorModal() {
                 });
             });
 
-            // Call translation endpoint
-            const response = await fetch('/api/proxy/dub/translate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jobId,
-                    targetLanguage: job.targetLanguage,
-                    segmentIndices: [...new Set(segmentIndices)]
-                })
+            // Call translation API
+            await translateDubbing({
+                jobId,
+                targetLanguage: job.targetLanguage || 'en',
+                segmentIndices: [...new Set(segmentIndices)]
             });
-
-            if (!response.ok) throw new Error('Translation failed');
 
             // Close modal and return to settings
             setIsOpen(false);
@@ -116,9 +113,9 @@ export default function DubSegmentSelectorModal() {
                 })
             );
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('Translation failed:', err);
-            alert('Translation failed');
+            setError(err.message || 'Translation failed');
         } finally {
             setIsTranslating(false);
         }
@@ -240,6 +237,14 @@ export default function DubSegmentSelectorModal() {
                         />
                     </div>
 
+                    {/* Error Message */}
+                    {error && (
+                        <div className="error-message">
+                            <Icon icon="lucide:alert-circle" width={16} />
+                            {error}
+                        </div>
+                    )}
+
                     {/* Actions */}
                     <div className="action-buttons">
                         <button
@@ -348,6 +353,19 @@ export default function DubSegmentSelectorModal() {
             font-weight: 600;
             color: var(--mauve-12);
             margin-bottom: var(--space-s);
+          }
+
+          .error-message {
+            display: flex;
+            align-items: center;
+            gap: var(--space-xs);
+            padding: var(--space-s);
+            background: var(--red-3);
+            border: 1px solid var(--red-6);
+            border-radius: var(--radius-m);
+            color: var(--red-11);
+            font-size: 14px;
+            margin-bottom: var(--space-m);
           }
 
           .action-buttons {

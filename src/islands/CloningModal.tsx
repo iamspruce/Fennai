@@ -1,7 +1,7 @@
 // src/islands/CloningModal.tsx
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
-import { cloneSingleVoice, cloneMultiVoice, type JobStatus } from '@/lib/api/voiceClone';
+import { cloneSingleVoice, cloneMultiVoice, type JobStatus } from '@/lib/api/apiClient';
 
 export default function CloningModal() {
   const [isOpen, setIsOpen] = useState(false);

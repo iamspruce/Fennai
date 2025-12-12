@@ -12,12 +12,12 @@
     {
       "codebase": "main",
       "source": "functions",
-      "runtime": "python310"
+      "runtime": "python311"
     },
     {
       "codebase": "proxy",
       "source": "functions/proxy",
-      "runtime": "python310"
+      "runtime": "python311"
     }
   ],
   "hosting": {

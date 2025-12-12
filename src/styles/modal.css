@@ -730,3 +730,15 @@
 .check-icon {
   color: var(--orange-9, #ff6b35);
 }
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  padding: var(--space-s);
+  background: var(--red-2);
+  border: 1px solid var(--red-6);
+  border-radius: var(--radius-m);
+  color: var(--red-11);
+  font-size: 14px;
+  margin-bottom: var(--space-m);
+}

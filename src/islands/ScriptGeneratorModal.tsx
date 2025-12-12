@@ -3,6 +3,7 @@ import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Character } from '@/types/character';
 import RichTextEditor from '@/components/RichTextEditor';
+import { generateScript } from '@/lib/api/apiClient';
 
 // --- Configuration & Types ---
 
@@ -178,34 +179,27 @@ export default function ScriptGeneratorModal({
         setIsGenerating(true);
         setError('');
 
-        const promptContext = `
-            Type: ${template === 'custom' ? 'Custom Script' : SCRIPT_TEMPLATES.find(t => t.id === template)?.name}
-            Tone: ${selectedTone}
-            Length: ${selectedLength}
-            Context/Topic: ${context}
-        `.trim();
-
         try {
-            const response = await fetch('/api/proxy/generate-script', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mode,
-                    template,
-                    context: promptContext,
-                    characters: selectedCharacters.map(c => ({ id: c.id, name: c.name })),
-                }),
+            const result = await generateScript({
+                mode,
+                template,
+                context, // Send CLEAN context
+                characters: selectedCharacters.map(c => ({ id: c.id, name: c.name })),
+                tone: selectedTone,
+                length: selectedLength,
             });
 
-            if (!response.ok) throw new Error('Script generation failed');
-            const data = await response.json();
-            setGeneratedScript(data.script);
+            setGeneratedScript(result.script);
+
         } catch (err: any) {
+            console.error('Script generation error:', err);
             setError(err.message || 'Failed to generate script');
         } finally {
             setIsGenerating(false);
         }
     };
+
+
 
     const handleUseScript = () => {
         if (!generatedScript || !onGenerateRef.current) return;

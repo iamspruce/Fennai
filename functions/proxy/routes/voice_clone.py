@@ -7,7 +7,8 @@ from firebase_functions import https_fn
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
-from firebase_admin import firestore
+from firebase.db import get_db
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
 from firebase.credits import reserve_credits, release_credits, calculate_cost_from_duration
@@ -23,10 +24,10 @@ from utils import (
 from utils.task_helper import create_cloud_task
 
 logger = logging.getLogger(__name__)
-db = firestore.client()
+db = get_db()
 
 
-def get_user_tier(user_data: dict) -> str:
+def get_user_tier(user_data: Optional[Dict[str, Any]]) -> str:
     """
     Determine user tier from user document.
     
@@ -36,6 +37,9 @@ def get_user_tier(user_data: dict) -> str:
     Returns:
         Tier name: 'free', 'pro', or 'enterprise'
     """
+    if not user_data:
+        return 'free'
+
     if user_data.get("isEnterprise", False):
         return 'enterprise'
     elif user_data.get("isPro", False):
@@ -125,7 +129,7 @@ def chunk_multi_speaker_dialogue(
     """
     lines = text.strip().split('\n')
     chunks = []
-    current_chunk = {
+    current_chunk: Dict[str, Any] = {
         'speakers': [],
         'lines': [],
         'voice_sample_indices': []
@@ -233,6 +237,14 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
         )
     
     uid = user.get("uid")
+    if not uid or not isinstance(uid, str):
+        logger.warning(f"[{request_id}] Unauthorized request: Missing or invalid UID")
+        return https_fn.Response(
+            ResponseBuilder.error("Unauthorized", request_id=request_id),
+            status=401,
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        )
+    
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
     # Get user tier
@@ -259,7 +271,7 @@ def voice_clone(req: https_fn.Request) -> https_fn.Response:
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
         return https_fn.Response(
-            ResponseBuilder.error(error_msg, request_id=request_id),
+            ResponseBuilder.error(error_msg or "Invalid request", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )

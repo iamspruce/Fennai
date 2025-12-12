@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { Character } from '@/types/character';
 import { UPLOAD_LIMITS, SUPPORTED_LANGUAGES } from '@/types/dubbing';
 import { saveDubbingMedia } from '@/lib/db/indexdb';
+import { transcribeDubbing } from '@/lib/api/apiClient';
 
 interface DubMediaSelectModalProps {
     character: Character;
@@ -169,33 +170,21 @@ export default function DubMediaSelectModal({
             // Convert file to base64
             const base64Data = await fileToBase64(file);
 
-            // Call dubbing transcribe endpoint
-            const response = await fetch('/api/proxy/dub/transcribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mediaData: base64Data,
-                    mediaType,
-                    fileName: file.name,
-                    duration,
-                    fileSizeMB: file.size / (1024 * 1024),
-                    detectedLanguage: SUPPORTED_LANGUAGES.find(l => l.code === mainLanguage)?.name,
-                    detectedLanguageCode: mainLanguage,
-                    otherLanguages,
-                }),
+            // Call transcribe API
+            const result = await transcribeDubbing({
+                mediaData: base64Data,
+                mediaType,
+                fileName: file.name,
+                duration,
+                fileSizeMB: file.size / (1024 * 1024),
+                detectedLanguage: SUPPORTED_LANGUAGES.find(l => l.code === mainLanguage)?.name || 'English',
+                detectedLanguageCode: mainLanguage,
+                otherLanguages,
             });
-
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || 'Upload failed');
-            }
-
-            const data = await response.json();
-            const jobId = data.job_id;
 
             // Save media to IndexedDB for preview
             await saveDubbingMedia({
-                id: jobId,
+                id: result.jobId,
                 mediaType,
                 audioData: await file.arrayBuffer(),
                 audioType: file.type,
@@ -207,7 +196,7 @@ export default function DubMediaSelectModal({
             // Open settings modal (will listen to job status)
             window.dispatchEvent(
                 new CustomEvent('open-dub-settings', {
-                    detail: { jobId }
+                    detail: { jobId: result.jobId }
                 })
             );
 

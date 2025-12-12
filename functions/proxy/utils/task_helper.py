@@ -20,8 +20,8 @@ QUEUE_NAME = os.environ.get("QUEUE_NAME", "voice-generation-queue")
 SERVICE_ACCOUNT = os.environ.get("SERVICE_ACCOUNT_EMAIL")
 
 # Initialize Cloud Tasks client (singleton)
-_tasks_client = None
-_queue_path = None
+_tasks_client: Optional[tasks_v2.CloudTasksClient] = None
+_queue_path: Optional[str] = None
 
 
 def get_tasks_client() -> tasks_v2.CloudTasksClient:
@@ -29,8 +29,10 @@ def get_tasks_client() -> tasks_v2.CloudTasksClient:
     global _tasks_client, _queue_path
     
     if _tasks_client is None:
-        _tasks_client = tasks_v2.CloudTasksClient()
-        _queue_path = _tasks_client.queue_path(GCP_PROJECT, QUEUE_LOCATION, QUEUE_NAME)
+        client = tasks_v2.CloudTasksClient()
+        _tasks_client = client
+        _queue_path = client.queue_path(GCP_PROJECT, QUEUE_LOCATION, QUEUE_NAME)
+        return client
     
     return _tasks_client
 
@@ -38,6 +40,8 @@ def get_tasks_client() -> tasks_v2.CloudTasksClient:
 def get_queue_path() -> str:
     """Get Cloud Tasks queue path."""
     get_tasks_client()  # Ensure initialization
+    if _queue_path is None:
+        raise RuntimeError("Queue path not initialized")
     return _queue_path
 
 

@@ -8,8 +8,10 @@ import logging
 import os
 import uuid
 import base64
+from typing import Optional
 from datetime import datetime, timedelta
-from firebase_admin import firestore
+from firebase.db import get_db
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
 from firebase.credits import reserve_credits, release_credits, calculate_dubbing_cost
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Environment
 GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")
 
-db = firestore.client()
+db = get_db()
 gcs = GCSHelper(GCS_DUBBING_BUCKET)
 
 # Constants
@@ -37,8 +39,11 @@ SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.m4a', '.flac']
 SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv']
 
 
-def get_user_tier(user_data: dict) -> str:
+def get_user_tier(user_data: Optional[dict]) -> str:
     """Determine user tier."""
+    if not user_data:
+        return 'free'
+        
     if user_data.get("isEnterprise", False):
         return 'enterprise'
     elif user_data.get("isPro", False):
@@ -89,7 +94,7 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
         return False, f"{error} (Your {user_tier} tier limit)"
     
     # Check file size limit
-    is_valid, error = validate_file_size(file_size_mb * 1024 * 1024, limits['maxFileSizeMB'])
+    is_valid, error = validate_file_size(int(file_size_mb * 1024 * 1024), limits['maxFileSizeMB'])
     if not is_valid:
         return False, f"{error} (Your {user_tier} tier limit)"
     
@@ -142,11 +147,19 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
         )
     
     uid = user.get("uid")
+    if not uid:
+        logger.warning(f"[{request_id}] User missing UID")
+        return https_fn.Response(
+            ResponseBuilder.error("Unauthorized", request_id=request_id),
+            status=401,
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        )
+    
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
     # Get user tier
     user_doc = db.collection("users").document(uid).get()
-    user_data = user_doc.to_dict() if user_doc.exists else {}
+    user_data = user_doc.to_dict() or {}
     user_tier = get_user_tier(user_data)
     
     logger.info(f"[{request_id}] User tier: {user_tier}")
@@ -167,13 +180,13 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
         return https_fn.Response(
-            ResponseBuilder.error(error_msg, request_id=request_id),
+            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     # Extract parameters
-    media_base64 = data.get("mediaData")
+    media_base64 = str(data.get("mediaData", ""))
     media_type = data.get("mediaType", "audio")
     file_name = sanitize_filename(data.get("fileName", "media"))
     duration = float(data.get("duration", 0))
@@ -256,8 +269,8 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
             "detectedLanguage": detected_language,
             "otherLanguages": other_languages,
             "cost": cost,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP,
             "expiresAt": datetime.utcnow() + timedelta(days=7),
             "requestId": request_id,
         }
@@ -296,7 +309,7 @@ def dub_transcribe(req: https_fn.Request) -> https_fn.Response:
         job_ref.update({
             "status": "failed",
             "error": "Failed to queue transcription",
-            "updatedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP
         })
         
         release_credits(uid, job_id, cost)

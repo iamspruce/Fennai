@@ -1,7 +1,5 @@
-# functions/proxy/routes/script_generator.py
 """
-Enhanced AI Script Generator using Gemini 1.5 Pro with proper job tracking,
-rate limiting, and comprehensive error handling.
+Enhanced AI Script Generator with improved prompts for better quality.
 """
 from firebase_functions import https_fn
 import logging
@@ -10,44 +8,33 @@ import uuid
 import time
 from typing import List, Dict, Any
 import google.generativeai as genai
-from firebase_admin import firestore
+from firebase.db import get_db
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
 from firebase.credits import check_credits_available, confirm_credit_deduction
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Constants
-SCRIPT_COST = 1  # 1 credit per script generation
+SCRIPT_COST = 1
 MAX_CONTEXT_LENGTH = 2000
 MAX_CHARACTERS = 10
-RATE_LIMIT_WINDOW = 60  # 1 minute
+RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_PER_WINDOW = 10
 
-db = firestore.client()
+db = get_db()
 
 
 def check_rate_limit(uid: str) -> tuple[bool, str]:
-    """
-    Check if user has exceeded rate limit for script generation.
-    
-    Args:
-        uid: User ID
-        
-    Returns:
-        Tuple of (is_allowed, error_message)
-    """
+    """Check if user has exceeded rate limit."""
     try:
         now = time.time()
         cutoff = now - RATE_LIMIT_WINDOW
         
-        # Query recent script generations
         recent_scripts = (
             db.collection("scriptGenerations")
             .where("uid", "==", uid)
@@ -64,37 +51,27 @@ def check_rate_limit(uid: str) -> tuple[bool, str]:
         
     except Exception as e:
         logger.error(f"Rate limit check failed: {str(e)}")
-        # Allow request on error to avoid blocking users
         return True, ""
 
 
 def validate_script_request(data: dict) -> tuple[bool, str]:
-    """
-    Validate script generation request data.
-    
-    Args:
-        data: Request data
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
+    """Validate script generation request data."""
     mode = data.get("mode", "single")
     template = data.get("template", "custom")
     context = data.get("context", "").strip()
     characters = data.get("characters", [])
+    tone = data.get("tone", "")
+    length = data.get("length", "")
     
-    # Validate mode
     if mode not in ["single", "dialogue"]:
         return False, "Invalid mode. Must be 'single' or 'dialogue'"
     
-    # Validate context
     if not context and template == "custom":
         return False, "Context required for custom template"
     
     if len(context) > MAX_CONTEXT_LENGTH:
         return False, f"Context too long. Max {MAX_CONTEXT_LENGTH} characters"
     
-    # Validate characters
     if not isinstance(characters, list):
         return False, "Characters must be an array"
     
@@ -114,21 +91,14 @@ def validate_script_request(data: dict) -> tuple[bool, str]:
 
 
 def log_script_generation(uid: str, generation_id: str, data: dict):
-    """
-    Log script generation for rate limiting and analytics.
-    
-    Args:
-        uid: User ID
-        generation_id: Unique generation ID
-        data: Generation metadata
-    """
+    """Log script generation for analytics."""
     try:
         db.collection("scriptGenerations").document(generation_id).set({
             "uid": uid,
             "mode": data.get("mode"),
             "template": data.get("template"),
             "timestamp": time.time(),
-            "createdAt": firestore.SERVER_TIMESTAMP
+            "createdAt": SERVER_TIMESTAMP
         })
     except Exception as e:
         logger.error(f"Failed to log script generation: {str(e)}")
@@ -136,10 +106,7 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
 
 @https_fn.on_request()
 def generate_script(req: https_fn.Request) -> https_fn.Response:
-    """
-    AI Script Generator using Gemini 1.5 Pro.
-    Costs 1 credit per generation with rate limiting.
-    """
+    """Generate AI script using Gemini 1.5 Pro."""
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Script generation request received")
     
@@ -173,9 +140,16 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         )
     
     uid = user.get("uid")
+    if not uid or not isinstance(uid, str):
+        logger.error(f"[{request_id}] Invalid user uid")
+        return https_fn.Response(
+            {"error": "Unauthorized"},
+            status=401,
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+    
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
-    # Check Gemini API key
     if not GEMINI_API_KEY:
         logger.error(f"[{request_id}] GEMINI_API_KEY not configured")
         return https_fn.Response(
@@ -195,7 +169,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
             headers={"Access-Control-Allow-Origin": "*"}
         )
     
-    # Validate request
+    # Validate
     is_valid, error_msg = validate_script_request(data)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
@@ -205,7 +179,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
             headers={"Access-Control-Allow-Origin": "*"}
         )
     
-    # Check rate limit
+    # Rate limit
     allowed, rate_error = check_rate_limit(uid)
     if not allowed:
         logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
@@ -215,7 +189,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
             headers={"Access-Control-Allow-Origin": "*"}
         )
     
-    # Check credits
+    # Credits
     has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
     if not has_credits:
         logger.warning(f"[{request_id}] Insufficient credits for {uid}")
@@ -230,9 +204,11 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     template = data.get("template", "custom")
     context = data.get("context", "").strip()
     characters = data.get("characters", [])
+    tone = data.get("tone", "Professional")
+    length = data.get("length", "Medium (1-2m)")
     
-    # Build prompt
-    prompt = build_gemini_prompt(mode, template, context, characters)
+    # Build enhanced prompt
+    prompt = build_enhanced_prompt(mode, template, context, characters, tone, length)
     logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
     # Call Gemini
@@ -242,18 +218,19 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.9,
+                temperature=0.85,  # Slightly lower for more consistent quality
                 top_p=0.95,
+                top_k=40,
                 max_output_tokens=2048,
             )
         )
         
         script = response.text.strip()
         
-        # Deduct credits (non-refundable for AI generations)
+        # Deduct credits
         confirm_credit_deduction(uid, generation_id, SCRIPT_COST)
         
-        # Log generation for rate limiting
+        # Log generation
         log_script_generation(uid, generation_id, data)
         
         logger.info(
@@ -287,77 +264,168 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         )
 
 
-def build_gemini_prompt(
-    mode: str, 
-    template: str, 
-    context: str, 
-    characters: List[Dict[str, Any]]
+def build_enhanced_prompt(
+    mode: str,
+    template: str,
+    context: str,
+    characters: List[Dict[str, Any]],
+    tone: str,
+    length: str
 ) -> str:
-    """
-    Build structured prompt for Gemini.
+    """Build enhanced prompt for better script quality."""
     
-    Args:
-        mode: 'single' or 'dialogue'
-        template: Template type
-        context: User-provided context
-        characters: List of character dictionaries
-        
-    Returns:
-        Formatted prompt string
-    """
-    
-    # Template prompts
+    # Enhanced template descriptions
     TEMPLATE_PROMPTS = {
-        "youtube_ad": "Create a compelling 30-second YouTube ad script that hooks viewers in the first 3 seconds",
-        "podcast_intro": "Write an engaging podcast episode introduction that sets the tone and introduces topics",
-        "product_demo": "Create an exciting product demonstration script highlighting key features and benefits",
-        "tutorial": "Write a clear educational tutorial script that explains concepts step-by-step",
-        "storytelling": "Create a captivating story narration with vivid imagery and emotional impact",
-        "sales_pitch": "Write a persuasive sales pitch that addresses pain points and presents solutions",
-        "announcement": "Create an important announcement script that is clear, concise, and memorable",
-        "interview": "Generate thoughtful interview questions and talking points for engaging conversation",
-        "comedy": "Write a funny comedy sketch or bit with good timing and punchlines",
-        "motivational": "Create an inspiring motivational speech that energizes and empowers listeners",
+        "youtube_ad": {
+            "goal": "Create a high-converting YouTube ad",
+            "structure": "Hook (3s) → Problem → Solution → Call-to-Action",
+            "tips": "Start with a pattern interrupt, use 'you' language, create urgency"
+        },
+        "podcast_intro": {
+            "goal": "Create an engaging podcast intro",
+            "structure": "Hook → Host intro → Episode topic → Value promise",
+            "tips": "Build anticipation, tease key takeaways, use storytelling"
+        },
+        "product_demo": {
+            "goal": "Showcase product features effectively",
+            "structure": "Problem → Solution reveal → Feature walkthrough → Results",
+            "tips": "Focus on benefits over features, show don't tell, use concrete examples"
+        },
+        "tutorial": {
+            "goal": "Teach a skill clearly and concisely",
+            "structure": "What you'll learn → Step-by-step process → Summary",
+            "tips": "Use simple language, anticipate questions, include helpful analogies"
+        },
+        "storytelling": {
+            "goal": "Tell a compelling narrative",
+            "structure": "Setup → Conflict → Rising action → Climax → Resolution",
+            "tips": "Use vivid sensory details, create emotional connection, build tension"
+        },
+        "sales_pitch": {
+            "goal": "Persuade prospects to buy",
+            "structure": "Attention → Problem → Solution → Proof → Call-to-action",
+            "tips": "Address objections, use social proof, create scarcity"
+        },
+        "interview": {
+            "goal": "Facilitate engaging conversation",
+            "structure": "Warm-up → Core questions → Deepening → Memorable close",
+            "tips": "Ask open-ended questions, build on answers, create moments"
+        },
+        "comedy": {
+            "goal": "Entertain and make people laugh",
+            "structure": "Setup → Misdirection → Punchline → Callback (optional)",
+            "tips": "Use rule of three, subvert expectations, perfect timing"
+        },
+        "motivational": {
+            "goal": "Inspire action and belief",
+            "structure": "Challenge → Vision → Path forward → Empowerment",
+            "tips": "Use powerful metaphors, call to action, leave them energized"
+        }
     }
     
-    base_instruction = TEMPLATE_PROMPTS.get(template, "")
+    template_info = TEMPLATE_PROMPTS.get(template, {
+        "goal": "Create compelling content",
+        "structure": "Introduction → Body → Conclusion",
+        "tips": "Engage audience, deliver value, end memorably"
+    })
+    
+    # Length guidelines
+    LENGTH_WORDS = {
+        "Short (<30s)": "75-100 words",
+        "Medium (1-2m)": "150-300 words",
+        "Long (3m+)": "450-600 words"
+    }
+    
+    word_target = LENGTH_WORDS.get(length, "200-300 words")
     
     if mode == "single":
-        char_name = characters[0].get("name", "the character") if characters else "the character"
+        char_name = characters[0].get("name", "the character") if characters else "the speaker"
         
-        prompt = f"""You are a professional script writer. {base_instruction}
+        prompt = f"""You are an expert scriptwriter specializing in voice content. Your scripts are known for being natural, engaging, and perfectly suited for voice delivery.
 
-Character: {char_name}
-Context: {context}
+**ASSIGNMENT**: {template_info['goal']}
 
-Write a natural, engaging script for {char_name} to speak. The script should:
-- Sound like natural speech (not written text)
-- Be appropriate for voice acting/text-to-speech
-- Have clear pacing and rhythm
-- Be emotionally engaging
-- Be between 100-500 words
+**SPEAKER**: {char_name}
+**TONE**: {tone}
+**LENGTH**: {word_target}
+**CONTEXT**: {context}
 
-Output only the script text, no labels or stage directions."""
+**STRUCTURAL FRAMEWORK**:
+{template_info['structure']}
+
+**WRITING GUIDELINES**:
+✓ Write for the EAR, not the eye (conversational, natural speech)
+✓ Use short sentences and active voice
+✓ Include strategic pauses with punctuation
+✓ Vary sentence length for rhythm and emphasis
+✓ Avoid tongue-twisters and difficult pronunciation
+✓ Write contractions (don't, we'll, you're) for naturalness
+✓ {template_info['tips']}
+
+**VOICE DELIVERY TIPS**:
+- Use CAPS for emphasis on key words
+- Add ellipses (...) for dramatic pauses
+- Break complex ideas into digestible chunks
+- End with strong, memorable statement
+
+**OUTPUT FORMAT**:
+Write ONLY the script text. No labels, no stage directions, no formatting except:
+- Paragraph breaks for major sections
+- Punctuation for pacing
+- CAPS for emphasis
+
+Begin writing the script now:"""
 
     else:  # dialogue mode
         char_names = [c.get("name", f"Character {i+1}") for i, c in enumerate(characters)]
         char_list = ", ".join(char_names[:-1]) + f" and {char_names[-1]}" if len(char_names) > 1 else char_names[0]
         
-        prompt = f"""You are a professional dialogue writer. {base_instruction}
+        # Create character profiles
+        char_profiles = "\n".join([
+            f"- {name}: [Define unique speaking style based on tone {tone}]" 
+            for name in char_names
+        ])
+        
+        prompt = f"""You are an expert dialogue writer. Your scripts feature natural conversation flow, distinct character voices, and engaging exchanges.
 
-Characters: {char_list}
-Context: {context}
+**ASSIGNMENT**: {template_info['goal']}
 
-Write a natural, engaging dialogue between these characters. The dialogue should:
-- Have distinct speaking styles for each character
-- Flow naturally like real conversation
-- Be appropriate for voice acting
-- Stay true to the context provided
-- Be between 200-800 words total
+**CHARACTERS**: {char_list}
+**TONE**: {tone}
+**LENGTH**: {word_target} total
+**CONTEXT**: {context}
 
-Format each line as:
-Character Name: dialogue text
+**CHARACTER VOICES**:
+{char_profiles}
 
-Output only the dialogue, no stage directions or descriptions."""
+**DIALOGUE GUIDELINES**:
+✓ Each character has distinct speaking patterns
+✓ Natural interruptions and reactions (where appropriate)
+✓ Authentic conversational rhythm
+✓ Build on each other's statements
+✓ Mix of question-answer and statement-response
+✓ Show personality through word choice
+✓ {template_info['tips']}
+
+**STRUCTURAL FRAMEWORK**:
+{template_info['structure']}
+
+**FORMATTING RULES**:
+- Format: "Character Name: dialogue"
+- One line per speaking turn
+- Natural back-and-forth exchange
+- Strategic pauses indicated by ellipses
+- CAPS for emphasis
+- Keep responses concise and punchy
+
+**OUTPUT FORMAT**:
+Write ONLY the dialogue. No stage directions, no descriptions, no narration.
+
+Example format:
+{char_names[0]}: Opening line here...
+{char_names[1] if len(char_names) > 1 else char_names[0]}: Response here.
+{char_names[0]}: Building on that.
+
+Begin writing the dialogue now:"""
     
     return prompt
