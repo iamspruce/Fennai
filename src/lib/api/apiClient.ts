@@ -306,13 +306,22 @@ export async function cloneSingleVoice(
         }),
     });
 
+
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Voice cloning failed' }));
         throw new Error(error.error || 'Voice cloning failed');
     }
 
+    const responseText = await response.text();
+    console.log('Raw response:', responseText);
+
+    console.log('Response:', response);
+    console.log('Response text:', JSON.parse(responseText));
+
     const result = await response.json();
-    const jobId = result.jobId;  // Changed from job_id to jobId (camelCase from backend)
+    const jobId = result.jobId;
+
+    console.log('Job ID:', jobId, result);
 
     if (!jobId) {
         throw new Error('No job ID returned from server');

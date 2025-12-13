@@ -4,7 +4,7 @@ Enhanced dubbing voice cloning route with multi-chunk processing
 and comprehensive error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, Response
+from flask import Request, Response, jsonify
 import logging
 import os
 import uuid
@@ -48,14 +48,14 @@ def dub_clone(req: Request) -> Response:
     
     # CORS handling
     if req.method == "OPTIONS":
-        return Response("", status=204, headers={
+        return jsonify("", status=204, headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         })
     
     if req.method != "POST":
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Method not allowed", request_id=request_id),
             status=405,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -64,7 +64,7 @@ def dub_clone(req: Request) -> Response:
     # Auth
     user = get_current_user(req)
     if not user or not user.get("uid"):
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -73,7 +73,7 @@ def dub_clone(req: Request) -> Response:
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -85,7 +85,7 @@ def dub_clone(req: Request) -> Response:
     try:
         data = req.get_json(silent=True) or {}
     except Exception as e:
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Invalid JSON", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -93,7 +93,7 @@ def dub_clone(req: Request) -> Response:
     
     job_id = data.get("jobId")
     if not job_id:
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Job ID is required", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -105,7 +105,7 @@ def dub_clone(req: Request) -> Response:
         job_doc = job_ref.get()
         
         if not job_doc.exists:
-            return Response(
+            return jsonify(
                 ResponseBuilder.error("Job not found", request_id=request_id),
                 status=404,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -115,14 +115,14 @@ def dub_clone(req: Request) -> Response:
 
         if not job_data:
             logger.error(f"[{request_id}] Job data is None for {job_id}")
-            return Response(
+            return jsonify(
                 ResponseBuilder.error("Job data not found", request_id=request_id),
                 status=500,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
         
         if job_data.get("uid") != uid:
-            return Response(
+            return jsonify(
                 ResponseBuilder.error("Unauthorized", request_id=request_id),
                 status=403,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -132,7 +132,7 @@ def dub_clone(req: Request) -> Response:
         voice_mapping = job_data.get("voiceMapping", {})
         
         if not transcript or not voice_mapping:
-            return Response(
+            return jsonify(
                 ResponseBuilder.error("Incomplete job data", request_id=request_id),
                 status=400,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -140,7 +140,7 @@ def dub_clone(req: Request) -> Response:
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to get job: {str(e)}")
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Failed to retrieve job", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -217,7 +217,7 @@ def dub_clone(req: Request) -> Response:
             if not success:
                 raise Exception(f"Failed to queue chunk {chunk['chunkId']}: {error}")
         
-        return Response(
+        return jsonify(
             ResponseBuilder.success({
                 "jobId": job_id,
                 "status": "cloning",
@@ -235,7 +235,7 @@ def dub_clone(req: Request) -> Response:
             "error": "Failed to queue voice cloning",
             "updatedAt": SERVER_TIMESTAMP
         })
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Failed to queue cloning", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}

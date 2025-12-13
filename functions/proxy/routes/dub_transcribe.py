@@ -4,7 +4,7 @@ Enhanced dubbing transcription route with comprehensive validation,
 retry logic, and proper error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, Response
+from flask import Request, Response, jsonify
 import logging
 import os
 import uuid
@@ -126,7 +126,7 @@ def dub_transcribe(req: Request) -> Response:
     
     # CORS
     if req.method == "OPTIONS":
-        return Response(
+        return jsonify(
             "",
             status=204,
             headers={
@@ -137,7 +137,7 @@ def dub_transcribe(req: Request) -> Response:
         )
     
     if req.method != "POST":
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Method not allowed", request_id=request_id),
             status=405,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -147,7 +147,7 @@ def dub_transcribe(req: Request) -> Response:
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -156,7 +156,7 @@ def dub_transcribe(req: Request) -> Response:
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -176,7 +176,7 @@ def dub_transcribe(req: Request) -> Response:
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Invalid JSON", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -186,7 +186,7 @@ def dub_transcribe(req: Request) -> Response:
     is_valid, error_msg = validate_dubbing_request(data, user_tier)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return Response(
+        return jsonify(
             ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -221,7 +221,7 @@ def dub_transcribe(req: Request) -> Response:
     success, error_msg = reserve_credits(uid, job_id, cost, job_data)
     if not success:
         logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
-        return Response(
+        return jsonify(
             ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id),
             status=402,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -255,7 +255,7 @@ def dub_transcribe(req: Request) -> Response:
         logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
         release_credits(uid, job_id, cost)
         
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Failed to upload media", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -287,7 +287,7 @@ def dub_transcribe(req: Request) -> Response:
         logger.error(f"[{request_id}] Failed to create job document: {str(e)}")
         release_credits(uid, job_id, cost)
         
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Failed to create job", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -321,7 +321,7 @@ def dub_transcribe(req: Request) -> Response:
         
         release_credits(uid, job_id, cost)
         
-        return Response(
+        return jsonify(
             ResponseBuilder.error("Failed to queue transcription", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
@@ -330,7 +330,7 @@ def dub_transcribe(req: Request) -> Response:
     # Return job ID
     logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
     
-    return Response(
+    return jsonify(
         ResponseBuilder.success({
             "jobId": job_id,
             "status": "uploading",
