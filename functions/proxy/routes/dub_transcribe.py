@@ -4,7 +4,7 @@ Enhanced dubbing transcription route with comprehensive validation,
 retry logic, and proper error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, Response, jsonify
+from flask import Request, jsonify
 import logging
 import os
 import uuid
@@ -109,7 +109,7 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
 @https_fn.on_request(memory=options.MemoryOption.GB_1,
     timeout_sec=60,
     max_instances=10)
-def dub_transcribe(req: Request) -> Response:
+def dub_transcribe(req: Request):
     """
     Initiate dubbing job:
     1. Validate media file
@@ -138,29 +138,23 @@ def dub_transcribe(req: Request) -> Response:
     
     if req.method != "POST":
         return jsonify(
-            ResponseBuilder.error("Method not allowed", request_id=request_id),
-            status=405,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Method not allowed", request_id=request_id)
+        ), 405, {"Access-Control-Allow-Origin": "*"}
     
     # Auth
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
         return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id),
-            status=401,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Unauthorized", request_id=request_id)
+        ), 401, {"Access-Control-Allow-Origin": "*"}
     
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
         return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id),
-            status=401,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Unauthorized", request_id=request_id)
+        ), 401, {"Access-Control-Allow-Origin": "*"}
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -177,20 +171,16 @@ def dub_transcribe(req: Request) -> Response:
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
         return jsonify(
-            ResponseBuilder.error("Invalid JSON", request_id=request_id),
-            status=400,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Invalid JSON", request_id=request_id)
+        ), 400, {"Access-Control-Allow-Origin": "*"}
     
     # Validate request
     is_valid, error_msg = validate_dubbing_request(data, user_tier)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
         return jsonify(
-            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id),
-            status=400,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)
+        ), 400, {"Access-Control-Allow-Origin": "*"}
     
     # Extract parameters
     media_base64 = str(data.get("mediaData", ""))
@@ -222,10 +212,8 @@ def dub_transcribe(req: Request) -> Response:
     if not success:
         logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
         return jsonify(
-            ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id),
-            status=402,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)
+        ), 402, {"Access-Control-Allow-Origin": "*"}
     
     # Upload media to GCS
     try:
@@ -256,10 +244,8 @@ def dub_transcribe(req: Request) -> Response:
         release_credits(uid, job_id, cost)
         
         return jsonify(
-            ResponseBuilder.error("Failed to upload media", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Failed to upload media", request_id=request_id)
+        ), 500, {"Access-Control-Allow-Origin": "*"}
     
     # Create Firestore job document
     try:
@@ -288,10 +274,8 @@ def dub_transcribe(req: Request) -> Response:
         release_credits(uid, job_id, cost)
         
         return jsonify(
-            ResponseBuilder.error("Failed to create job", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Failed to create job", request_id=request_id)
+        ), 500, {"Access-Control-Allow-Origin": "*"}
     
     # Queue Cloud Task for audio extraction & transcription
     try:
@@ -322,10 +306,8 @@ def dub_transcribe(req: Request) -> Response:
         release_credits(uid, job_id, cost)
         
         return jsonify(
-            ResponseBuilder.error("Failed to queue transcription", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+            ResponseBuilder.error("Failed to queue transcription", request_id=request_id)
+        ), 500, {"Access-Control-Allow-Origin": "*"}
     
     # Return job ID
     logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
@@ -335,7 +317,5 @@ def dub_transcribe(req: Request) -> Response:
             "jobId": job_id,
             "status": "uploading",
             "message": "Dubbing job queued successfully"
-        }, request_id=request_id),
-        status=202,
-        headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-    )
+        }, request_id=request_id)
+    ), 202, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
