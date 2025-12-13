@@ -149,7 +149,7 @@ def confirm_credit_deduction(
         if not job_snapshot.exists:
             raise ValueError("Job document not found")
         
-        job_data = job_snapshot.to_dict()
+        job_data = job_snapshot.to_dict() or {}
         if job_data.get("creditsConfirmed"):
             logger.warning(f"Credits already confirmed for job {job_id}")
             return True, None
@@ -223,7 +223,7 @@ def release_credits(
             logger.warning(f"Job {job_id} not found, skipping credit release")
             return True, None
         
-        job_data = job_snapshot.to_dict()
+        job_data = job_snapshot.to_dict() or {}
         
         # If credits already confirmed, don't release
         if job_data.get("creditsConfirmed"):

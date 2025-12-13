@@ -2,12 +2,13 @@
 Enhanced AI Script Generator with improved prompts for better quality.
 """
 from firebase_functions import https_fn, options
+from flask import Request, Response
 import logging
 import os
 import uuid
 import time
 from typing import List, Dict, Any
-import google.genai as genai
+from google import genai
 from firebase.db import get_db
 from google.cloud.firestore import SERVER_TIMESTAMP
 
@@ -24,11 +25,11 @@ MAX_CHARACTERS = 10
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_PER_WINDOW = 10
 
-def _ensure_gemini_configured():
-    """Ensure Gemini is configured with API key."""
+def _get_gemini_client():
+    """Get configured Gemini client."""
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY not configured")
-    genai.configure(api_key=GEMINI_API_KEY)
+    return genai.Client(api_key=GEMINI_API_KEY)
 
 
 def check_rate_limit(uid: str) -> tuple[bool, str]:
@@ -108,17 +109,17 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
         logger.error(f"Failed to log script generation: {str(e)}")
 
 
-@https_fn.on_request(memory=options.MemoryOption.MB_1GB,
+@https_fn.on_request(memory=options.MemoryOption.GB_1,
     timeout_sec=60,
     max_instances=10)
-def generate_script(req: https_fn.Request) -> https_fn.Response:
+def generate_script(req: Request) -> Response:
     """Generate AI script using Gemini 1.5 Pro."""
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Script generation request received")
     
     # CORS
     if req.method == "OPTIONS":
-        return https_fn.Response(
+        return Response(
             "",
             status=204,
             headers={
@@ -129,7 +130,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         )
     
     if req.method != "POST":
-        return https_fn.Response(
+        return Response(
             {"error": "Method not allowed"},
             status=405,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -139,7 +140,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return https_fn.Response(
+        return Response(
             {"error": "Unauthorized"},
             status=401,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -148,7 +149,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     uid = user.get("uid")
     if not uid or not isinstance(uid, str):
         logger.error(f"[{request_id}] Invalid user uid")
-        return https_fn.Response(
+        return Response(
             {"error": "Unauthorized"},
             status=401,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -158,10 +159,10 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     
     # Check Gemini configuration
     try:
-        _ensure_gemini_configured()
+        client = _get_gemini_client()
     except ValueError as e:
         logger.error(f"[{request_id}] {str(e)}")
-        return https_fn.Response(
+        return Response(
             {"error": "AI service not configured"},
             status=500,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -172,7 +173,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return https_fn.Response(
+        return Response(
             {"error": "Invalid JSON"},
             status=400,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -182,7 +183,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     is_valid, error_msg = validate_script_request(data)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return https_fn.Response(
+        return Response(
             {"error": error_msg},
             status=400,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -192,7 +193,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     allowed, rate_error = check_rate_limit(uid)
     if not allowed:
         logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
-        return https_fn.Response(
+        return Response(
             {"error": rate_error},
             status=429,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -202,7 +203,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
     if not has_credits:
         logger.warning(f"[{request_id}] Insufficient credits for {uid}")
-        return https_fn.Response(
+        return Response(
             {"error": credit_error or "Insufficient credits"},
             status=402,
             headers={"Access-Control-Allow-Origin": "*"}
@@ -220,21 +221,23 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
     prompt = build_enhanced_prompt(mode, template, context, characters, tone, length)
     logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
-    # Call Gemini - FIXED MODEL NAME
+    # Call Gemini - Use new SDK
     generation_id = str(uuid.uuid4())
     try:
         # Use Gemini 1.5 Pro for best quality
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.85,
-                top_p=0.95,
-                top_k=40,
-                max_output_tokens=2048,
-            )
+        response = client.models.generate_content(
+            model='gemini-1.5-pro',
+            contents=prompt,
+            config={
+                'temperature': 0.85,
+                'top_p': 0.95,
+                'top_k': 40,
+                'max_output_tokens': 2048,
+            }
         )
+        
+        if not response.text:
+            raise ValueError("Empty response from Gemini API")
         
         script = response.text.strip()
         
@@ -249,7 +252,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
             f"generation_id={generation_id}"
         )
         
-        return https_fn.Response(
+        return Response(
             {
                 "success": True,
                 "script": script,
@@ -265,7 +268,7 @@ def generate_script(req: https_fn.Request) -> https_fn.Response:
         
     except Exception as e:
         logger.error(f"[{request_id}] Gemini API error: {str(e)}")
-        return https_fn.Response(
+        return Response(
             {
                 "error": "Failed to generate script. Please try again.",
                 "details": str(e) if os.getenv("DEBUG") else None
