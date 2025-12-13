@@ -1,6 +1,6 @@
+// src/islands/DeleteConfirmationModal.tsx
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
-import '@/styles/modal.css';
 
 interface DeleteConfirmationProps {
     voiceId: string;
@@ -46,75 +46,149 @@ export default function DeleteConfirmationModal() {
 
     return (
         <div className="modal-overlay" onClick={handleCancel}>
-            <div className="modal-content auth-modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
 
                 {/* Mobile Handle */}
                 <div className="modal-handle-bar">
                     <div className="modal-handle-pill"></div>
                 </div>
 
+                {/* Modal Header */}
                 <div className="modal-header">
-                    <h3 className="modal-title" style={{ color: 'var(--red-9)' }}>Delete Voice</h3>
-                    <button className="modal-close" onClick={handleCancel}>
-                        <Icon icon="lucide:x" width={20} height={20} />
+                    <div className="modal-title-group">
+                        <Icon icon="lucide:trash-2" width={20} style={{ color: 'var(--red-9)' }} />
+                        <h3 className="modal-title" style={{ color: 'var(--red-9)' }}>Delete Voice</h3>
+                    </div>
+                    <button className="modal-close" onClick={handleCancel} disabled={isDeleting}>
+                        <Icon icon="lucide:x" width={20} />
                     </button>
                 </div>
 
-                <div className="modal-body" style={{ textAlign: 'center', paddingBottom: 'var(--space-xl)' }}>
+                {/* Modal Body */}
+                <div className="modal-body">
                     <div style={{
-                        width: 72, height: 72,
-                        margin: 'var(--space-m) auto',
-                        background: 'var(--red-3)',
-                        borderRadius: '50%',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: 'var(--red-9)'
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        padding: 'var(--space-m) 0 var(--space-xl)'
                     }}>
-                        <Icon icon="lucide:trash-2" width={36} height={36} />
-                    </div>
 
-                    <h4 style={{ fontSize: 'var(--step-0)', fontWeight: 600, margin: '0 0 var(--space-xs)' }}>
-                        Are you sure?
-                    </h4>
-                    <p style={{ fontSize: '14px', color: 'var(--mauve-11)', margin: '0 0 var(--space-l)', padding: '0 var(--space-m)' }}>
-                        This action cannot be undone. <br />
-                        <span style={{ color: 'var(--mauve-12)', fontStyle: 'italic', display: 'block', marginTop: '8px' }}>
-                            "{data.voiceText.length > 40 ? data.voiceText.substring(0, 40) + '...' : data.voiceText}"
-                        </span>
-                    </p>
+                        {/* Icon Circle */}
+                        <div style={{
+                            width: 72,
+                            height: 72,
+                            marginBottom: 'var(--space-m)',
+                            background: 'var(--red-3)',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'var(--red-9)'
+                        }}>
+                            <Icon icon="lucide:trash-2" width={36} height={36} />
+                        </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <button
-                            onClick={handleConfirm}
-                            disabled={isDeleting}
-                            className="btn btn-full"
-                            style={{
-                                background: 'var(--red-9)',
-                                color: 'white',
-                                border: 'none',
-                                justifyContent: 'center',
-                                padding: '14px'
-                            }}
-                        >
-                            {isDeleting ? 'Deleting...' : 'Delete Voice'}
-                        </button>
+                        {/* Title */}
+                        <h4 style={{
+                            fontSize: 'var(--step-0)',
+                            fontWeight: 600,
+                            color: 'var(--mauve-12)',
+                            margin: '0 0 var(--space-xs)'
+                        }}>
+                            Are you sure?
+                        </h4>
 
-                        <button
-                            onClick={handleCancel}
-                            disabled={isDeleting}
-                            className="btn btn-full"
-                            style={{
-                                background: 'transparent',
-                                border: '1px solid var(--mauve-6)',
-                                color: 'var(--mauve-11)',
-                                justifyContent: 'center',
-                                padding: '14px'
-                            }}
-                        >
-                            Cancel
-                        </button>
+                        {/* Description */}
+                        <p style={{
+                            fontSize: '14px',
+                            color: 'var(--mauve-11)',
+                            margin: '0 0 var(--space-l)',
+                            padding: '0 var(--space-m)',
+                            lineHeight: 1.5
+                        }}>
+                            This action cannot be undone.
+                        </p>
+
+                        {/* Voice Text Preview */}
+                        <div style={{
+                            width: '100%',
+                            padding: 'var(--space-s)',
+                            background: 'var(--mauve-2)',
+                            border: '1px solid var(--mauve-6)',
+                            borderRadius: 'var(--radius-m)',
+                            marginBottom: 'var(--space-l)'
+                        }}>
+                            <p style={{
+                                fontSize: '14px',
+                                color: 'var(--mauve-12)',
+                                fontStyle: 'italic',
+                                margin: 0,
+                                wordBreak: 'break-word'
+                            }}>
+                                "{data.voiceText.length > 60 ? data.voiceText.substring(0, 60) + '...' : data.voiceText}"
+                            </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="action-buttons" style={{ width: '100%' }}>
+                            <button
+                                onClick={handleConfirm}
+                                disabled={isDeleting}
+                                className="btn btn-full"
+                                style={{
+                                    background: 'var(--red-9)',
+                                    color: 'white',
+                                    border: 'none',
+                                    justifyContent: 'center',
+                                    padding: '14px',
+                                    fontWeight: 600,
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    opacity: isDeleting ? 0.6 : 1
+                                }}
+                            >
+                                {isDeleting ? (
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{
+                                            width: 16,
+                                            height: 16,
+                                            border: '2px solid white',
+                                            borderTop: '2px solid transparent',
+                                            borderRadius: '50%',
+                                            animation: 'spin 0.6s linear infinite'
+                                        }} />
+                                        Deleting...
+                                    </span>
+                                ) : 'Delete Voice'}
+                            </button>
+
+                            <button
+                                onClick={handleCancel}
+                                disabled={isDeleting}
+                                className="btn btn-full"
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--mauve-6)',
+                                    color: 'var(--mauve-11)',
+                                    justifyContent: 'center',
+                                    padding: '14px',
+                                    fontWeight: 500,
+                                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                    opacity: isDeleting ? 0.6 : 1
+                                }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <style>{`
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 }

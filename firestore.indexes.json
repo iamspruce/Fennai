@@ -32,7 +32,29 @@
         }
       ]
     },
-     {
+    {
+      "collectionGroup": "voices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "characterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "storageType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "voiceJobs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -65,7 +87,6 @@
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     }
-
   ],
   "fieldOverrides": []
 }

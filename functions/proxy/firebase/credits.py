@@ -59,17 +59,23 @@ def reserve_credits(
     
     @transactional
     def update_in_transaction(transaction):
+        # FIXED: Properly get document snapshot in transaction
+        try:
+            job_snapshot = job_ref.get(transaction=transaction)
+        except Exception:
+            # If document doesn't exist, get() might fail in some Firestore versions
+            job_snapshot = None
+        
         # Check if job already exists (prevent double reservation)
-        job_doc = transaction.get(job_ref)
-        if job_doc.exists:
+        if job_snapshot and job_snapshot.exists:
             raise ValueError("Job already exists - credits may already be reserved")
         
         # Get user document
-        user_doc = transaction.get(user_ref)
-        if not user_doc.exists:
+        user_snapshot = user_ref.get(transaction=transaction)
+        if not user_snapshot.exists:
             raise ValueError("User document not found")
         
-        user_data = user_doc.to_dict() or {}
+        user_data = user_snapshot.to_dict() or {}
         is_pro = user_data.get("isPro", False)
         total_credits = user_data.get("credits", 0)
         pending_credits = user_data.get("pendingCredits", 0)
@@ -141,12 +147,12 @@ def confirm_credit_deduction(
     
     @transactional
     def update_in_transaction(transaction):
-        # Check if already confirmed (idempotency)
-        job_doc = transaction.get(job_ref)
-        if not job_doc.exists:
+        # FIXED: Properly get document snapshot in transaction
+        job_snapshot = job_ref.get(transaction=transaction)
+        if not job_snapshot.exists:
             raise ValueError("Job document not found")
         
-        job_data = job_doc.to_dict()
+        job_data = job_snapshot.to_dict()
         if job_data.get("creditsConfirmed"):
             logger.warning(f"Credits already confirmed for job {job_id}")
             return True, None
@@ -155,11 +161,11 @@ def confirm_credit_deduction(
             raise ValueError("Credits were not reserved for this job")
         
         # Get user document
-        user_doc = transaction.get(user_ref)
-        if not user_doc.exists:
+        user_snapshot = user_ref.get(transaction=transaction)
+        if not user_snapshot.exists:
             raise ValueError("User document not found")
         
-        user_data = user_doc.to_dict() or {}
+        user_data = user_snapshot.to_dict() or {}
         is_pro = user_data.get("isPro", False)
         
         # Update user credits
@@ -210,13 +216,17 @@ def release_credits(
     
     @transactional
     def update_in_transaction(transaction):
-        # Check job status
-        job_doc = transaction.get(job_ref)
-        if not job_doc.exists:
+        # FIXED: Properly get document snapshot in transaction
+        try:
+            job_snapshot = job_ref.get(transaction=transaction)
+        except Exception:
+            job_snapshot = None
+        
+        if not job_snapshot or not job_snapshot.exists:
             logger.warning(f"Job {job_id} not found, skipping credit release")
             return True, None
         
-        job_data = job_doc.to_dict()
+        job_data = job_snapshot.to_dict()
         
         # If credits already confirmed, don't release
         if job_data.get("creditsConfirmed"):
@@ -233,11 +243,11 @@ def release_credits(
             return True, None
         
         # Get user document
-        user_doc = transaction.get(user_ref)
-        if not user_doc.exists:
+        user_snapshot = user_ref.get(transaction=transaction)
+        if not user_snapshot.exists:
             raise ValueError("User document not found")
         
-        user_data = user_doc.to_dict() or {}
+        user_data = user_snapshot.to_dict() or {}
         is_pro = user_data.get("isPro", False)
         
         # Release credits

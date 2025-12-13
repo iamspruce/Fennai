@@ -389,7 +389,7 @@ export async function getVoices(
     userId: string,
     options?: {
         limit?: number;
-        storageType?: 'cloud' | 'local-only' | 'all'; // NEW
+        storageType?: 'cloud' | 'local-only' | 'all';
     }
 ): Promise<{ voices: Voice[] }> {
     return FirestoreMonitor.track(
@@ -397,13 +397,16 @@ export async function getVoices(
         async () => {
             let query = adminDb.collection('voices')
                 .where('userId', '==', userId)
-                .where('characterId', '==', characterId)
-                .orderBy('createdAt', 'desc');
+                .where('characterId', '==', characterId);
 
-            // Filter by storage type if specified
+            // OPTIMIZATION: Only filter by storageType if it's NOT 'all'
+            // This allows us to use the simpler index without storageType
             if (options?.storageType && options.storageType !== 'all') {
                 query = query.where('storageType', '==', options.storageType);
             }
+
+            // Always add orderBy after where clauses
+            query = query.orderBy('createdAt', 'desc');
 
             if (options?.limit) {
                 query = query.limit(options.limit);
@@ -420,7 +423,7 @@ export async function getVoices(
                     text: data.text,
                     audioUrl: data.audioUrl,
                     audioStoragePath: data.audioStoragePath,
-                    storageType: data.storageType || 'local-only', // Default for old records
+                    storageType: data.storageType || 'local-only',
                     isMultiCharacter: data.isMultiCharacter || false,
                     characterIds: data.characterIds,
                     dialogues: data.dialogues,

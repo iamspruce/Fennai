@@ -9,6 +9,7 @@
   border-top-left-radius: var(--radius-l);
   border-top-right-radius: var(--radius-l);
   min-height: 100vh;
+  min-width: 100vw;
 }
 
 @media (min-width: 1280px) {
@@ -730,6 +731,7 @@
 .check-icon {
   color: var(--orange-9, #ff6b35);
 }
+
 .error-message {
   display: flex;
   align-items: center;

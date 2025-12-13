@@ -1,5 +1,5 @@
 ---
-// src/pages/character/[id].astro (UPDATED)
+// src/pages/character/[id].astro (OPTIMIZED)
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import { getCurrentUser } from "@/lib/firebase/auth";
 import {
@@ -32,22 +32,30 @@ const user = await getCurrentUser(Astro);
 
 if (!user || !id) return Astro.redirect("/profile");
 
-const character = await getCharacter(id, user.uid);
-if (!character) return Astro.redirect("/profile");
-
 const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get("page") || "1");
 const limit = 20;
 
-const { characters: allCharacters } = await getCharacters(user.uid);
-const { voices: allVoices } = await getVoices(id, user.uid, {
-  limit: limit * page,
-  storageType: "all",
-});
+// OPTIMIZATION: Run all queries in parallel
+const startTime = Date.now();
+const [character, { characters: allCharacters }, { voices: paginatedVoices }] =
+  await Promise.all([
+    getCharacter(id, user.uid),
+    getCharacters(user.uid, { limit: 100 }), // Limit characters if you have many
+    getVoices(id, user.uid, {
+      limit: limit + 1, // Fetch limit + 1 to check if there are more
+    }),
+  ]);
 
-const startIndex = (page - 1) * limit;
-const voices = allVoices.slice(startIndex, startIndex + limit);
-const hasMore = allVoices.length === limit * page;
+console.log(
+  `[Performance] Character page loaded in ${Date.now() - startTime}ms`,
+);
+
+if (!character) return Astro.redirect("/profile");
+
+// Check if there are more voices
+const hasMore = paginatedVoices.length > limit;
+const voices = hasMore ? paginatedVoices.slice(0, limit) : paginatedVoices;
 const hasPrevious = page > 1;
 
 const userTier = user.isPro ? "pro" : "free";
@@ -196,6 +204,7 @@ const userTier = user.isPro ? "pro" : "free";
 
       // Handle storage based on storageType
       if (data.storageType === "cloud") {
+        // Cloud storage - no local caching needed
       } else if (
         data.storageType === "local-only" &&
         data.audioData &&

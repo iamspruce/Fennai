@@ -37,27 +37,68 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
         const handleVoiceUpdate = (e: CustomEvent) => {
             // Handle both structure: {file, source} and legacy File object
             const detail = e.detail;
-            const file = detail.file || detail;
+            const file = detail?.file || detail;
 
-            if (file) {
-                const validTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3', 'audio/webm'];
-                const maxSize = 10 * 1024 * 1024;
+            console.log('Voice file updated:', { file, type: file?.type, size: file?.size });
 
-                // Check type safely
-                if (!validTypes.includes(file.type) && !file.type.startsWith('audio/')) {
-                    setError('Please upload a valid audio file');
-                    setSelectedFile(null);
-                } else if (file.size > maxSize) {
-                    setError('File size must be less than 10MB');
-                    setSelectedFile(null);
-                } else {
-                    setSelectedFile(file);
-                    setError(null);
-                }
-            } else {
+            if (!file) {
                 // If null is dispatched (reset), clear file
                 setSelectedFile(null);
+                setError(null);
+                return;
             }
+
+            // More permissive audio type checking
+            const validTypes = [
+                'audio/mpeg',      // MP3
+                'audio/wav',       // WAV
+                'audio/wave',      // WAV alternative
+                'audio/x-wav',     // WAV alternative
+                'audio/ogg',       // OGG
+                'audio/webm',      // WebM
+                'audio/mp4',       // M4A
+                'audio/x-m4a',     // M4A alternative
+                'audio/aac',       // AAC
+                'audio/flac',      // FLAC
+            ];
+
+            const maxSize = 10 * 1024 * 1024; // 10MB
+
+            // Check if it's a File object
+            if (!(file instanceof File)) {
+                setError('Invalid file object');
+                setSelectedFile(null);
+                return;
+            }
+
+            // Check file size first
+            if (file.size === 0) {
+                setError('Audio file is empty');
+                setSelectedFile(null);
+                return;
+            }
+
+            if (file.size > maxSize) {
+                setError('File size must be less than 10MB');
+                setSelectedFile(null);
+                return;
+            }
+
+            // Check type - be more permissive
+            const isValidType = validTypes.includes(file.type) ||
+                file.type.startsWith('audio/');
+
+            if (!isValidType) {
+                console.error('Invalid audio type:', file.type);
+                setError(`Invalid audio format: ${file.type || 'unknown'}. Please upload MP3, WAV, OGG, or WebM files.`);
+                setSelectedFile(null);
+                return;
+            }
+
+            // File is valid
+            setSelectedFile(file);
+            setError(null);
+            console.log('Voice file accepted:', file.name);
         };
 
         window.addEventListener('voice-file-updated', handleVoiceUpdate as EventListener);
@@ -142,7 +183,7 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
             if (response.ok) {
                 // Dispatch event to refresh character list
                 window.dispatchEvent(new Event('character-created'));
-                handleClose();
+                window.location.reload();
             } else {
                 setError(data.error || 'Failed to create character');
             }
