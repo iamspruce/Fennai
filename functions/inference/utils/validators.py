@@ -3,7 +3,7 @@
 Input validation using Pydantic models.
 Ensures type safety and validates constraints before processing.
 """
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, TypeVar, Type
 from pydantic import BaseModel, Field, field_validator, ValidationError
 import logging
 
@@ -11,32 +11,15 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T", bound=BaseModel)
+
 
 class InferenceRequest(BaseModel):
     """Validation model for inference requests"""
     
     job_id: str = Field(..., min_length=1, max_length=100)
     uid: str = Field(..., min_length=1, max_length=100)
-    text: str = Field(..., min_length=1, max_length=config.MAX_TEXT_LENGTH)
-    voice_samples: List[str] = Field(..., min_length=1, max_length=config.MAX_VOICE_SAMPLES)
-    cost: int = Field(..., ge=1, le=1000)
     chunk_id: Optional[int] = Field(None, ge=0)
-    total_chunks: int = Field(1, ge=1, le=config.MAX_CHUNKS)
-    
-    @field_validator('text')
-    @classmethod
-    def validate_text(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError('Text cannot be empty')
-        return v
-    
-    @field_validator('voice_samples')
-    @classmethod
-    def validate_voice_samples(cls, v):
-        if not v:
-            raise ValueError('At least one voice sample required')
-        return v
     
     class Config:
         # Allow extra fields but don't include them
@@ -72,18 +55,6 @@ class CloneAudioRequest(BaseModel):
     job_id: str = Field(..., min_length=1, max_length=100)
     uid: str = Field(..., min_length=1, max_length=100)
     chunk_id: int = Field(..., ge=0)
-    speakers: List[str] = Field(..., min_length=1, max_length=4)
-    text: str = Field(..., min_length=1)
-    voice_samples: Dict[str, str] = Field(..., min_length=1)
-    
-    @field_validator('voice_samples')
-    @classmethod
-    def validate_voice_samples(cls, v, info):
-        speakers = info.data.get('speakers', [])
-        missing = [s for s in speakers if s not in v]
-        if missing:
-            raise ValueError(f'Missing voice samples for speakers: {missing}')
-        return v
     
     class Config:
         extra = 'ignore'
@@ -99,7 +70,7 @@ class MergeRequest(BaseModel):
         extra = 'ignore'
 
 
-def validate_request(model_class: type[BaseModel], data: dict) -> BaseModel:
+def validate_request(model_class: Type[T], data: dict) -> T:
     """
     Validate request data against a Pydantic model.
     

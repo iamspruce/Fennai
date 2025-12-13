@@ -1,8 +1,3 @@
-# functions/proxy/routes/voice_clone.py
-"""
-Enhanced voice cloning route with unlimited speaker support.
-Handles multi-speaker dialogue with automatic chunking.
-"""
 from firebase_functions import https_fn, options
 from flask import Request, Response
 import logging
@@ -15,127 +10,58 @@ from firebase.admin import get_current_user
 from firebase.credits import reserve_credits, release_credits, calculate_cost_from_duration
 from utils import (
     MAX_TEXT_LENGTH,
-    MAX_VOICE_SAMPLES,
     MAX_SPEAKERS_PER_CHUNK,
     SECONDS_PER_SPEAKER_ESTIMATE,
     SPEAKER_LIMITS,
     ResponseBuilder,
-    validate_file_size
 )
 from utils.task_helper import create_cloud_task
 
 logger = logging.getLogger(__name__)
 
 
-def get_user_tier(user_data: Optional[Dict[str, Any]]) -> str:
-    """
-    Determine user tier from user document.
-    
-    Args:
-        user_data: User document data
-        
-    Returns:
-        Tier name: 'free', 'pro', or 'enterprise'
-    """
-    if not user_data:
-        return 'free'
-
-    if user_data.get("isEnterprise", False):
-        return 'enterprise'
-    elif user_data.get("isPro", False):
-        return 'pro'
-    return 'free'
-
-
-def count_speakers_in_text(text: str) -> int:
-    """
-    Count unique speakers in multi-character text.
-    
-    Args:
-        text: Multi-line text with "Speaker N: dialogue" format
-        
-    Returns:
-        Number of unique speakers
-    """
-    if not text:
-        return 0
-        
-    lines = text.strip().split('\n')
-    speakers = set()
-    
-    for line in lines:
-        if ':' in line:
-            speaker_label = line.split(':', 1)[0].strip()
-            if speaker_label:
-                speakers.add(speaker_label)
-    
-    return len(speakers)
-
-
 def validate_voice_clone_request(data: dict) -> tuple[bool, Optional[str]]:
-    """
-    Validate voice clone request data.
-    
-    Args:
-        data: Request JSON data
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
+    """Validate voice clone request with character IDs."""
     text = data.get("text", "").strip()
-    voice_samples = data.get("voice_samples", [])
+    character_ids = data.get("character_ids", [])
     
-    # Check required fields
     if not text:
         return False, "Text is required"
     
-    if not voice_samples:
-        return False, "Voice samples are required"
+    if not character_ids:
+        return False, "Character IDs are required"
     
-    # Validate text length
     if len(text) > MAX_TEXT_LENGTH:
         return False, f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"
     
-    # Validate voice samples
-    if not isinstance(voice_samples, list):
-        return False, "Voice samples must be an array"
+    if not isinstance(character_ids, list):
+        return False, "Character IDs must be an array"
     
-    if len(voice_samples) > MAX_VOICE_SAMPLES:
-        return False, f"Too many voice samples (max {MAX_VOICE_SAMPLES})"
-    
-    # Validate voice sample format
-    for idx, sample in enumerate(voice_samples):
-        if not isinstance(sample, str) or len(sample) == 0:
-            return False, f"Invalid voice sample at index {idx}"
+    for idx, char_id in enumerate(character_ids):
+        if not isinstance(char_id, str) or len(char_id) == 0:
+            return False, f"Invalid character ID at index {idx}"
     
     return True, None
 
 
 def chunk_multi_speaker_dialogue(
     text: str, 
-    voice_samples: List[str], 
+    character_ids: List[str], 
     max_speakers: int = MAX_SPEAKERS_PER_CHUNK
 ) -> List[Dict[str, Any]]:
     """
-    Split multi-speaker dialogue into chunks with max speakers per chunk.
-    
-    Args:
-        text: Multi-line dialogue text
-        voice_samples: List of voice sample URLs/data
-        max_speakers: Maximum speakers per chunk
-        
-    Returns:
-        List of chunks with format: [{text, voice_samples, speakers}]
+    Split multi-speaker dialogue into chunks.
+    Now stores character IDs instead of voice samples.
     """
     lines = text.strip().split('\n')
     chunks = []
     current_chunk: Dict[str, Any] = {
         'speakers': [],
         'lines': [],
-        'voice_sample_indices': []
+        'character_indices': []
     }
     
-    speaker_to_sample_idx = {}
+    speaker_to_char_idx = {}
     
     for line in lines:
         if ':' not in line:
@@ -148,81 +74,65 @@ def chunk_multi_speaker_dialogue(
         if not speaker_label or not dialogue:
             continue
         
-        if speaker_label not in speaker_to_sample_idx:
-            speaker_to_sample_idx[speaker_label] = len(speaker_to_sample_idx)
+        if speaker_label not in speaker_to_char_idx:
+            speaker_to_char_idx[speaker_label] = len(speaker_to_char_idx)
         
-        sample_idx = speaker_to_sample_idx[speaker_label]
+        char_idx = speaker_to_char_idx[speaker_label]
         
         if speaker_label in current_chunk['speakers']:
             current_chunk['lines'].append(f"{speaker_label}: {dialogue}")
         elif len(current_chunk['speakers']) < max_speakers:
             current_chunk['speakers'].append(speaker_label)
-            current_chunk['voice_sample_indices'].append(sample_idx)
+            current_chunk['character_indices'].append(char_idx)
             current_chunk['lines'].append(f"{speaker_label}: {dialogue}")
         else:
             if current_chunk['lines']:
                 current_chunk['text'] = '\n'.join(current_chunk['lines'])
-                current_chunk['voice_samples'] = [
-                    voice_samples[idx] for idx in current_chunk['voice_sample_indices']
-                    if idx < len(voice_samples)
+                current_chunk['characterIds'] = [
+                    character_ids[idx] for idx in current_chunk['character_indices']
+                    if idx < len(character_ids)
                 ]
                 chunks.append(current_chunk)
             
             current_chunk = {
                 'speakers': [speaker_label],
                 'lines': [f"{speaker_label}: {dialogue}"],
-                'voice_sample_indices': [sample_idx]
+                'character_indices': [char_idx]
             }
     
     if current_chunk['lines']:
         current_chunk['text'] = '\n'.join(current_chunk['lines'])
-        current_chunk['voice_samples'] = [
-            voice_samples[idx] for idx in current_chunk['voice_sample_indices']
-            if idx < len(voice_samples)
+        current_chunk['characterIds'] = [
+            character_ids[idx] for idx in current_chunk['character_indices']
+            if idx < len(character_ids)
         ]
         chunks.append(current_chunk)
     
     return chunks
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1,
-    timeout_sec=60,
-    max_instances=10)
+@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
 def voice_clone(req: Request) -> Response:
-    """
-    Voice cloning endpoint with unlimited speaker support.
-    - Free: max 4 speakers
-    - Pro: max 12 speakers
-    - Enterprise: unlimited
-    
-    Automatically chunks dialogue for >4 speakers
-    """
+    """Voice cloning endpoint - now uses character IDs."""
     request_id = str(uuid.uuid4())
-    logger.info(f"[{request_id}] Voice clone request received. Method: {req.method}")
+    logger.info(f"[{request_id}] Voice clone request received")
     
     db = get_db()
-
     
-    # Health check
+    # CORS & health check handling (unchanged)
     if req.path == "/health" or req.path.endswith("/health"):
         return Response(
-            ResponseBuilder.success({"status": "healthy", "service": "voice-clone"}),
+            ResponseBuilder.success({"status": "healthy"}),
             status=200,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
-    # CORS preflight
     if req.method == "OPTIONS":
-        return Response(
-            "",
-            status=204,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type",
-                "Access-Control-Max-Age": "3600"
-            }
-        )
+        return Response("", status=204, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        })
     
     if req.method != "POST":
         return Response(
@@ -233,8 +143,7 @@ def voice_clone(req: Request) -> Response:
     
     # Authenticate
     user = get_current_user(req)
-    if not user:
-        logger.warning(f"[{request_id}] Unauthorized request")
+    if not user or not user.get("uid"):
         return Response(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
@@ -242,8 +151,8 @@ def voice_clone(req: Request) -> Response:
         )
     
     uid = user.get("uid")
-    if not uid or not isinstance(uid, str):
-        logger.warning(f"[{request_id}] Unauthorized request: Missing or invalid UID")
+    if not uid:
+        logger.warning(f"[{request_id}] User missing UID")
         return Response(
             ResponseBuilder.error("Unauthorized", request_id=request_id),
             status=401,
@@ -257,8 +166,6 @@ def voice_clone(req: Request) -> Response:
     user_data = user_doc.to_dict() if user_doc.exists else {}
     user_tier = get_user_tier(user_data)
     max_speakers = SPEAKER_LIMITS[user_tier]
-    
-    logger.info(f"[{request_id}] User tier: {user_tier}, max speakers: {max_speakers}")
     
     # Parse request
     try:
@@ -274,15 +181,14 @@ def voice_clone(req: Request) -> Response:
     # Validate request
     is_valid, error_msg = validate_voice_clone_request(data)
     if not is_valid:
-        logger.warning(f"[{request_id}] Validation failed: {error_msg}")
         return Response(
-            ResponseBuilder.error(error_msg or "Invalid request", request_id=request_id),
+            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
     text = data.get("text", "").strip()
-    voice_samples = data.get("voice_samples", [])
+    character_ids = data.get("character_ids", [])
     character_texts = data.get("character_texts")
     
     # Count speakers
@@ -291,66 +197,75 @@ def voice_clone(req: Request) -> Response:
     
     # Validate speaker limit
     if speaker_count > max_speakers:
-        logger.warning(f"[{request_id}] Speaker limit exceeded: {speaker_count} > {max_speakers}")
         return Response(
             ResponseBuilder.error(
-                f"Speaker limit exceeded. Your {user_tier} tier allows max {int(max_speakers)} speakers, but you have {speaker_count}.",
-                details={
-                    "speakerCount": speaker_count,
-                    "maxSpeakers": int(max_speakers),
-                    "userTier": user_tier
-                },
+                f"Speaker limit exceeded. Your {user_tier} tier allows max {int(max_speakers)} speakers.",
                 request_id=request_id
             ),
             status=400,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
-    # Calculate cost
+    # Calculate cost and create job
     estimated_duration = speaker_count * SECONDS_PER_SPEAKER_ESTIMATE
     cost = calculate_cost_from_duration(estimated_duration, speaker_count > 1)
     job_id = str(uuid.uuid4())
-    
-    logger.info(
-        f"[{request_id}] Creating job {job_id}: {speaker_count} speakers, "
-        f"cost {cost}, estimated {estimated_duration}s"
-    )
     
     # Reserve credits
     try:
         success, error_msg = reserve_credits(uid, job_id, cost, data)
         if not success:
-            logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
             return Response(
-                ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id),
+                ResponseBuilder.error(error_msg or "Credit reservation  failed" or "Insufficient credits", request_id=request_id),
                 status=402,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
     except Exception as e:
-        logger.error(f"[{request_id}] Credit reservation exception: {str(e)}")
+        logger.error(f"[{request_id}] Credit reservation failed: {str(e)}")
         return Response(
-            ResponseBuilder.error(f"Credit reservation failed: {str(e)}", request_id=request_id),
+            ResponseBuilder.error("Credit reservation failed", request_id=request_id),
             status=500,
             headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
         )
     
-    # Determine chunking
+    # Create job document FIRST
+    try:
+        job_ref = db.collection("voiceJobs").document(job_id)
+        job_ref.set({
+            "uid": uid,
+            "status": "queued",
+            "cost": cost,
+            "estimatedDuration": estimated_duration,
+            "speakerCount": speaker_count,
+            "createdAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP
+        })
+    except Exception as e:
+        logger.error(f"[{request_id}] Failed to create job: {str(e)}")
+        release_credits(uid, job_id, cost)
+        return Response(
+            ResponseBuilder.error("Failed to create job", request_id=request_id),
+            status=500,
+            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        )
+    
+    # Handle chunking
     needs_chunking = speaker_count > MAX_SPEAKERS_PER_CHUNK
     chunks = []
     
     if needs_chunking:
-        chunks = chunk_multi_speaker_dialogue(text, voice_samples, MAX_SPEAKERS_PER_CHUNK)
+        chunks = chunk_multi_speaker_dialogue(text, character_ids, MAX_SPEAKERS_PER_CHUNK)
         logger.info(f"[{request_id}] Split into {len(chunks)} chunks")
         
         try:
-            job_ref = db.collection("voiceJobs").document(job_id)
             job_ref.update({
                 "totalChunks": len(chunks),
                 "completedChunks": 0,
                 "chunks": [
                     {
                         "chunkId": i,
-                        "text": chunk['text'],
+                        "text": chunk['text'],  # ✅ TEXT IS STORED IN EACH CHUNK
+                        "characterIds": chunk['characterIds'],  # Store IDs, not samples
                         "speakers": chunk['speakers'],
                         "status": "pending"
                     }
@@ -366,17 +281,12 @@ def voice_clone(req: Request) -> Response:
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
         
-        # Queue chunks
-        for i, chunk in enumerate(chunks):
+        # Queue chunks (minimal payload)
+        for i in range(len(chunks)):
             task_payload = {
                 "job_id": job_id,
                 "uid": uid,
-                "cost": cost,
-                "chunk_id": i,
-                "total_chunks": len(chunks),
-                "text": chunk['text'],
-                "voice_samples": chunk['voice_samples'],
-                "request_id": request_id
+                "chunk_id": i
             }
             
             success, error = create_cloud_task(task_payload, endpoint="/inference")
@@ -384,31 +294,38 @@ def voice_clone(req: Request) -> Response:
                 logger.error(f"[{request_id}] Failed to queue chunk {i}: {error}")
                 release_credits(uid, job_id, cost)
                 return Response(
-                    ResponseBuilder.error("Failed to queue generation task", request_id=request_id),
+                    ResponseBuilder.error("Failed to queue task", request_id=request_id),
                     status=500,
                     headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
                 )
     
     else:
-        # Single chunk
+        # Single chunk - store text AND character IDs
+        try:
+            job_ref.update({
+                "text": text,  # TEXT IS STORED HERE!
+                "characterIds": character_ids  # Store IDs instead of samples
+            })
+        except Exception as e:
+            logger.error(f"[{request_id}] Failed to update job: {str(e)}")
+            release_credits(uid, job_id, cost)
+            return Response(
+                ResponseBuilder.error("Failed to store job data", request_id=request_id),
+                status=500,
+                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            )
+        
         task_payload = {
             "job_id": job_id,
-            "uid": uid,
-            "cost": cost,
-            "text": text,
-            "voice_samples": voice_samples,
-            "request_id": request_id
+            "uid": uid
         }
-        
-        if character_texts:
-            task_payload["character_texts"] = character_texts
         
         success, error = create_cloud_task(task_payload, endpoint="/inference")
         if not success:
             logger.error(f"[{request_id}] Failed to queue task: {error}")
             release_credits(uid, job_id, cost)
             return Response(
-                ResponseBuilder.error("Failed to queue generation task", request_id=request_id),
+                ResponseBuilder.error("Failed to queue task", request_id=request_id),
                 status=500,
                 headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
             )
@@ -419,7 +336,7 @@ def voice_clone(req: Request) -> Response:
         ResponseBuilder.success({
             "jobId": job_id,
             "status": "queued",
-            "message": "Voice generation queued successfully",
+            "message": "Voice generation queued",
             "speakerCount": speaker_count,
             "chunkCount": len(chunks) if needs_chunking else 1,
             "estimatedCost": cost
@@ -427,3 +344,29 @@ def voice_clone(req: Request) -> Response:
         status=202,
         headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
     )
+
+
+def get_user_tier(user_data: Optional[Dict[str, Any]]) -> str:
+    """Determine user tier."""
+    if not user_data:
+        return 'free'
+    if user_data.get("isEnterprise", False):
+        return 'enterprise'
+    elif user_data.get("isPro", False):
+        return 'pro'
+    return 'free'
+
+
+def count_speakers_in_text(text: str) -> int:
+    """Count unique speakers in text."""
+    if not text:
+        return 0
+    lines = text.strip().split('\n')
+    speakers = set()
+    for line in lines:
+        if ':' in line:
+            speaker_label = line.split(':', 1)[0].strip()
+            if speaker_label:
+                speakers.add(speaker_label)
+    return len(speakers)
+

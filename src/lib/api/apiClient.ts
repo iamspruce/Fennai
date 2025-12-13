@@ -134,30 +134,8 @@ async function getAuthToken(): Promise<string | null> {
     }
 }
 
-// Fetch character audio sample
-async function fetchCharacterAudio(characterId: string): Promise<File> {
-    const response = await fetch(`/api/characters/${characterId}/audio`);
 
-    if (!response.ok) {
-        throw new Error(`Failed to fetch audio for character ${characterId}`);
-    }
 
-    const audioBlob = await response.blob();
-    return new File([audioBlob], 'sample.mp3', { type: 'audio/mpeg' });
-}
-
-// Convert audio file to base64
-async function fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-}
 
 // Listen to job status updates from Firestore
 function listenToJobStatus(
@@ -296,8 +274,10 @@ export async function generateScript(
 
 // ==================== VOICE CLONING ====================
 
+
 /**
  * Clone a single character's voice
+ * NOW SENDS CHARACTER ID INSTEAD OF BASE64
  */
 export async function cloneSingleVoice(
     params: CloneVoiceParams,
@@ -312,9 +292,8 @@ export async function cloneSingleVoice(
         throw new Error('Not authenticated');
     }
 
-    const audioFile = await fetchCharacterAudio(params.characterId);
-    const voiceBase64 = await fileToBase64(audioFile);
-
+    // NO MORE FETCHING AUDIO OR CONVERTING TO BASE64!
+    // Just send the character ID
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',
         headers: {
@@ -323,7 +302,7 @@ export async function cloneSingleVoice(
         },
         body: JSON.stringify({
             text: params.text,
-            voice_samples: [voiceBase64],
+            character_ids: [params.characterId],  // Send ID instead of base64
         }),
     });
 
@@ -333,14 +312,14 @@ export async function cloneSingleVoice(
     }
 
     const result = await response.json();
-    const jobId = result.job_id;
+    const jobId = result.jobId;  // Changed from job_id to jobId (camelCase from backend)
 
     if (!jobId) {
         throw new Error('No job ID returned from server');
     }
 
     return new Promise((resolve, reject) => {
-        const unsubscribe = listenToJobStatus(
+        listenToJobStatus(
             jobId,
             async (status) => {
                 if (onStatusUpdate) {
@@ -368,6 +347,7 @@ export async function cloneSingleVoice(
 
 /**
  * Clone multiple character voices (dialogue)
+ * NOW SENDS CHARACTER IDS INSTEAD OF BASE64
  */
 export async function cloneMultiVoice(
     params: MultiCloneVoiceParams,
@@ -382,15 +362,9 @@ export async function cloneMultiVoice(
         throw new Error('Not authenticated');
     }
 
-    // Fetch all character audio samples in parallel
-    const audioFiles = await Promise.all(
-        params.characters.map(char => fetchCharacterAudio(char.characterId))
-    );
-
-    // Convert all audio files to base64
-    const voiceSamples = await Promise.all(
-        audioFiles.map(file => fileToBase64(file))
-    );
+    // NO MORE FETCHING AUDIO FILES OR CONVERTING TO BASE64!
+    // Just extract character IDs
+    const characterIds = params.characters.map(char => char.characterId);
 
     // Format text with speaker labels
     const text = params.characters
@@ -405,7 +379,7 @@ export async function cloneMultiVoice(
         },
         body: JSON.stringify({
             text: text,
-            voice_samples: voiceSamples,
+            character_ids: characterIds,  // Send IDs instead of base64 samples
             character_texts: params.characters.map(c => c.text),
         }),
     });
@@ -416,14 +390,14 @@ export async function cloneMultiVoice(
     }
 
     const result = await response.json();
-    const jobId = result.job_id;
+    const jobId = result.jobId;
 
     if (!jobId) {
         throw new Error('No job ID returned from server');
     }
 
     return new Promise((resolve, reject) => {
-        const unsubscribe = listenToJobStatus(
+        listenToJobStatus(
             jobId,
             async (status) => {
                 if (onStatusUpdate) {

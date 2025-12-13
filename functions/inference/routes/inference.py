@@ -1,17 +1,20 @@
 # functions/inference/routes/inference.py
 """
-Main inference route for voice cloning.
-Handles both single-chunk (≤4 speakers) and multi-chunk (>4 speakers) generation.
+Inference route that downloads voice samples from Firebase Storage.
+No more passing large base64 data through Cloud Tasks!
 """
 import logging
 import time
 import torch
 import numpy as np
+import requests
 from io import BytesIO
+from typing import Optional
 
 import soundfile as sf
 from flask import request, jsonify, g
-from firebase_admin import firestore
+from firebase_admin import firestore, storage
+from google.cloud.firestore import SERVER_TIMESTAMP
 from pydantic import ValidationError
 
 from config import config
@@ -33,16 +36,163 @@ logger = logging.getLogger(__name__)
 db = firestore.client()
 
 
-def inference_route(processor, model):
+def download_voice_sample_from_firebase(character_id: str) -> bytes:
     """
-    Main inference endpoint with multi-chunk support.
+    Download voice sample from Firebase Storage.
     
     Args:
-        processor: VibeVoice processor instance (injected from main.py)
-        model: VibeVoice model instance (injected from main.py)
-    
+        character_id: Character document ID
+        
     Returns:
-        Tuple of (response_dict, status_code)
+        Audio bytes
+        
+    Raises:
+        Exception if character not found or download fails
+    """
+    try:
+        # Get character document
+        char_doc = db.collection("characters").document(character_id).get()
+        
+        if not char_doc.exists:
+            raise Exception(f"Character {character_id} not found")
+        
+        char_data = char_doc.to_dict()
+        if not char_data:
+            raise Exception(f"Character {character_id} has no data")
+        
+        sample_url = char_data.get("sampleAudioUrl")
+        storage_path = char_data.get("sampleAudioStoragePath")
+        
+        if not sample_url and not storage_path:
+            raise Exception(f"No audio sample found for character {character_id}")
+        
+        # Try direct URL first (if it's a public URL or signed URL)
+        if sample_url:
+            if sample_url.startswith("http"):
+                response = requests.get(sample_url, timeout=30)
+                if response.status_code == 200:
+                    return response.content
+        
+        # Fall back to Storage path
+        if storage_path:
+            bucket = storage.bucket()
+            blob = bucket.blob(storage_path)
+            
+            if not blob.exists():
+                raise Exception(f"Audio file not found in storage: {storage_path}")
+            
+            return blob.download_as_bytes()
+        
+        raise Exception(f"Could not download audio for character {character_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to download voice sample for {character_id}: {str(e)}")
+        raise
+
+
+def download_original_speaker_sample(job_id: str, speaker_id: str, job_type: str) -> bytes:
+    """
+    Download original speaker voice sample from job data.
+    
+    Args:
+        job_id: Job ID
+        speaker_id: Speaker ID
+        job_type: 'voice' or 'dubbing'
+        
+    Returns:
+        Audio bytes
+    """
+    try:
+        if job_type == "dubbing":
+            job_ref = db.collection("dubbingJobs").document(job_id)
+        else:
+            job_ref = db.collection("voiceJobs").document(job_id)
+        
+        job_doc = job_ref.get()
+        if not job_doc.exists:
+            raise Exception(f"Job {job_id} not found")
+        
+        job_data = job_doc.to_dict()
+        if not job_data:
+            raise Exception(f"Job {job_id} is empty")
+            
+        speaker_samples = job_data.get("speakerVoiceSamples", {})
+        
+        sample_url = speaker_samples.get(speaker_id)
+        if not sample_url:
+            raise Exception(f"No sample found for speaker {speaker_id}")
+        
+        # Download from URL
+        if sample_url.startswith("gs://"):
+            # Parse GCS URL
+            path_parts = sample_url.replace("gs://", "").split("/", 1)
+            bucket_name = path_parts[0]
+            blob_path = path_parts[1]
+            
+            bucket = storage.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+            return blob.download_as_bytes()
+        
+        elif sample_url.startswith("http"):
+            response = requests.get(sample_url, timeout=30)
+            if response.status_code == 200:
+                return response.content
+        
+        raise Exception(f"Invalid sample URL format: {sample_url}")
+        
+    except Exception as e:
+        logger.error(f"Failed to download original speaker sample: {str(e)}")
+        raise
+
+
+def fetch_voice_samples_from_character_ids(
+    character_ids: list[str],
+    job_id: Optional[str] = None,
+    job_type: str = "voice"
+) -> list[bytes]:
+    """
+    Download voice samples from Firebase based on character IDs.
+    
+    Args:
+        character_ids: List of character IDs or "original:speakerId" markers
+        job_id: Job ID (needed for original speaker samples)
+        job_type: 'voice' or 'dubbing'
+        
+    Returns:
+        List of audio bytes in same order as character_ids
+    """
+    voice_samples = []
+    
+    for char_id in character_ids:
+        if char_id is None:
+            logger.warning("Skipping None character ID")
+            continue
+        
+        try:
+            # Handle original speaker samples
+            if isinstance(char_id, str) and char_id.startswith("original:"):
+                speaker_id = char_id.split(":", 1)[1]
+                audio_bytes = download_original_speaker_sample(job_id, speaker_id, job_type)
+                voice_samples.append(audio_bytes)
+            else:
+                # Regular character
+                audio_bytes = download_voice_sample_from_firebase(char_id)
+                voice_samples.append(audio_bytes)
+        
+        except Exception as e:
+            logger.error(f"Failed to download sample for {char_id}: {str(e)}")
+            raise Exception(f"Failed to load voice sample: {str(e)}")
+    
+    return voice_samples
+
+
+def inference_route(processor, model):
+    """
+    Unified inference endpoint - downloads voice samples from Firebase.
+    
+    Args:
+        processor: VibeVoice processor
+        model: VibeVoice model
     """
     # Validate request
     try:
@@ -53,46 +203,123 @@ def inference_route(processor, model):
     
     job_id = req.job_id
     uid = req.uid
-    reserved_cost = req.cost
-    text = req.text
-    voice_samples_b64 = req.voice_samples
     chunk_id = req.chunk_id
-    total_chunks = req.total_chunks
     
     g.job_id = job_id
     is_multi_chunk = chunk_id is not None
     
     if is_multi_chunk:
-        logger.info(f"Processing chunk {chunk_id+1}/{total_chunks}")
+        logger.info(f"Processing chunk {chunk_id+1} for job {job_id}")
     
     start_time = time.time()
+    reserved_cost = 0
     
     try:
+        # Try voiceJobs first, then dubbingJobs
         job_ref = db.collection("voiceJobs").document(job_id)
+        job_doc = job_ref.get()
+        job_type = "voice"
         
-        # Update status
-        if is_multi_chunk:
+        if not job_doc.exists:
+            job_ref = db.collection("dubbingJobs").document(job_id)
             job_doc = job_ref.get()
-            if job_doc.exists:
-                job_data = job_doc.to_dict()
+            job_type = "dubbing"
+        
+        if not job_doc.exists:
+            logger.error(f"Job {job_id} not found")
+            return jsonify({"error": "Job not found"}), 404
+        
+        job_data = job_doc.to_dict()
+        if not job_data or job_data.get("uid") != uid:
+            logger.error(f"Unauthorized or invalid job {job_id}")
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        logger.info(f"Processing {job_type} job {job_id}")
+        
+        # Get text and character IDs from job
+        if job_type == "voice":
+            if is_multi_chunk:
+                chunks = job_data.get("chunks", [])
+                if chunk_id >= len(chunks):
+                    return jsonify({"error": "Chunk not found"}), 404
+                
+                chunk_data = chunks[chunk_id]
+                text = chunk_data.get("text")
+                character_ids = chunk_data.get("characterIds", [])
+                total_chunks = len(chunks)
+            else:
+                text = job_data.get("text")
+                character_ids = job_data.get("characterIds", [])
+                total_chunks = 1
+            
+            reserved_cost = job_data.get("cost", 0)
+        
+        else:  # dubbing job
+            cloned_chunks = job_data.get("clonedAudioChunks", [])
+            chunk_data = None
+            for chunk in cloned_chunks:
+                if chunk["chunkId"] == chunk_id:
+                    chunk_data = chunk
+                    break
+            
+            if not chunk_data:
+                return jsonify({"error": "Chunk not found"}), 404
+            
+            text = chunk_data.get("text")
+            character_ids = chunk_data.get("characterIds", [])
+            total_chunks = len(cloned_chunks)
+        
+        if not text:
+            return jsonify({"error": "No text in job"}), 400
+        
+        if not character_ids:
+            return jsonify({"error": "No character IDs in job"}), 400
+        
+        logger.info(f"Job {job_id}: Downloading {len(character_ids)} voice samples")
+        
+        # Download voice samples from Firebase
+        try:
+            voice_samples_bytes = fetch_voice_samples_from_character_ids(
+                character_ids,
+                job_id,
+                job_type
+            )
+        except Exception as e:
+            logger.error(f"Failed to download voice samples: {str(e)}")
+            update_job_status(job_id, "failed", error=f"Failed to load voice samples: {str(e)}")
+            release_credits(uid, job_id, reserved_cost)
+            return jsonify({"error": "Failed to load voice samples"}), 500
+        
+        logger.info(f"Job {job_id}: Successfully downloaded {len(voice_samples_bytes)} samples")
+        
+        # Update job status
+        if job_type == "voice":
+            if is_multi_chunk:
                 chunks = job_data.get("chunks", [])
                 if chunk_id < len(chunks):
                     chunks[chunk_id]["status"] = "processing"
-                    job_ref.update({
-                        "chunks": chunks,
-                        "status": "processing"
-                    })
+                    job_ref.update({"chunks": chunks, "status": "processing"})
+            else:
+                update_job_status(job_id, "processing")
         else:
-            update_job_status(job_id, "processing")
+            cloned_chunks = job_data.get("clonedAudioChunks", [])
+            for chunk in cloned_chunks:
+                if chunk["chunkId"] == chunk_id:
+                    chunk["status"] = "processing"
+            job_ref.update({
+                "clonedAudioChunks": cloned_chunks,
+                "updatedAt": SERVER_TIMESTAMP
+            })
         
-        # Format text
+        # Format text for inference
         final_text = text
         is_multi_character = detect_multi_speaker(text)
         
         if not is_multi_character:
             final_text = format_text_for_vibevoice(text)
         
-        voice_samples = map_speakers_to_voice_samples(final_text, voice_samples_b64)
+        # Map voice samples (already in bytes format)
+        voice_samples = map_speakers_to_voice_samples(final_text, voice_samples_bytes)
         
         # Run inference
         inputs = processor(
@@ -106,7 +333,7 @@ def inference_route(processor, model):
             generated = model.generate(**inputs, do_sample=False, cfg_scale=1.3)
             audio = processor.decode(generated, skip_special_tokens=True)
         
-        # Post-process audio
+        # Post-process
         audio_np = audio.cpu().numpy().squeeze()
         audio_np = np.clip(audio_np, -1.0, 1.0)
         if np.abs(audio_np).max() > 0:
@@ -115,29 +342,28 @@ def inference_route(processor, model):
         audio_duration = len(audio_np) / config.SAMPLE_RATE
         inference_time = time.time() - start_time
         
-        # Save audio to buffer
+        # Save to buffer
         buffer = BytesIO()
         sf.write(buffer, audio_np, config.SAMPLE_RATE, format="WAV")
         audio_bytes = buffer.getvalue()
         
         # Upload to GCS
-        if is_multi_chunk:
-            blob_name = f"jobs/{job_id}/chunk_{chunk_id}.wav"
+        if job_type == "dubbing":
+            gcs_bucket = config.GCS_DUBBING_BUCKET
+            blob_name = f"jobs/{job_id}/chunks/chunk_{chunk_id}.wav"
         else:
-            blob_name = f"jobs/{job_id}/output.wav"
+            gcs_bucket = config.GCS_BUCKET
+            if is_multi_chunk:
+                blob_name = f"jobs/{job_id}/chunk_{chunk_id}.wav"
+            else:
+                blob_name = f"jobs/{job_id}/output.wav"
         
-        blob = upload_to_gcs(
-            config.GCS_BUCKET,
-            blob_name,
-            audio_bytes,
-            content_type="audio/wav"
-        )
-        
-        chunk_url = f"gs://{config.GCS_BUCKET}/{blob_name}"
+        upload_to_gcs(gcs_bucket, blob_name, audio_bytes, content_type="audio/wav")
+        chunk_url = f"gs://{gcs_bucket}/{blob_name}"
         
         logger.info(f"Job {job_id}: Generated {audio_duration:.2f}s in {inference_time:.2f}s")
         
-        # Handle multi-chunk completion
+        # Handle completion
         if is_multi_chunk:
             return _handle_multi_chunk_completion(
                 job_ref,
@@ -148,7 +374,8 @@ def inference_route(processor, model):
                 chunk_url,
                 audio_duration,
                 reserved_cost,
-                is_multi_character
+                is_multi_character,
+                job_type
             )
         else:
             return _handle_single_chunk_completion(
@@ -185,54 +412,66 @@ def _handle_multi_chunk_completion(
     chunk_url: str,
     audio_duration: float,
     reserved_cost: int,
-    is_multi_character: bool
+    is_multi_character: bool,
+    job_type: str = "voice"
 ):
-    """Handle completion of a single chunk in multi-chunk job"""
+    """Handle completion of multi-chunk job."""
     job_doc = job_ref.get()
     job_data = job_doc.to_dict()
-    chunks = job_data.get("chunks", [])
     
-    # Update this chunk
-    if chunk_id < len(chunks):
-        chunks[chunk_id]["status"] = "completed"
-        chunks[chunk_id]["audioUrl"] = chunk_url
-        chunks[chunk_id]["duration"] = audio_duration
+    chunks = []
+    cloned_chunks = []
     
-    completed_chunks = sum(1 for c in chunks if c.get("status") == "completed")
-    
-    job_ref.update({
-        "chunks": chunks,
-        "completedChunks": completed_chunks
-    })
+    if job_type == "voice":
+        chunks = job_data.get("chunks", [])
+        if chunk_id < len(chunks):
+            chunks[chunk_id]["status"] = "completed"
+            chunks[chunk_id]["audioUrl"] = chunk_url
+            chunks[chunk_id]["duration"] = audio_duration
+        
+        completed_chunks = sum(1 for c in chunks if c.get("status") == "completed")
+        job_ref.update({"chunks": chunks, "completedChunks": completed_chunks})
+        chunk_urls = [c["audioUrl"] for c in chunks if c.get("audioUrl")]
+        gcs_bucket = config.GCS_BUCKET
+        
+    else:  # dubbing
+        cloned_chunks = job_data.get("clonedAudioChunks", [])
+        for chunk in cloned_chunks:
+            if chunk["chunkId"] == chunk_id:
+                chunk["status"] = "completed"
+                chunk["audioUrl"] = chunk_url
+                chunk["duration"] = audio_duration
+                break
+        
+        completed_chunks = sum(1 for c in cloned_chunks if c.get("status") == "completed")
+        job_ref.update({
+            "clonedAudioChunks": cloned_chunks,
+            "completedChunks": completed_chunks,
+            "updatedAt": SERVER_TIMESTAMP
+        })
+        chunk_urls = [c["audioUrl"] for c in cloned_chunks if c.get("audioUrl")]
+        gcs_bucket = config.GCS_DUBBING_BUCKET
     
     logger.info(f"Job {job_id}: Completed {completed_chunks}/{total_chunks} chunks")
     
-    # If all chunks done, merge them
+    # Merge if all done
     if completed_chunks == total_chunks:
         logger.info(f"Job {job_id}: All chunks complete, merging...")
         
-        chunk_urls = [c["audioUrl"] for c in chunks if c.get("audioUrl")]
-        merged_audio = merge_audio_chunks_from_gcs(config.GCS_BUCKET, chunk_urls)
-        
-        # Upload merged audio
+        merged_audio = merge_audio_chunks_from_gcs(gcs_bucket, chunk_urls)
         merged_blob_name = f"jobs/{job_id}/output.wav"
-        merged_blob = upload_to_gcs(
-            config.GCS_BUCKET,
-            merged_blob_name,
-            merged_audio.getvalue(),
-            content_type="audio/wav"
-        )
+        upload_to_gcs(gcs_bucket, merged_blob_name, merged_audio.getvalue(), content_type="audio/wav")
         
-        signed_url = generate_signed_url(config.GCS_BUCKET, merged_blob_name, 24)
+        signed_url = generate_signed_url(gcs_bucket, merged_blob_name, 24)
         
-        # Calculate total duration and actual cost
-        total_duration = sum(c.get("duration", 0) for c in chunks)
+        if job_type == "voice":
+            total_duration = sum(c.get("duration", 0) for c in chunks)
+        else:
+            total_duration = sum(c.get("duration", 0) for c in cloned_chunks)
+        
         actual_cost = calculate_cost_from_duration(total_duration, is_multi_character)
-        
-        # Update credits
         confirm_credit_deduction(uid, job_id, actual_cost)
         
-        # Mark job complete
         job_ref.update({
             "status": "completed",
             "audioUrl": signed_url,
@@ -240,7 +479,7 @@ def _handle_multi_chunk_completion(
             "actualCost": actual_cost,
             "reservedCost": reserved_cost,
             "creditRefund": max(0, reserved_cost - actual_cost),
-            "updatedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP
         })
         
         logger.info(f"Job {job_id}: Completed with merged audio")
@@ -264,15 +503,12 @@ def _handle_single_chunk_completion(
     reserved_cost: int,
     is_multi_character: bool
 ):
-    """Handle completion of single-chunk job"""
-    # Calculate actual cost
+    """Handle single chunk completion."""
     actual_cost = calculate_cost_from_duration(audio_duration, is_multi_character)
     confirm_credit_deduction(uid, job_id, actual_cost)
     
-    # Generate signed URL
     signed_url = generate_signed_url(config.GCS_BUCKET, blob_name, 24)
     
-    # Update job
     job_ref.update({
         "status": "completed",
         "audioUrl": signed_url,
@@ -282,7 +518,7 @@ def _handle_single_chunk_completion(
         "actualCost": actual_cost,
         "reservedCost": reserved_cost,
         "creditRefund": max(0, reserved_cost - actual_cost),
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     logger.info(f"Job {job_id}: Completed")

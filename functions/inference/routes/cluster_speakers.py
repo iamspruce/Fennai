@@ -9,6 +9,7 @@ from utils.speaker_clustering import cluster_speakers_embeddings, generate_speak
 from utils.validators import validate_request, ClusterSpeakersRequest
 from middleware import extract_job_info, get_job_document, update_job_status
 from pydub import AudioSegment
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -112,7 +113,7 @@ def cluster_speakers_route():
         "status": "transcribing_done",
         "step": "Transcription complete. Ready for dubbing settings.",
         "progress": 55,
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     logger.info(f"Job {job_id}: Speaker clustering complete")

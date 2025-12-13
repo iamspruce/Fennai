@@ -56,7 +56,6 @@ from routes.inference import inference_route
 from routes.extract_audio import extract_audio_route
 from routes.cluster_speakers import cluster_speakers_route
 from routes.translate_transcript import translate_transcript_route
-from routes.clone_audio import clone_audio_route
 from routes.merge_audio import merge_audio_route
 from routes.merge_video import merge_video_route
 
@@ -237,13 +236,6 @@ def translate_transcript():
     """Translate transcript to target language"""
     return translate_transcript_route()
 
-
-@app.route("/clone-audio", methods=["POST"])
-@require_internal_token
-@handle_job_errors(collection="dubbingJobs")
-def clone_audio():
-    """Clone audio for dubbing chunk"""
-    return clone_audio_route()
 
 
 @app.route("/merge-audio", methods=["POST"])

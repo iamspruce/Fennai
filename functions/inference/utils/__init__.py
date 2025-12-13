@@ -7,7 +7,11 @@ from io import BytesIO
 import base64
 import re
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Union, Sequence
+
+# ... (omitted check_flash_attn_available, etc. if I'm not editing them, but replace_file_content needs context)
+# Actually, I should just edit the imports first.
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +41,10 @@ def preprocess_audio(audio_bytes: bytes, target_sr: int = 24000) -> np.ndarray:
         audio = audio / np.abs(audio).max() * 0.95
     return audio.astype(np.float32)
 
-def b64_to_voice_sample(b64_str: str) -> np.ndarray:
-    return preprocess_audio(base64.b64decode(b64_str))
+def b64_to_voice_sample(sample: Union[str, bytes]) -> np.ndarray:
+    if isinstance(sample, str):
+        return preprocess_audio(base64.b64decode(sample))
+    return preprocess_audio(sample)
 
 # === 3. Detect Multi-Speaker (Keep – it's perfect) ===
 def detect_multi_speaker(text: str) -> bool:
@@ -58,7 +64,7 @@ def format_text_for_vibevoice(text: str) -> str:
 # === 5. Map Voice Samples to Speaker Order (Keep – perfect) ===
 def map_speakers_to_voice_samples(
     text: str,
-    voice_samples_b64: List[str]
+    voice_samples: Sequence[Union[str, bytes]]
 ) -> List[np.ndarray]:
     """
     Returns voice samples in correct order based on first appearance in text.
@@ -77,17 +83,17 @@ def map_speakers_to_voice_samples(
 
         if speaker_label not in seen_speakers:
             idx = len(seen_speakers)
-            if idx < len(voice_samples_b64):
-                sample = b64_to_voice_sample(voice_samples_b64[idx])
+            if idx < len(voice_samples):
+                sample = b64_to_voice_sample(voice_samples[idx])
             else:
                 logger.warning(f"Not enough voice samples, reusing first one")
-                sample = b64_to_voice_sample(voice_samples_b64[0])
+                sample = b64_to_voice_sample(voice_samples[0])
             seen_speakers[speaker_label] = sample
             ordered_samples.append(sample)
 
     # Fallback: if no valid speakers found, use all provided samples
-    if not ordered_samples and voice_samples_b64:
-        return [b64_to_voice_sample(b64) for b64 in voice_samples_b64]
+    if not ordered_samples and voice_samples:
+        return [b64_to_voice_sample(s) for s in voice_samples]
 
     return ordered_samples
 
