@@ -8,6 +8,7 @@ import base64
 import logging
 from typing import Dict, Any, Optional, Tuple
 from google.cloud import tasks_v2
+from google.protobuf import duration_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def create_cloud_task(
         task_payload: JSON payload for the task
         endpoint: Cloud Run endpoint path (e.g., "/inference", "/extract-audio")
         dispatch_deadline_seconds: Maximum time for task execution
-        max_retry_attempts: Maximum number of retry attempts
+        max_retry_attempts: Maximum number of retry attempts (unused - configured at queue level)
         
     Returns:
         Tuple of (success, error_message)
@@ -75,34 +76,35 @@ def create_cloud_task(
         client = get_tasks_client()
         queue_path = get_queue_path()
         
-        # Build task configuration
-        task = {
-            "http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "url": f"{CLOUD_RUN_URL}{endpoint}",
-                "headers": {
-                    "Content-Type": "application/json",
-                    "X-Internal-Token": INTERNAL_TOKEN,
-                },
-                "body": base64.b64encode(
-                    json.dumps(task_payload).encode()
-                ).decode(),
+        # Encode the task payload
+        payload_bytes = json.dumps(task_payload).encode()
+        
+        # Build HTTP request
+        http_request = tasks_v2.HttpRequest(
+            http_method=tasks_v2.HttpMethod.POST,
+            url=f"{CLOUD_RUN_URL}{endpoint}",
+            headers={
+                "Content-Type": "application/json",
+                "X-Internal-Token": INTERNAL_TOKEN,
             },
-            "dispatch_deadline": {"seconds": dispatch_deadline_seconds},
-            "retry_config": {
-                "max_attempts": max_retry_attempts,
-                "max_retry_duration": {"seconds": dispatch_deadline_seconds * 2},
-                "min_backoff": {"seconds": 10},
-                "max_backoff": {"seconds": 300},
-                "max_doublings": 3,
-            }
-        }
+            body=payload_bytes,
+        )
         
         # Add OIDC token if service account is configured
         if SERVICE_ACCOUNT:
-            task["http_request"]["oidc_token"] = {
-                "service_account_email": SERVICE_ACCOUNT
-            }
+            http_request.oidc_token = tasks_v2.OidcToken(
+                service_account_email=SERVICE_ACCOUNT
+            )
+        
+        # Create dispatch deadline duration
+        dispatch_deadline = duration_pb2.Duration()
+        dispatch_deadline.seconds = dispatch_deadline_seconds
+        
+        # Build task (retry_config is NOT supported per-task, only at queue level)
+        task = tasks_v2.Task(
+            http_request=http_request,
+            dispatch_deadline=dispatch_deadline,
+        )
         
         # Create the task
         response = client.create_task(

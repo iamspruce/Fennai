@@ -1,7 +1,7 @@
 """
 Enhanced AI Script Generator with improved prompts for better quality.
 """
-from firebase_functions import https_fn
+from firebase_functions import https_fn, options
 import logging
 import os
 import uuid
@@ -108,7 +108,9 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
         logger.error(f"Failed to log script generation: {str(e)}")
 
 
-@https_fn.on_request()
+@https_fn.on_request(memory=options.MemoryOption.MB_1GB,
+    timeout_sec=60,
+    max_instances=10)
 def generate_script(req: https_fn.Request) -> https_fn.Response:
     """Generate AI script using Gemini 1.5 Pro."""
     request_id = str(uuid.uuid4())

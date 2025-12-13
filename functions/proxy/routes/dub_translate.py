@@ -2,7 +2,7 @@
 """
 Enhanced dubbing translation route with validation and error handling.
 """
-from firebase_functions import https_fn
+from firebase_functions import https_fn, options
 import logging
 import os
 import uuid
@@ -61,7 +61,9 @@ def validate_translation_request(data: dict) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-@https_fn.on_request()
+@https_fn.on_request(memory=options.MemoryOption.MB_1GB,
+    timeout_sec=60,
+    max_instances=10)
 def dub_translate(req: https_fn.Request) -> https_fn.Response:
     """
     Start translation for dubbing job.

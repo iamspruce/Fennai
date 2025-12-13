@@ -3,7 +3,7 @@
 Enhanced voice cloning route with unlimited speaker support.
 Handles multi-speaker dialogue with automatic chunking.
 """
-from firebase_functions import https_fn
+from firebase_functions import https_fn, options
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
@@ -184,7 +184,9 @@ def chunk_multi_speaker_dialogue(
     return chunks
 
 
-@https_fn.on_request()
+@https_fn.on_request(memory=options.MemoryOption.MB_1GB,
+    timeout_sec=60,
+    max_instances=10)
 def voice_clone(req: https_fn.Request) -> https_fn.Response:
     """
     Voice cloning endpoint with unlimited speaker support.
