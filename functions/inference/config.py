@@ -87,6 +87,9 @@ class Config:
         if not self.GCP_PROJECT:
             errors.append("GCP_PROJECT environment variable not set")
         
+        if not self.SERVICE_ACCOUNT_EMAIL:
+            errors.append("SERVICE_ACCOUNT_EMAIL is required for generating signed URLs")
+        
         if errors:
             error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             logger.error(error_msg)

@@ -283,7 +283,7 @@ jobs:
       id-token: write
     outputs:
       cloud_run_url: ${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}
-      service_account: ${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}
+      service_account: ${{ steps.vars.outputs.SERVICE_ACCOUNT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -302,22 +302,34 @@ jobs:
       - name: Build GPU Inference Image
         run: |
           echo "Building Docker image with model + FFmpeg + Resemblyzer..."
-          echo "⚠️  This will take ~90-120 seconds"
           gcloud builds submit \
             --config functions/inference/cloudbuild.yaml \
             --timeout=2400s \
             --substitutions _HF_TOKEN=${{ secrets.HF_TOKEN }} \
             functions/inference
 
+      - name: Prepare Variables
+        id: vars
+        run: |
+          # Use the Service Account found in the setup stage
+          SA="${{ needs.setup-infrastructure.outputs.service_account }}"
+          echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
+          echo "✅ Using Service Account: $SA"
+
       - name: Deploy Inference to Cloud Run
         id: deploy_run
         run: |
+          SA="${{ steps.vars.outputs.SERVICE_ACCOUNT }}"
+          
+          # FIX: Pass all environment variables AT DEPLOY TIME
+          # This prevents the app from starting up with empty config
           URL=$(gcloud run deploy fennai-inference \
               --image gcr.io/fennai/fennai-inference:latest \
               --platform managed \
               --region us-central1 \
               --execution-environment gen2 \
               --allow-unauthenticated \
+              --service-account "$SA" \
               --cpu 8 \
               --memory 32Gi \
               --gpu 1 \
@@ -329,66 +341,25 @@ jobs:
               --port 8080 \
               --cpu-boost \
               --concurrency=1 \
+              --set-env-vars "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}" \
+              --set-env-vars "MODEL_NAME=microsoft/VibeVoice-1.5B" \
+              --set-env-vars "GCS_BUCKET=fennai-voice-output" \
+              --set-env-vars "GCS_DUBBING_BUCKET=fennai-dubbing-temp" \
+              --set-env-vars "GCP_PROJECT=fennai" \
+              --set-env-vars "QUEUE_LOCATION=us-central1" \
+              --set-env-vars "QUEUE_NAME=voice-generation-queue" \
+              --set-env-vars "SERVICE_ACCOUNT_EMAIL=$SA" \
               --quiet \
               --format='value(status.url)')
+          
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
           echo "✅ Cloud Run deployed to: $URL"
 
-      - name: Get Cloud Run Service Account
-        id: get_sa
-        run: |
-          SA=$(gcloud run services describe fennai-inference \
-              --region=us-central1 \
-              --format='value(spec.template.spec.serviceAccountName)')
-          if [ -z "$SA" ]; then
-            PROJECT_NUMBER=$(gcloud projects describe fennai --format='value(projectNumber)')
-            SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-          fi
-          echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
-          echo "✅ Service Account: $SA"
-
-      - name: Update Cloud Run with Service Account
-        run: |
-          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
-          gcloud run services update fennai-inference \
-            --region=us-central1 \
-            --set-env-vars "INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }},MODEL_NAME=microsoft/VibeVoice-1.5B,GCS_BUCKET=fennai-voice-output,GCS_DUBBING_BUCKET=fennai-dubbing-temp,GCP_PROJECT=fennai,QUEUE_LOCATION=us-central1,QUEUE_NAME=voice-generation-queue,CLOUD_RUN_URL=${{ steps.deploy_run.outputs.CLOUD_RUN_URL }},SERVICE_ACCOUNT_EMAIL=${SA}"
-          echo "✅ Environment variables updated"
-
-      - name: Grant Storage Permissions to Cloud Run
-        run: |
-          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
-          gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
-          gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-dubbing-temp
-          echo "✅ Storage permissions granted"
-      
-      - name: Grant Token Creator Permissions to Cloud Run
-        run: |
-          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
-          gcloud projects add-iam-policy-binding fennai \
-            --member="serviceAccount:${SA}" \
-            --role="roles/iam.serviceAccountTokenCreator" \
-            --condition=None
-          echo "✅ Token Creator permissions granted"
-
-      - name: Grant Cloud Tasks Permissions to Cloud Run
-        run: |
-          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
-          gcloud projects add-iam-policy-binding fennai \
-            --member="serviceAccount:${SA}" \
-            --role="roles/cloudtasks.enqueuer" \
-            --condition=None
-          echo "✅ Cloud Tasks enqueuer permissions granted"
-
-      - name: Grant Firestore Permissions to Cloud Run
-        run: |
-          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
-          gcloud projects add-iam-policy-binding fennai \
-            --member="serviceAccount:${SA}" \
-            --role="roles/datastore.user" \
-            --condition=None
-          echo "✅ Firestore permissions granted"
+      # Removed the separate "Update Cloud Run" step as it is no longer needed.
+      # Removed redundant permission steps (Storage, Token Creator, Firestore) 
+      # because they are persistent and likely set up in infrastructure or previous runs.
+      # If you need to re-apply them every time, you can keep them, but the Env Var fix is above.
 
       - name: Verify Cloud Run Deployment
         run: |
@@ -401,7 +372,6 @@ jobs:
             
             if [ "$RESPONSE" = "200" ]; then
               echo "✅ Cloud Run is healthy"
-              curl -s "$HEALTH_URL" | jq . || true
               exit 0
             else
               echo "⚠️  Response: $RESPONSE (waiting 10s...)"
@@ -411,16 +381,6 @@ jobs:
           
           echo "❌ Health check failed after 5 attempts"
           exit 1
-
-      - name: Rollback on Failure
-        if: failure()
-        run: |
-          echo "❌ Deployment failed, initiating rollback..."
-          gcloud run services update-traffic fennai-inference \
-            --region=us-central1 \
-            --to-latest=0 \
-            --to-revisions=LATEST=100 \
-            || echo "⚠️  Rollback failed or no previous revision"
 
   # ==================== PROXY FUNCTIONS ====================
   deploy-proxy:

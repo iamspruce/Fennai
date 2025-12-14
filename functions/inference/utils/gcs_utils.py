@@ -159,20 +159,15 @@ def generate_signed_url(
     bucket_name: str,
     blob_path: str,
     expiration_hours: int = 24,
-    service_account_email: Optional[str] = None  # <--- ADDED parameter
+    service_account_email: Optional[str] = None
 ) -> str:
-    """
-    Generate signed URL for GCS object.
-    
-    Args:
-        bucket_name: GCS bucket name
-        blob_path: Path within bucket
-        expiration_hours: URL expiration time in hours
-        service_account_email: Service account email for signing (required in Cloud Run)
-    
-    Returns:
-        Signed URL string
-    """
+    # Validate input to prevent obscure AttributeError
+    if not service_account_email:
+        raise ValueError(
+            "service_account_email is required to sign URLs on Cloud Run "
+            "(credentials do not contain a private key)."
+        )
+
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_path)
     
@@ -180,11 +175,11 @@ def generate_signed_url(
         version="v4",
         expiration=timedelta(hours=expiration_hours),
         method="GET",
-        service_account_email=service_account_email,  # <--- ADDED argument
+        service_account_email=service_account_email,
     )
     
     return url
-
+    
 def parse_gcs_url(url: str) -> tuple[str, str]:
     """
     Parse GCS URL into bucket and blob path.
