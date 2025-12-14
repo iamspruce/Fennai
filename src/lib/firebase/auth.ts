@@ -71,6 +71,7 @@ export async function getCurrentUser(Astro: AstroGlobal): Promise<User | null> {
             displayName: data.displayName,
             avatarUrl: data.avatarUrl,
             credits: data.credits,
+            pendingCredits: data.pendingCredits,
             isPro: data.isPro,
             proExpiresAt: data.proExpiresAt?.toDate(),
             createdAt: data.createdAt.toDate(),
@@ -98,6 +99,7 @@ export async function createOrUpdateUserDocument(uid: string, data: {
             displayName: data.displayName || data.email?.split('@')[0] || 'User',
             avatarUrl: data.photoURL || null,
             credits: 10, // Starting credits
+            pendingCredits: 0,
             isPro: false,
             createdAt: new Date(),
             updatedAt: new Date(),

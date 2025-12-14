@@ -4,6 +4,7 @@ export interface User {
     displayName: string;
     avatarUrl?: string;
     credits: number;
+    pendingCredits: number;
     isPro: boolean;
     proExpiresAt?: Date;
     createdAt: Date;

@@ -314,7 +314,8 @@ export async function cloneSingleVoice(
     }
 
     const result = await response.json();
-    const jobId = result.jobId;
+    console.log('🔍 Full API Response:', JSON.stringify(result, null, 2));
+    const jobId = result.data?.jobId;
 
     if (!jobId) {
         throw new Error('No job ID returned from server');

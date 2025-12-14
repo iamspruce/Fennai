@@ -6,22 +6,18 @@ service cloud.firestore {
     // HELPER FUNCTIONS
     // =========================================================================
     
-    // Check if user is authenticated
     function isSignedIn() {
       return request.auth != null;
     }
     
-    // Check if the authenticated user matches the provided userId
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
     
-    // Validate that required fields exist in the data
     function hasRequiredFields(data, fields) {
       return fields.toSet().difference(data.keys().toSet()).size() == 0;
     }
     
-    // Check if field values are of correct type
     function isValidString(value) {
       return value is string && value.size() > 0 && value.size() <= 500;
     }
@@ -39,8 +35,31 @@ service cloud.firestore {
     // =========================================================================
     
     match /users/{userId} {
-      // Users can only read and write their own profile
       allow read, write: if isSignedIn() && isOwner(userId);
+    }
+    
+    // =========================================================================
+    // VOICE JOBS (NEW)
+    // =========================================================================
+    
+    match /voiceJobs/{jobId} {
+      // Users can read their own jobs for real-time status updates
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      // Only backend can create/update jobs
+      allow create, update, delete: if false;
+    }
+    
+    // =========================================================================
+    // DUBBING JOBS (NEW)
+    // =========================================================================
+    
+    match /dubbingJobs/{jobId} {
+      // Users can read their own dubbing jobs
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      // Only backend can create/update jobs
+      allow create, update, delete: if false;
     }
     
     // =========================================================================
@@ -119,6 +138,18 @@ service cloud.firestore {
       // Delete: User must own the voice
       allow delete: if isSignedIn() && 
                        resource.data.userId == request.auth.uid;
+    }
+    
+    // =========================================================================
+    // VOICE LIBRARY (Read-only for clients)
+    // =========================================================================
+    
+    match /voiceLibrary/{voiceId} {
+      // Anyone can read voice library (public catalog)
+      allow read: if true;
+      
+      // Only admins can write (handled via Admin SDK)
+      allow write: if false;
     }
   }
 }

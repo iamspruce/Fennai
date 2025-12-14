@@ -171,6 +171,9 @@ def fetch_voice_samples_from_character_ids(
         try:
             # Handle original speaker samples
             if isinstance(char_id, str) and char_id.startswith("original:"):
+                if not job_id:
+                    raise ValueError("Job ID is required for original speaker samples")
+                
                 speaker_id = char_id.split(":", 1)[1]
                 audio_bytes = download_original_speaker_sample(job_id, speaker_id, job_type)
                 voice_samples.append(audio_bytes)
@@ -330,11 +333,18 @@ def inference_route(processor, model):
         ).to(config.DEVICE)
         
         with torch.inference_mode():
-            generated = model.generate(**inputs, do_sample=False, cfg_scale=1.3)
-            audio = processor.decode(generated, skip_special_tokens=True)
+            generated = model.generate(
+                **inputs,
+                max_new_tokens=None,
+                cfg_scale=1.3,
+                tokenizer=processor.tokenizer,
+                generation_config={'do_sample': False},
+                verbose=False,
+            )
+            # Extract audio - it's already a tensor, convert once
+            audio_np = generated.speech_outputs[0].cpu().numpy().squeeze()
         
         # Post-process
-        audio_np = audio.cpu().numpy().squeeze()
         audio_np = np.clip(audio_np, -1.0, 1.0)
         if np.abs(audio_np).max() > 0:
             audio_np = audio_np / np.abs(audio_np).max() * config.NORMALIZATION_HEADROOM
@@ -401,7 +411,6 @@ def inference_route(processor, model):
         update_job_status(job_id, "failed", error=str(e))
         release_credits(uid, job_id, reserved_cost)
         return jsonify({"error": "Internal error"}), 500
-
 
 def _handle_multi_chunk_completion(
     job_ref,
