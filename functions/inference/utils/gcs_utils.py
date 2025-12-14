@@ -11,6 +11,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import storage
 from google.api_core import retry, exceptions
+import datetime
+import google.auth.impersonated_credentials
+import google.auth.transport.requests
+
 from pydub import AudioSegment
 
 from config import config
@@ -155,6 +159,21 @@ def download_to_file(bucket_name: str, blob_path: str, destination: str) -> None
     logger.debug(f"Downloaded to {destination}")
 
 
+def get_impersonated_credentials():
+    scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    credentials, project = google.auth.default(scopes=scopes)
+    if credentials.token is None:
+        credentials.refresh(google.auth.transport.requests.Request())
+    signing_credentials = google.auth.impersonated_credentials.Credentials(
+        source_credentials=credentials,
+        target_principal=credentials.service_account_email,
+        target_scopes=scopes,
+        lifetime=3600,
+        delegates=[credentials.service_account_email]
+    )
+    return signing_credentials
+
+
 def generate_signed_url(
     bucket_name: str,
     blob_path: str,
@@ -170,12 +189,11 @@ def generate_signed_url(
     blob = bucket.blob(blob_path)
     
     # Use IAM-based signing instead of private key
+    credentials=get_impersonated_credentials()
     url = blob.generate_signed_url(
-        version="v4",
+        credentials=credentials,
         expiration=timedelta(hours=expiration_hours),
         method="GET",
-        access_token=None,  # Will use IAM
-        service_account_email=service_account_email,
     )
     
     return url
