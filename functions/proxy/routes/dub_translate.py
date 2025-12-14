@@ -13,8 +13,9 @@ from google.cloud.firestore import SERVER_TIMESTAMP
 from firebase.admin import get_current_user
 from utils import ResponseBuilder
 from utils.task_helper import create_cloud_task
+from utils.logging_config import get_logger, log_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Supported languages for translation
 SUPPORTED_LANGUAGES = {

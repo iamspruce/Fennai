@@ -14,8 +14,9 @@ from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
 from firebase.credits import check_credits_available, confirm_credit_deduction
+from utils.logging_config import get_logger, log_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 

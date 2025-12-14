@@ -24,8 +24,9 @@ from utils import (
     sanitize_filename
 )
 from utils.task_helper import create_cloud_task
+from utils.logging_config import get_logger, log_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Environment
 GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")

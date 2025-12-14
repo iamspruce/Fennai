@@ -56,7 +56,7 @@ export default function CloningModal() {
         } else if (err.message?.includes('credits') || err.message?.includes('balance')) {
           friendlyError += "Looks like you're running low on credits. Time for a top-up! 💳";
         } else if (err.message?.includes('rate limit')) {
-          friendlyError += "Whoa there, speedy! You've hit our rate limit. Take a breather and try again in a few minutes. 🐌";
+          friendlyError += "Whoa there, speedy! You've hit our rate limit. Take a breather and try again in a few minutes. 🌊";
         } else if (err.message?.includes('invalid') || err.message?.includes('format')) {
           friendlyError += "Hmm, something's not quite right with the audio format. Make sure it's a supported file type! 🎵";
         } else if (err.message?.includes('too large') || err.message?.includes('size')) {
@@ -87,6 +87,11 @@ export default function CloningModal() {
   if (!isOpen) return null;
 
   const showMultiChunkProgress = jobStatus?.totalChunks && jobStatus.totalChunks > 1;
+
+  // Check if job is retrying
+  const isRetrying = jobStatus?.status === 'retrying';
+  const retryCount = (jobStatus as any)?.retryCount || 0;
+  const maxRetries = (jobStatus as any)?.maxRetries || 2;
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -157,7 +162,7 @@ export default function CloningModal() {
                 width: 64,
                 height: 64,
                 border: '4px solid var(--mauve-4)',
-                borderTop: '4px solid var(--orange-9)',
+                borderTop: isRetrying ? '4px solid var(--yellow-9)' : '4px solid var(--orange-9)',
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite'
               }} />
@@ -172,11 +177,53 @@ export default function CloningModal() {
               }}>
                 {jobStatus?.status === 'queued' && 'Queuing generation...'}
                 {jobStatus?.status === 'processing' && 'Generating voice...'}
+                {jobStatus?.status === 'retrying' && `Retrying generation... (${retryCount}/${maxRetries})`}
                 {!jobStatus && 'Preparing...'}
               </h4>
 
+              {/* Retry Warning */}
+              {isRetrying && (
+                <div style={{
+                  width: '100%',
+                  padding: 'var(--space-m)',
+                  background: 'var(--yellow-2)',
+                  border: '1px solid var(--yellow-6)',
+                  borderRadius: 'var(--radius-m)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 'var(--space-s)'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-xs)',
+                    fontSize: '14px',
+                    color: 'var(--yellow-11)'
+                  }}>
+                    <Icon icon="lucide:alert-triangle" width={18} />
+                    <span style={{ fontWeight: 600 }}>
+                      Generation had an issue - automatically retrying
+                    </span>
+                  </div>
+                  <p style={{
+                    fontSize: '13px',
+                    color: 'var(--yellow-11)',
+                    margin: 0
+                  }}>
+                    {(jobStatus as any)?.lastError || 'Our servers are working to resolve this.'}
+                  </p>
+                  <p style={{
+                    fontSize: '13px',
+                    color: 'var(--yellow-11)',
+                    margin: 0
+                  }}>
+                    Retry {retryCount} of {maxRetries} - Your credits are safe!
+                  </p>
+                </div>
+              )}
+
               {/* Multi-chunk progress */}
-              {showMultiChunkProgress && (
+              {showMultiChunkProgress && !isRetrying && (
                 <div style={{
                   width: '100%',
                   padding: 'var(--space-m)',
@@ -228,7 +275,7 @@ export default function CloningModal() {
               )}
 
               {/* Cost info */}
-              {jobStatus?.reservedCost && (
+              {jobStatus?.reservedCost && !isRetrying && (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -251,7 +298,10 @@ export default function CloningModal() {
                 margin: 0,
                 textAlign: 'center'
               }}>
-                This may take a few moments...
+                {isRetrying
+                  ? "Don't worry - we'll keep trying automatically..."
+                  : "This may take a few moments..."
+                }
               </p>
             </div>
           ) : null}

@@ -10,7 +10,7 @@ const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_VOICE_CLONE_
 
 export interface JobStatus {
     jobId: string;
-    status: 'queued' | 'processing' | 'completed' | 'failed';
+    status: 'queued' | 'processing' | 'retrying' | 'completed' | 'failed';  // Added 'retrying'
     audioUrl?: string;
     error?: string;
     expiresAt?: Date;
@@ -22,7 +22,14 @@ export interface JobStatus {
     speakerCount?: number;
     totalChunks?: number;
     completedChunks?: number;
+    // Retry fields
+    retryCount?: number;
+    maxRetries?: number;
+    lastError?: string;
+    nextRetryAttempt?: number;
+    retriesExhausted?: boolean;
 }
+
 
 // ==================== VOICE CLONING TYPES ====================
 
@@ -239,6 +246,8 @@ export async function generateScript(
     }
 
     const token = await getAuthToken();
+
+    console.log('🚀 Token:', token);
     if (!token) {
         throw new Error('Not authenticated');
     }
@@ -261,12 +270,14 @@ export async function generateScript(
 
     const result = await response.json();
 
-    if (!result.script) {
+    console.log('🔍 Full API Response:', JSON.stringify(result, null, 2));
+
+    if (!result.data?.script) {
         throw new Error('No script returned from API');
     }
 
     return {
-        script: result.script,
+        script: result.data.script,
         generationId: result.generationId,
         requestId: result.requestId,
     };
@@ -314,7 +325,6 @@ export async function cloneSingleVoice(
     }
 
     const result = await response.json();
-    console.log('🔍 Full API Response:', JSON.stringify(result, null, 2));
     const jobId = result.data?.jobId;
 
     if (!jobId) {
@@ -393,7 +403,7 @@ export async function cloneMultiVoice(
     }
 
     const result = await response.json();
-    const jobId = result.jobId;
+    const jobId = result.data?.jobId;
 
     if (!jobId) {
         throw new Error('No job ID returned from server');
