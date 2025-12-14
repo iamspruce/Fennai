@@ -1,5 +1,5 @@
 from firebase_functions import https_fn, options
-from flask import Request, Response, jsonify
+from flask import Request, jsonify
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
@@ -119,34 +119,38 @@ def voice_clone(req: Request):
     
     db = get_db()
     
-    # CORS & health check handling (unchanged)
-    if req.path == "/health" or req.path.endswith("/health"):
-        return jsonify(
-            ResponseBuilder.success({"status": "healthy"}),
-        ), 200, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+    # CORS headers to use in all responses
+    cors_headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    }
     
+    # Health check handling
+    if req.path == "/health" or req.path.endswith("/health"):
+        return jsonify(ResponseBuilder.success({"status": "healthy"})), 200, cors_headers
+    
+    # OPTIONS request for CORS
     if req.method == "OPTIONS":
-        return jsonify("", 204, {
+        options_headers = {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
-        }), 204, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        }
+        return "", 204, options_headers
     
+    # Only allow POST
     if req.method != "POST":
-        return jsonify(
-            ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, cors_headers
     
     # Authenticate
     user = get_current_user(req)
     if not user or not user.get("uid"):
-        return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -161,14 +165,12 @@ def voice_clone(req: Request):
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
     
     # Validate request
     is_valid, error_msg = validate_voice_clone_request(data)
     if not is_valid:
-        return jsonify(
-            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)), 400, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)), 400, cors_headers
     
     text = data.get("text", "").strip()
     character_ids = data.get("character_ids", [])
@@ -180,12 +182,10 @@ def voice_clone(req: Request):
     
     # Validate speaker limit
     if speaker_count > max_speakers:
-        return jsonify(
-            ResponseBuilder.error(
-                f"Speaker limit exceeded. Your {user_tier} tier allows max {int(max_speakers)} speakers.",
-                request_id=request_id
-            ), 400, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error(
+            f"Speaker limit exceeded. Your {user_tier} tier allows max {int(max_speakers)} speakers.",
+            request_id=request_id
+        )), 400, cors_headers
     
     # Calculate cost and create job
     estimated_duration = speaker_count * SECONDS_PER_SPEAKER_ESTIMATE
@@ -196,13 +196,14 @@ def voice_clone(req: Request):
     try:
         success, error_msg = reserve_credits(uid, job_id, cost, data)
         if not success:
-            return jsonify(
-                ResponseBuilder.error(error_msg or "Credit reservation  failed" or "Insufficient credits", request_id=request_id)), 402, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            return jsonify(ResponseBuilder.error(
+                error_msg or "Credit reservation failed", 
+                request_id=request_id
+            )), 402, cors_headers
         
     except Exception as e:
         logger.error(f"[{request_id}] Credit reservation failed: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Credit reservation failed", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Credit reservation failed", request_id=request_id)), 500, cors_headers
     
     # Create job document FIRST
     try:
@@ -219,8 +220,7 @@ def voice_clone(req: Request):
     except Exception as e:
         logger.error(f"[{request_id}] Failed to create job: {str(e)}")
         release_credits(uid, job_id, cost)
-        return jsonify(
-            ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, cors_headers
     
     # Handle chunking
     needs_chunking = speaker_count > MAX_SPEAKERS_PER_CHUNK
@@ -237,8 +237,8 @@ def voice_clone(req: Request):
                 "chunks": [
                     {
                         "chunkId": i,
-                        "text": chunk['text'],  # ✅ TEXT IS STORED IN EACH CHUNK
-                        "characterIds": chunk['characterIds'],  # Store IDs, not samples
+                        "text": chunk['text'],
+                        "characterIds": chunk['characterIds'],
                         "speakers": chunk['speakers'],
                         "status": "pending"
                     }
@@ -248,8 +248,7 @@ def voice_clone(req: Request):
         except Exception as e:
             logger.error(f"[{request_id}] Failed to update job: {str(e)}")
             release_credits(uid, job_id, cost)
-            return jsonify(
-                ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            return jsonify(ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, cors_headers
         
         # Queue chunks (minimal payload)
         for i in range(len(chunks)):
@@ -263,21 +262,19 @@ def voice_clone(req: Request):
             if not success:
                 logger.error(f"[{request_id}] Failed to queue chunk {i}: {error}")
                 release_credits(uid, job_id, cost)
-                return jsonify(
-                    ResponseBuilder.error("Failed to queue task", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+                return jsonify(ResponseBuilder.error("Failed to queue task", request_id=request_id)), 500, cors_headers
     
     else:
         # Single chunk - store text AND character IDs
         try:
             job_ref.update({
-                "text": text,  # TEXT IS STORED HERE!
-                "characterIds": character_ids  # Store IDs instead of samples
+                "text": text,
+                "characterIds": character_ids
             })
         except Exception as e:
             logger.error(f"[{request_id}] Failed to update job: {str(e)}")
             release_credits(uid, job_id, cost)
-            return jsonify(
-                ResponseBuilder.error("Failed to store job data", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            return jsonify(ResponseBuilder.error("Failed to store job data", request_id=request_id)), 500, cors_headers
         
         task_payload = {
             "job_id": job_id,
@@ -288,20 +285,18 @@ def voice_clone(req: Request):
         if not success:
             logger.error(f"[{request_id}] Failed to queue task: {error}")
             release_credits(uid, job_id, cost)
-            return jsonify(
-                ResponseBuilder.error("Failed to queue task", request_id=request_id)), 500, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+            return jsonify(ResponseBuilder.error("Failed to queue task", request_id=request_id)), 500, cors_headers
     
     logger.info(f"[{request_id}] Job {job_id} queued successfully")
     
-    return jsonify(
-        ResponseBuilder.success({
-            "jobId": job_id,
-            "status": "queued",
-            "message": "Voice generation queued",
-            "speakerCount": speaker_count,
-            "chunkCount": len(chunks) if needs_chunking else 1,
-            "estimatedCost": cost
-        }, request_id=request_id)), 202, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+    return jsonify(ResponseBuilder.success({
+        "jobId": job_id,
+        "status": "queued",
+        "message": "Voice generation queued",
+        "speakerCount": speaker_count,
+        "chunkCount": len(chunks) if needs_chunking else 1,
+        "estimatedCost": cost
+    }, request_id=request_id)), 202, cors_headers
 
 
 def get_user_tier(user_data: Optional[Dict[str, Any]]) -> str:
@@ -327,4 +322,3 @@ def count_speakers_in_text(text: str) -> int:
             if speaker_label:
                 speakers.add(speaker_label)
     return len(speakers)
-

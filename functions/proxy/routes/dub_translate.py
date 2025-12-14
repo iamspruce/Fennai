@@ -3,9 +3,8 @@
 Enhanced dubbing translation route with validation and error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, Response, jsonify
+from flask import Request, jsonify
 import logging
-import os
 import uuid
 from typing import Optional
 from firebase.db import get_db
@@ -62,10 +61,8 @@ def validate_translation_request(data: dict) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1,
-    timeout_sec=60,
-    max_instances=10)
-def dub_translate(req: Request) -> Response:
+@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
+def dub_translate(req: Request):
     """
     Start translation for dubbing job.
     Translates transcript segments to target language.
@@ -74,36 +71,30 @@ def dub_translate(req: Request) -> Response:
     logger.info(f"[{request_id}] Dubbing translate request received")
 
     db = get_db()
-
+    
+    # CORS headers
+    cors_headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    }
     
     # CORS
     if req.method == "OPTIONS":
-        return jsonify(
-            "",
-            status=204,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type",
-            }
-        )
+        options_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+        return "", 204, options_headers
     
     if req.method != "POST":
-        return jsonify(
-            ResponseBuilder.error("Method not allowed", request_id=request_id),
-            status=405,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, cors_headers
     
     # Auth
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id),
-            status=401,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     uid = user.get("uid")
     logger.info(f"[{request_id}] User authenticated: {uid}")
@@ -113,31 +104,19 @@ def dub_translate(req: Request) -> Response:
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Invalid JSON", request_id=request_id),
-            status=400,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
     
     # Validate request
     is_valid, error_msg = validate_translation_request(data)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return jsonify(
-            ResponseBuilder.error(error_msg or "Invalid request", request_id=request_id),
-            status=400,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error(error_msg or "Invalid request", request_id=request_id)), 400, cors_headers
     
     job_id = data.get("jobId")
     target_language = data.get("targetLanguage")
 
     if not isinstance(job_id, str) or not isinstance(target_language, str):
-        return jsonify(
-            ResponseBuilder.error("Invalid job ID or target language", request_id=request_id),
-            status=400,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Invalid job ID or target language", request_id=request_id)), 400, cors_headers
     
     # Get job document
     try:
@@ -146,58 +125,34 @@ def dub_translate(req: Request) -> Response:
         
         if not job_doc.exists:
             logger.warning(f"[{request_id}] Job not found: {job_id}")
-            return jsonify(
-                ResponseBuilder.error("Job not found", request_id=request_id),
-                status=404,
-                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-            )
+            return jsonify(ResponseBuilder.error("Job not found", request_id=request_id)), 404, cors_headers
         
         job_data = job_doc.to_dict()
 
         if not job_data:
             logger.error(f"[{request_id}] Job data is None for {job_id}")
-            return jsonify(
-                ResponseBuilder.error("Job data not found", request_id=request_id),
-                status=500,
-                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-            )
+            return jsonify(ResponseBuilder.error("Job data not found", request_id=request_id)), 500, cors_headers
         
         # Verify ownership
         if job_data.get("uid") != uid:
             logger.warning(f"[{request_id}] Unauthorized access attempt to job {job_id}")
-            return jsonify(
-                ResponseBuilder.error("Unauthorized", request_id=request_id),
-                status=403,
-                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-            )
+            return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 403, cors_headers
         
         # Verify job status
         if job_data.get("status") not in ["transcribed", "speaker_clustered"]:
-            return jsonify(
-                ResponseBuilder.error(
-                    f"Job not ready for translation. Current status: {job_data.get('status')}",
-                    request_id=request_id
-                ),
-                status=400,
-                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-            )
+            return jsonify(ResponseBuilder.error(
+                f"Job not ready for translation. Current status: {job_data.get('status')}",
+                request_id=request_id
+            )), 400, cors_headers
         
         transcript = job_data.get("transcript", [])
         
         if not transcript:
-            return jsonify(
-                ResponseBuilder.error("No transcript available", request_id=request_id),
-                status=400,
-                headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-            )
+            return jsonify(ResponseBuilder.error("No transcript available", request_id=request_id)), 400, cors_headers
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to get job: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Failed to retrieve job", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Failed to retrieve job", request_id=request_id)), 500, cors_headers
     
     # Update job status
     try:
@@ -215,11 +170,7 @@ def dub_translate(req: Request) -> Response:
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to update job: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Failed to update job", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Failed to update job", request_id=request_id)), 500, cors_headers
     
     # Queue translation task
     try:
@@ -238,16 +189,12 @@ def dub_translate(req: Request) -> Response:
         
         logger.info(f"[{request_id}] Queued translation task for job {job_id}")
         
-        return jsonify(
-            ResponseBuilder.success({
-                "jobId": job_id,
-                "status": "translating",
-                "targetLanguage": target_language,
-                "message": "Translation started"
-            }, request_id=request_id),
-            status=202,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.success({
+            "jobId": job_id,
+            "status": "translating",
+            "targetLanguage": target_language,
+            "message": "Translation started"
+        }, request_id=request_id)), 202, cors_headers
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to queue translation: {str(e)}")
@@ -259,8 +206,4 @@ def dub_translate(req: Request) -> Response:
             "updatedAt": SERVER_TIMESTAMP
         })
         
-        return jsonify(
-            ResponseBuilder.error("Failed to queue translation", request_id=request_id),
-            status=500,
-            headers={"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify(ResponseBuilder.error("Failed to queue translation", request_id=request_id)), 500, cors_headers

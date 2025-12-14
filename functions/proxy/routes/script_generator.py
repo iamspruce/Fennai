@@ -2,7 +2,7 @@
 Enhanced AI Script Generator with improved prompts for better quality.
 """
 from firebase_functions import https_fn, options
-from flask import Request, Response
+from flask import Request, jsonify
 import logging
 import os
 import uuid
@@ -109,51 +109,40 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
         logger.error(f"Failed to log script generation: {str(e)}")
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1,
-    timeout_sec=60,
-    max_instances=10)
-def generate_script(req: Request) -> Response:
+@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
+def generate_script(req: Request):
     """Generate AI script using Gemini 1.5 Pro."""
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Script generation request received")
     
+    # CORS headers
+    cors_headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    }
+    
     # CORS
     if req.method == "OPTIONS":
-        return Response(
-            "",
-            status=204,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type",
-            }
-        )
+        options_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+        return "", 204, options_headers
     
     if req.method != "POST":
-        return Response(
-            {"error": "Method not allowed"},
-            status=405,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": "Method not allowed"}), 405, cors_headers
     
     # Auth
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return Response(
-            {"error": "Unauthorized"},
-            status=401,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": "Unauthorized"}), 401, cors_headers
     
     uid = user.get("uid")
     if not uid or not isinstance(uid, str):
         logger.error(f"[{request_id}] Invalid user uid")
-        return Response(
-            {"error": "Unauthorized"},
-            status=401,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": "Unauthorized"}), 401, cors_headers
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -162,52 +151,32 @@ def generate_script(req: Request) -> Response:
         client = _get_gemini_client()
     except ValueError as e:
         logger.error(f"[{request_id}] {str(e)}")
-        return Response(
-            {"error": "AI service not configured"},
-            status=500,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": "AI service not configured"}), 500, cors_headers
     
     # Parse request
     try:
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return Response(
-            {"error": "Invalid JSON"},
-            status=400,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": "Invalid JSON"}), 400, cors_headers
     
     # Validate
     is_valid, error_msg = validate_script_request(data)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return Response(
-            {"error": error_msg},
-            status=400,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": error_msg}), 400, cors_headers
     
     # Rate limit
     allowed, rate_error = check_rate_limit(uid)
     if not allowed:
         logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
-        return Response(
-            {"error": rate_error},
-            status=429,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": rate_error}), 429, cors_headers
     
     # Credits
     has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
     if not has_credits:
         logger.warning(f"[{request_id}] Insufficient credits for {uid}")
-        return Response(
-            {"error": credit_error or "Insufficient credits"},
-            status=402,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({"error": credit_error or "Insufficient credits"}), 402, cors_headers
     
     # Extract parameters
     mode = data.get("mode", "single")
@@ -252,30 +221,19 @@ def generate_script(req: Request) -> Response:
             f"generation_id={generation_id}"
         )
         
-        return Response(
-            {
-                "success": True,
-                "script": script,
-                "generationId": generation_id,
-                "requestId": request_id
-            },
-            status=200,
-            headers={
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-            }
-        )
+        return jsonify({
+            "success": True,
+            "script": script,
+            "generationId": generation_id,
+            "requestId": request_id
+        }), 200, cors_headers
         
     except Exception as e:
         logger.error(f"[{request_id}] Gemini API error: {str(e)}")
-        return Response(
-            {
-                "error": "Failed to generate script. Please try again.",
-                "details": str(e) if os.getenv("DEBUG") else None
-            },
-            status=500,
-            headers={"Access-Control-Allow-Origin": "*"}
-        )
+        return jsonify({
+            "error": "Failed to generate script. Please try again.",
+            "details": str(e) if os.getenv("DEBUG") else None
+        }), 500, cors_headers
 
 def build_enhanced_prompt(
     mode: str,

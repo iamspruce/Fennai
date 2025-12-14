@@ -21,7 +21,6 @@ from utils import (
     ResponseBuilder,
     GCSHelper,
     validate_file_size,
-    validate_duration,
     sanitize_filename
 )
 from utils.task_helper import create_cloud_task
@@ -30,9 +29,6 @@ logger = logging.getLogger(__name__)
 
 # Environment
 GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")
-
-# ✅ REMOVED: Global GCS initialization
-# OLD: gcs = GCSHelper(GCS_DUBBING_BUCKET)
 
 # Constants
 MAX_BASE64_SIZE = 500 * 1024 * 1024  # 500MB in bytes
@@ -89,7 +85,7 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     # Validate tier limits
     limits = UPLOAD_LIMITS[user_tier]
     
-    # ✅ FIX #2: Check duration limit (handles infinity)
+    # Check duration limit (handles infinity)
     max_duration = limits['maxDurationSeconds']
     if max_duration != float('inf') and duration > max_duration:
         return False, f"Duration ({duration:.1f}s) exceeds limit of {max_duration}s (Your {user_tier} tier limit)"
@@ -106,9 +102,7 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     return True, None
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1,
-    timeout_sec=60,
-    max_instances=10)
+@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
 def dub_transcribe(req: Request):
     """
     Initiate dubbing job:
@@ -121,40 +115,37 @@ def dub_transcribe(req: Request):
     logger.info(f"[{request_id}] Dubbing transcribe request received")
 
     db = get_db()
-    # ✅ FIX #1: Lazy GCS initialization - only create when needed
+    # Lazy GCS initialization - only create when needed
     gcs = GCSHelper(GCS_DUBBING_BUCKET)
+    
+    # CORS headers
+    cors_headers = {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
+    }
     
     # CORS
     if req.method == "OPTIONS":
-        return jsonify(
-            "",
-            status=204,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type",
-            }
-        )
+        options_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+        return "", 204, options_headers
     
     if req.method != "POST":
-        return jsonify(
-            ResponseBuilder.error("Method not allowed", request_id=request_id)
-        ), 405, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, cors_headers
     
     # Auth
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id)
-        ), 401, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return jsonify(
-            ResponseBuilder.error("Unauthorized", request_id=request_id)
-        ), 401, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -170,17 +161,13 @@ def dub_transcribe(req: Request):
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return jsonify(
-            ResponseBuilder.error("Invalid JSON", request_id=request_id)
-        ), 400, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
     
     # Validate request
     is_valid, error_msg = validate_dubbing_request(data, user_tier)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return jsonify(
-            ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)
-        ), 400, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)), 400, cors_headers
     
     # Extract parameters
     media_base64 = str(data.get("mediaData", ""))
@@ -211,9 +198,7 @@ def dub_transcribe(req: Request):
     success, error_msg = reserve_credits(uid, job_id, cost, job_data)
     if not success:
         logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
-        return jsonify(
-            ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)
-        ), 402, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)), 402, cors_headers
     
     # Upload media to GCS
     try:
@@ -243,9 +228,7 @@ def dub_transcribe(req: Request):
         logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
         release_credits(uid, job_id, cost)
         
-        return jsonify(
-            ResponseBuilder.error("Failed to upload media", request_id=request_id)
-        ), 500, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Failed to upload media", request_id=request_id)), 500, cors_headers
     
     # Create Firestore job document
     try:
@@ -273,9 +256,7 @@ def dub_transcribe(req: Request):
         logger.error(f"[{request_id}] Failed to create job document: {str(e)}")
         release_credits(uid, job_id, cost)
         
-        return jsonify(
-            ResponseBuilder.error("Failed to create job", request_id=request_id)
-        ), 500, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, cors_headers
     
     # Queue Cloud Task for audio extraction & transcription
     try:
@@ -305,17 +286,13 @@ def dub_transcribe(req: Request):
         
         release_credits(uid, job_id, cost)
         
-        return jsonify(
-            ResponseBuilder.error("Failed to queue transcription", request_id=request_id)
-        ), 500, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(ResponseBuilder.error("Failed to queue transcription", request_id=request_id)), 500, cors_headers
     
     # Return job ID
     logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
     
-    return jsonify(
-        ResponseBuilder.success({
-            "jobId": job_id,
-            "status": "uploading",
-            "message": "Dubbing job queued successfully"
-        }, request_id=request_id)
-    ), 202, {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+    return jsonify(ResponseBuilder.success({
+        "jobId": job_id,
+        "status": "uploading",
+        "message": "Dubbing job queued successfully"
+    }, request_id=request_id)), 202, cors_headers
