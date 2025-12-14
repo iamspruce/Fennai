@@ -161,25 +161,25 @@ def generate_signed_url(
     expiration_hours: int = 24,
     service_account_email: Optional[str] = None
 ) -> str:
-    # Validate input to prevent obscure AttributeError
+    """Generate signed URL using IAM-based signing (no private key needed)."""
+    
     if not service_account_email:
-        raise ValueError(
-            "service_account_email is required to sign URLs on Cloud Run "
-            "(credentials do not contain a private key)."
-        )
-
+        raise ValueError("service_account_email is required for signing")
+    
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_path)
     
+    # Use IAM-based signing instead of private key
     url = blob.generate_signed_url(
         version="v4",
         expiration=timedelta(hours=expiration_hours),
         method="GET",
+        access_token=None,  # Will use IAM
         service_account_email=service_account_email,
     )
     
     return url
-    
+
 def parse_gcs_url(url: str) -> tuple[str, str]:
     """
     Parse GCS URL into bucket and blob path.
