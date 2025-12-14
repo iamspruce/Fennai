@@ -187,20 +187,7 @@ def dub_transcribe(req: Request):
         f"cost={cost}, type={media_type}"
     )
     
-    # Reserve credits
-    job_data = {
-        "mediaType": media_type,
-        "duration": duration,
-        "fileSize": file_size_mb,
-        "detectedLanguage": detected_language,
-    }
-    
-    success, error_msg = reserve_credits(uid, job_id, cost, job_data)
-    if not success:
-        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
-        return jsonify(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)), 402, cors_headers
-    
-    # Upload media to GCS
+    # Upload media to GCS FIRST (before reserving credits)
     try:
         import tempfile
         
@@ -226,37 +213,32 @@ def dub_transcribe(req: Request):
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
-        release_credits(uid, job_id, cost)
-        
         return jsonify(ResponseBuilder.error("Failed to upload media", request_id=request_id)), 500, cors_headers
     
-    # Create Firestore job document
-    try:
-        job_ref = db.collection("dubbingJobs").document(job_id)
-        job_doc = {
-            "uid": uid,
-            "status": "uploading",
-            "step": "Uploading media to cloud storage...",
-            "progress": 5,
-            "mediaType": media_type,
-            "originalMediaPath": blob_path,
-            "duration": duration,
-            "fileSize": file_size_mb,
-            "detectedLanguage": detected_language,
-            "otherLanguages": other_languages,
-            "cost": cost,
-            "createdAt": SERVER_TIMESTAMP,
-            "updatedAt": SERVER_TIMESTAMP,
-            "expiresAt": datetime.utcnow() + timedelta(days=7),
-            "requestId": request_id,
-        }
-        job_ref.set(job_doc)
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Failed to create job document: {str(e)}")
-        release_credits(uid, job_id, cost)
-        
-        return jsonify(ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, cors_headers
+    # Reserve credits AND create job document atomically
+    job_metadata = {
+        "mediaType": media_type,
+        "duration": duration,
+        "fileSize": file_size_mb,
+        "detectedLanguage": detected_language,
+        "otherLanguages": other_languages,
+        "originalMediaPath": blob_path,
+        "requestId": request_id,
+        "status": "uploading",
+        "step": "Uploading media to cloud storage...",
+        "progress": 5,
+        "expiresAt": datetime.utcnow() + timedelta(days=7),
+    }
+    
+    success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")
+    if not success:
+        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
+        # Clean up uploaded media
+        gcs.delete_file(blob_path)
+        return jsonify(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)), 402, cors_headers
+    
+    # Get job reference (already created by reserve_credits)
+    job_ref = db.collection("dubbingJobs").document(job_id)
     
     # Queue Cloud Task for audio extraction & transcription
     try:
@@ -284,7 +266,7 @@ def dub_transcribe(req: Request):
             "updatedAt": SERVER_TIMESTAMP
         })
         
-        release_credits(uid, job_id, cost)
+        release_credits(uid, job_id, cost, collection_name="dubbingJobs")
         
         return jsonify(ResponseBuilder.error("Failed to queue transcription", request_id=request_id)), 500, cors_headers
     
