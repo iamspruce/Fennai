@@ -210,35 +210,39 @@ def voice_clone(req: Request):
     cost = calculate_cost_from_duration(estimated_duration, speaker_count > 1)
     job_id = str(uuid.uuid4())
     
-    # Reserve credits
+    # ✅ IMPORTANT: reserve_credits() creates the job document atomically
+    # We pass job metadata so it can create the document in the same transaction
+    job_metadata = {
+        "text": data.get("text", ""),
+        "character_texts": data.get("character_texts"),
+        "estimatedDuration": estimated_duration,
+        "speakerCount": speaker_count,
+    }
+    
+    # Reserve credits - this also creates the job document atomically
     try:
-        success, error_msg = reserve_credits(uid, job_id, cost, data)
+        logger.info(f"[{request_id}] Attempting to reserve {cost} credits for user {uid}")
+        success, error_msg = reserve_credits(uid, job_id, cost, job_metadata)
+        
+        logger.info(f"[{request_id}] Credit reservation result: success={success}, error={error_msg}")
+        
         if not success:
+            logger.error(f"[{request_id}] Credit reservation FAILED - returning 402 error")
+            sys.stdout.flush()
             return jsonify(ResponseBuilder.error(
                 error_msg or "Credit reservation failed", 
                 request_id=request_id
             )), 402, cors_headers
         
+        logger.info(f"[{request_id}] Credit reservation SUCCESS - job document created atomically")
+        
     except Exception as e:
-        logger.error(f"[{request_id}] Credit reservation failed: {str(e)}")
+        logger.error(f"[{request_id}] Credit reservation exception: {str(e)}")
+        sys.stdout.flush()
         return jsonify(ResponseBuilder.error("Credit reservation failed", request_id=request_id)), 500, cors_headers
     
-    # Create job document FIRST
-    try:
-        job_ref = db.collection("voiceJobs").document(job_id)
-        job_ref.set({
-            "uid": uid,
-            "status": "queued",
-            "cost": cost,
-            "estimatedDuration": estimated_duration,
-            "speakerCount": speaker_count,
-            "createdAt": SERVER_TIMESTAMP,
-            "updatedAt": SERVER_TIMESTAMP
-        })
-    except Exception as e:
-        logger.error(f"[{request_id}] Failed to create job: {str(e)}")
-        release_credits(uid, job_id, cost)
-        return jsonify(ResponseBuilder.error("Failed to create job", request_id=request_id)), 500, cors_headers
+    # Get job reference (already created by reserve_credits)
+    job_ref = db.collection("voiceJobs").document(job_id)
     
     # Handle chunking
     needs_chunking = speaker_count > MAX_SPEAKERS_PER_CHUNK

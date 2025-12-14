@@ -1,48 +1,122 @@
-# functions/proxy/routes/dub_clone.py
+# functions/proxy/routes/dub_transcribe.py
 """
-Enhanced dubbing voice cloning route with multi-chunk processing
-and comprehensive error handling.
+Enhanced dubbing transcription route with comprehensive validation,
+retry logic, and proper error handling.
 """
 from firebase_functions import https_fn, options
 from flask import Request, jsonify
 import logging
+import os
 import uuid
-from typing import List, Dict, Any, Optional
+import base64
+from typing import Optional
+from datetime import datetime, timedelta
 from firebase.db import get_db
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 from firebase.admin import get_current_user
-from utils import ResponseBuilder, MAX_SPEAKERS_PER_CHUNK
+from firebase.credits import reserve_credits, release_credits, calculate_dubbing_cost
+from utils import (
+    UPLOAD_LIMITS,
+    ResponseBuilder,
+    GCSHelper,
+    validate_file_size,
+    sanitize_filename
+)
 from utils.task_helper import create_cloud_task
-from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
 
+# Environment
+GCS_DUBBING_BUCKET = os.environ.get("GCS_DUBBING_BUCKET", "fennai-dubbing-temp")
 
-def validate_clone_request(data: dict) -> tuple[bool, Optional[str]]:
+# Constants
+MAX_BASE64_SIZE = 500 * 1024 * 1024  # 500MB in bytes
+SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.m4a', '.flac']
+SUPPORTED_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv']
+
+
+def get_user_tier(user_data: Optional[dict]) -> str:
+    """Determine user tier."""
+    if not user_data:
+        return 'free'
+        
+    if user_data.get("isEnterprise", False):
+        return 'enterprise'
+    elif user_data.get("isPro", False):
+        return 'pro'
+    return 'free'
+
+
+def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional[str]]:
     """
-    Validate voice clone request.
+    Validate dubbing request data.
     
     Args:
         data: Request data
+        user_tier: User's subscription tier
         
     Returns:
         Tuple of (is_valid, error_message)
     """
-    job_id = data.get("jobId")
+    media_base64 = data.get("mediaData")
+    media_type = data.get("mediaType", "audio")
+    duration = float(data.get("duration", 0))
+    file_size_mb = float(data.get("fileSizeMB", 0))
+    file_name = data.get("fileName", "")
     
-    if not job_id:
-        return False, "Job ID is required"
+    # Check required fields
+    if not media_base64:
+        return False, "Media data is required"
+    
+    if duration <= 0:
+        return False, "Invalid duration"
+    
+    if media_type not in ["audio", "video"]:
+        return False, "Invalid media type. Must be 'audio' or 'video'"
+    
+    # Validate file extension
+    if file_name:
+        ext = os.path.splitext(file_name.lower())[1]
+        valid_formats = SUPPORTED_VIDEO_FORMATS if media_type == "video" else SUPPORTED_AUDIO_FORMATS
+        if ext not in valid_formats:
+            return False, f"Unsupported file format: {ext}"
+    
+    # Validate tier limits
+    limits = UPLOAD_LIMITS[user_tier]
+    
+    # Check duration limit (handles infinity)
+    max_duration = limits['maxDurationSeconds']
+    if max_duration != float('inf') and duration > max_duration:
+        return False, f"Duration ({duration:.1f}s) exceeds limit of {max_duration}s (Your {user_tier} tier limit)"
+    
+    # Check file size limit
+    is_valid, error = validate_file_size(int(file_size_mb * 1024 * 1024), limits['maxFileSizeMB'])
+    if not is_valid:
+        return False, f"{error} (Your {user_tier} tier limit)"
+    
+    # Validate base64 size
+    if len(media_base64) > MAX_BASE64_SIZE:
+        return False, "Media data too large"
     
     return True, None
 
 
 @https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
-def dub_clone(req: Request):
-    """Start voice cloning for dubbing - uses character IDs."""
+def dub_transcribe(req: Request):
+    """
+    Initiate dubbing job:
+    1. Validate media file
+    2. Reserve credits
+    3. Upload to GCS
+    4. Queue transcription task
+    """
     request_id = str(uuid.uuid4())
-    logger.info(f"[{request_id}] Dubbing clone request received")
-    
+    logger.info(f"[{request_id}] Dubbing transcribe request received")
+
     db = get_db()
+    # Lazy GCS initialization - only create when needed
+    gcs = GCSHelper(GCS_DUBBING_BUCKET)
     
     # CORS headers
     cors_headers = {
@@ -50,7 +124,7 @@ def dub_clone(req: Request):
         "Access-Control-Allow-Origin": "*"
     }
     
-    # CORS handling
+    # CORS
     if req.method == "OPTIONS":
         options_headers = {
             "Access-Control-Allow-Origin": "*",
@@ -64,7 +138,8 @@ def dub_clone(req: Request):
     
     # Auth
     user = get_current_user(req)
-    if not user or not user.get("uid"):
+    if not user:
+        logger.warning(f"[{request_id}] Unauthorized request")
         return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
     
     uid = user.get("uid")
@@ -74,160 +149,132 @@ def dub_clone(req: Request):
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
+    # Get user tier
+    user_doc = db.collection("users").document(uid).get()
+    user_data = user_doc.to_dict() or {}
+    user_tier = get_user_tier(user_data)
+    
+    logger.info(f"[{request_id}] User tier: {user_tier}")
+    
     # Parse request
     try:
         data = req.get_json(silent=True) or {}
     except Exception as e:
+        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
         return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
     
-    job_id = data.get("jobId")
-    if not job_id:
-        return jsonify(ResponseBuilder.error("Job ID is required", request_id=request_id)), 400, cors_headers
+    # Validate request
+    is_valid, error_msg = validate_dubbing_request(data, user_tier)
+    if not is_valid:
+        logger.warning(f"[{request_id}] Validation failed: {error_msg}")
+        return jsonify(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)), 400, cors_headers
     
-    # Get job
+    # Extract parameters
+    media_base64 = str(data.get("mediaData", ""))
+    media_type = data.get("mediaType", "audio")
+    file_name = sanitize_filename(data.get("fileName", "media"))
+    duration = float(data.get("duration", 0))
+    file_size_mb = float(data.get("fileSizeMB", 0))
+    detected_language = data.get("detectedLanguage")
+    other_languages = data.get("otherLanguages", [])
+    
+    # Calculate cost (no translation yet)
+    cost = calculate_dubbing_cost(duration, False, media_type == 'video')
+    job_id = str(uuid.uuid4())
+    
+    logger.info(
+        f"[{request_id}] Creating dubbing job {job_id}: duration={duration}s, "
+        f"cost={cost}, type={media_type}"
+    )
+    
+    # Upload media to GCS FIRST (before reserving credits)
     try:
-        job_ref = db.collection("dubbingJobs").document(job_id)
-        job_doc = job_ref.get()
+        import tempfile
         
-        if not job_doc.exists:
-            return jsonify(ResponseBuilder.error("Job not found", request_id=request_id)), 404, cors_headers
+        media_bytes = base64.b64decode(media_base64)
+        extension = 'mp4' if media_type == 'video' else 'wav'
+        blob_path = f"jobs/{job_id}/original.{extension}"
         
-        job_data = job_doc.to_dict()
-
-        if not job_data:
-            logger.error(f"[{request_id}] Job data is None for {job_id}")
-            return jsonify(ResponseBuilder.error("Job data not found", request_id=request_id)), 500, cors_headers
+        # Write to temp file and upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}") as tmp:
+            tmp.write(media_bytes)
+            tmp_path = tmp.name
         
-        if job_data.get("uid") != uid:
-            return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 403, cors_headers
+        content_type = 'video/mp4' if media_type == 'video' else 'audio/wav'
+        success, error = gcs.upload_file(tmp_path, blob_path, content_type)
         
-        transcript = job_data.get("transcript", [])
-        voice_mapping = job_data.get("voiceMapping", {})
+        # Cleanup temp file
+        os.unlink(tmp_path)
         
-        if not transcript or not voice_mapping:
-            return jsonify(ResponseBuilder.error("Incomplete job data", request_id=request_id)), 400, cors_headers
+        if not success:
+            raise Exception(f"GCS upload failed: {error}")
+        
+        logger.info(f"[{request_id}] Uploaded media to gs://{GCS_DUBBING_BUCKET}/{blob_path}")
         
     except Exception as e:
-        logger.error(f"[{request_id}] Failed to get job: {str(e)}")
-        return jsonify(ResponseBuilder.error("Failed to retrieve job", request_id=request_id)), 500, cors_headers
+        logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
+        return jsonify(ResponseBuilder.error("Failed to upload media", request_id=request_id)), 500, cors_headers
     
-    # Use translated text if available
-    for segment in transcript:
-        segment["textToClone"] = segment.get("translatedText") or segment["text"]
-    
-    # Chunk dialogue
-    chunks = chunk_dialogue_for_inference(transcript)
-    logger.info(f"[{request_id}] Job {job_id}: Split into {len(chunks)} chunks")
-    
-    # Build chunks with character IDs
-    try:
-        cloned_chunks = []
-        
-        for chunk in chunks:
-            # Build text
-            chunk_text_parts = []
-            for segment in chunk["segments"]:
-                try:
-                    speaker_idx = chunk["speakers"].index(segment["speakerId"]) + 1
-                    chunk_text_parts.append(f"Speaker {speaker_idx}: {segment['textToClone']}")
-                except ValueError:
-                    continue
-            
-            # Build character IDs list (ordered by speaker)
-            chunk_character_ids = []
-            for speaker_id in chunk["speakers"]:
-                mapping = voice_mapping.get(speaker_id, {})
-                
-                if mapping.get("type") == "character":
-                    char_id = mapping.get("characterId")
-                    if char_id:
-                        chunk_character_ids.append(char_id)
-                    else:
-                        chunk_character_ids.append(None)  # Placeholder
-                elif mapping.get("type") == "original":
-                    # For original voices, store a special marker
-                    chunk_character_ids.append(f"original:{speaker_id}")
-                else:
-                    chunk_character_ids.append(None)
-            
-            cloned_chunks.append({
-                "chunkId": chunk["chunkId"],
-                "speakers": chunk["speakers"],
-                "text": "\n".join(chunk_text_parts),
-                "characterIds": chunk_character_ids,
-                "audioUrl": None,
-                "status": "pending"
-            })
-        
-        # Update job with chunks
-        job_ref.update({
-            "status": "cloning",
-            "step": f"Cloning voices (0/{len(chunks)} chunks)...",
-            "progress": 75,
-            "totalChunks": len(chunks),
-            "completedChunks": 0,
-            "clonedAudioChunks": cloned_chunks,
-            "updatedAt": SERVER_TIMESTAMP
-        })
-        
-        # Queue tasks (minimal payload)
-        for chunk in chunks:
-            task_payload = {
-                "job_id": job_id,
-                "uid": uid,
-                "chunk_id": chunk["chunkId"]
-            }
-            
-            success, error = create_cloud_task(task_payload, endpoint="/clone-audio")
-            if not success:
-                raise Exception(f"Failed to queue chunk {chunk['chunkId']}: {error}")
-        
-        return jsonify(ResponseBuilder.success({
-            "jobId": job_id,
-            "status": "cloning",
-            "totalChunks": len(chunks),
-            "message": "Voice cloning started"
-        }, request_id=request_id)), 202, cors_headers
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Failed to queue tasks: {str(e)}")
-        job_ref.update({
-            "status": "failed",
-            "error": "Failed to queue voice cloning",
-            "updatedAt": SERVER_TIMESTAMP
-        })
-        return jsonify(ResponseBuilder.error("Failed to queue cloning", request_id=request_id)), 500, cors_headers
-
-
-def chunk_dialogue_for_inference(transcript: List[Dict]) -> List[Dict[str, Any]]:
-    """Split transcript into chunks with max 4 speakers."""
-    chunks = []
-    current_chunk = {
-        "chunkId": 0,
-        "speakers": [],
-        "segments": []
+    # Reserve credits AND create job document atomically
+    job_metadata = {
+        "mediaType": media_type,
+        "duration": duration,
+        "fileSize": file_size_mb,
+        "detectedLanguage": detected_language,
+        "otherLanguages": other_languages,
+        "originalMediaPath": blob_path,
+        "requestId": request_id,
+        "status": "uploading",
+        "step": "Uploading media to cloud storage...",
+        "progress": 5,
+        "expiresAt": datetime.utcnow() + timedelta(days=7),
     }
     
-    for segment in transcript:
-        speaker_id = segment.get("speakerId")
-        if not speaker_id:
-            continue
+    success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")
+    if not success:
+        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
+        # Clean up uploaded media
+        gcs.delete_file(blob_path)
+        return jsonify(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)), 402, cors_headers
+    
+    # Get job reference (already created by reserve_credits)
+    job_ref = db.collection("dubbingJobs").document(job_id)
+    
+    # Queue Cloud Task for audio extraction & transcription
+    try:
+        task_payload = {
+            "job_id": job_id,
+            "uid": uid,
+            "media_path": blob_path,
+            "media_type": media_type,
+            "request_id": request_id,
+        }
         
-        if speaker_id in current_chunk["speakers"]:
-            current_chunk["segments"].append(segment)
-        elif len(current_chunk["speakers"]) < MAX_SPEAKERS_PER_CHUNK:
-            current_chunk["speakers"].append(speaker_id)
-            current_chunk["segments"].append(segment)
-        else:
-            if current_chunk["segments"]:
-                chunks.append(current_chunk)
-            current_chunk = {
-                "chunkId": len(chunks),
-                "speakers": [speaker_id],
-                "segments": [segment]
-            }
+        success, error = create_cloud_task(task_payload, endpoint="/extract-audio")
+        
+        if not success:
+            raise Exception(f"Task creation failed: {error}")
+        
+        logger.info(f"[{request_id}] Queued transcription task for job {job_id}")
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] Failed to queue task: {str(e)}")
+        
+        job_ref.update({
+            "status": "failed",
+            "error": "Failed to queue transcription",
+            "updatedAt": SERVER_TIMESTAMP
+        })
+        
+        release_credits(uid, job_id, cost, collection_name="dubbingJobs")
+        
+        return jsonify(ResponseBuilder.error("Failed to queue transcription", request_id=request_id)), 500, cors_headers
     
-    if current_chunk["segments"]:
-        chunks.append(current_chunk)
+    # Return job ID
+    logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
     
-    return chunks
+    return jsonify(ResponseBuilder.success({
+        "jobId": job_id,
+        "status": "uploading",
+        "message": "Dubbing job queued successfully"
+    }, request_id=request_id)), 202, cors_headers
