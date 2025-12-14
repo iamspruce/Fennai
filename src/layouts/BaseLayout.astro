@@ -21,6 +21,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 import StorageManager from "@/islands/StorageManager";
 import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
 import PreviewEditModal from "@/islands/PreviewEditModal";
+import CreateCharacterModal from "@/islands/CreateCharacterModal";
 import RecordVoiceModal from "@/islands/RecordVoiceModal";
 import VoiceLibraryModal from "@/islands/VoiceLibraryModal";
 ---
@@ -75,6 +76,7 @@ import VoiceLibraryModal from "@/islands/VoiceLibraryModal";
         <StorageManager client:load />
         <DeleteConfirmationModal client:load />
         <PreviewEditModal client:load />
+        <CreateCharacterModal client:load />
         <VoiceLibraryModal isPro={isPro!} client:load />
         <RecordVoiceModal userName={userName || "Friend"} client:load />
 

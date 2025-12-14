@@ -16,9 +16,7 @@ import StorageWarning from "@/components/character/StorageWarning.astro";
 // React Islands
 import VoiceCard from "@/islands/VoiceCard";
 import CloningModal from "@/islands/CloningModal";
-import PreviewEditModal from "@/islands/PreviewEditModal";
 import VoiceInputSection from "@/islands/VoiceInputSection";
-import CreateCharacterModal from "@/islands/CreateCharacterModal";
 import VoicesHeader from "@/islands/VoicesHeader";
 import ScriptGeneratorModal from "@/islands/ScriptGeneratorModal";
 import DubMediaSelectModal from "@/islands/dub/DubMediaSelectModal";
@@ -107,8 +105,7 @@ const userTier = user.isPro ? "pro" : "free";
 
   {/* Modals */}
   <CloningModal client:load />
-  <PreviewEditModal client:load />
-  <CreateCharacterModal client:load />
+
   <ScriptGeneratorModal
     client:load
     character={character}
