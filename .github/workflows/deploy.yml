@@ -362,6 +362,15 @@ jobs:
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-voice-output
           gsutil iam ch serviceAccount:${SA}:objectAdmin gs://fennai-dubbing-temp
           echo "✅ Storage permissions granted"
+      
+      - name: Grant Token Creator Permissions to Cloud Run
+        run: |
+          SA="${{ steps.get_sa.outputs.SERVICE_ACCOUNT }}"
+          gcloud projects add-iam-policy-binding fennai \
+            --member="serviceAccount:${SA}" \
+            --role="roles/iam.serviceAccountTokenCreator" \
+            --condition=None
+          echo "✅ Token Creator permissions granted"
 
       - name: Grant Cloud Tasks Permissions to Cloud Run
         run: |
