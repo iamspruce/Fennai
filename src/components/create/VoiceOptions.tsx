@@ -39,19 +39,26 @@ export default function VoiceOptions({ hasError }: VoiceOptionsProps) {
     const handleUploadClick = () => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'audio/*';
+        input.accept = '.mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/x-wav,audio/mp4';
+
+        document.body.appendChild(input);
+
         input.onchange = (e: Event) => {
             const target = e.target as HTMLInputElement;
             const file = target.files?.[0];
+
             if (file) {
-                // Dispatch with explicit source 'upload'
                 window.dispatchEvent(new CustomEvent('voice-file-updated', {
                     detail: { file, source: 'upload' }
                 }));
             }
+
+            document.body.removeChild(input);
         };
+
         input.click();
     };
+
 
     const handleLibraryClick = () => {
         window.dispatchEvent(new Event('open-voice-library'));
