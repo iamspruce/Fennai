@@ -7,3 +7,4 @@ python-dotenv
 google-cloud-firestore
 google-cloud-storage
 google-cloud-translate
+dotenv

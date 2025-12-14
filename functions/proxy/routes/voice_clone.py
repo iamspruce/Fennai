@@ -1,6 +1,6 @@
 from firebase_functions import https_fn, options
 from flask import Request, jsonify
-import logging
+import sys
 import uuid
 from typing import List, Dict, Any, Optional
 from firebase.db import get_db
@@ -16,8 +16,13 @@ from utils import (
     ResponseBuilder,
 )
 from utils.task_helper import create_cloud_task
+from utils.logging_config import get_logger, log_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+# ✅ Log module load
+print("voice_clone.py module loaded")
+sys.stdout.flush()
 
 
 def validate_voice_clone_request(data: dict) -> tuple[bool, Optional[str]]:
@@ -115,7 +120,20 @@ def chunk_multi_speaker_dialogue(
 def voice_clone(req: Request):
     """Voice cloning endpoint - now uses character IDs."""
     request_id = str(uuid.uuid4())
+    
+    # ✅ CRITICAL: Force immediate output to verify function is called
+    print("=" * 100)
+    print(f"VOICE_CLONE FUNCTION CALLED - Request ID: {request_id}")
+    print(f"Method: {req.method}")
+    print(f"Path: {req.path}")
+    print(f"Headers: {dict(req.headers)}")
+    print("=" * 100)
+    sys.stdout.flush()
+    
+    # Log request details
+    log_request(logger, request_id, req.method, req.path, dict(req.headers))
     logger.info(f"[{request_id}] Voice clone request received")
+    sys.stdout.flush()
     
     db = get_db()
     
