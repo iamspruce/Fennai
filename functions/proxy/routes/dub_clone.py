@@ -4,7 +4,7 @@ Enhanced dubbing voice cloning route with multi-chunk processing
 and comprehensive error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, jsonify
+from flask import Request, jsonify, make_response, Response
 import logging
 import uuid
 from typing import List, Dict, Any, Optional
@@ -37,6 +37,16 @@ def validate_clone_request(data: dict) -> tuple[bool, Optional[str]]:
     return True, None
 
 
+
+def create_response(body: Any, status: int, headers: Dict[str, str]) -> Response:
+    """Create a Flask Response object with headers."""
+    response = jsonify(body) if isinstance(body, (dict, list)) else make_response(body)
+    response.status_code = status
+    for k, v in headers.items():
+        response.headers[k] = v
+    return response
+
+
 @https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
 def dub_clone(req: Request):
     """Start voice cloning for dubbing - uses character IDs."""
@@ -58,20 +68,20 @@ def dub_clone(req: Request):
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         }
-        return "", 204, options_headers
+        return create_response("", 204, options_headers)
     
     if req.method != "POST":
-        return jsonify(ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, cors_headers
+        return create_response(ResponseBuilder.error("Method not allowed", request_id=request_id), 405, cors_headers)
     
     # Auth
     user = get_current_user(req)
     if not user or not user.get("uid"):
-        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
+        return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
+        return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -79,11 +89,11 @@ def dub_clone(req: Request):
     try:
         data = req.get_json(silent=True) or {}
     except Exception as e:
-        return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
+        return create_response(ResponseBuilder.error("Invalid JSON", request_id=request_id), 400, cors_headers)
     
     job_id = data.get("jobId")
     if not job_id:
-        return jsonify(ResponseBuilder.error("Job ID is required", request_id=request_id)), 400, cors_headers
+        return create_response(ResponseBuilder.error("Job ID is required", request_id=request_id), 400, cors_headers)
     
     # Get job
     try:
@@ -91,26 +101,26 @@ def dub_clone(req: Request):
         job_doc = job_ref.get()
         
         if not job_doc.exists:
-            return jsonify(ResponseBuilder.error("Job not found", request_id=request_id)), 404, cors_headers
+            return create_response(ResponseBuilder.error("Job not found", request_id=request_id), 404, cors_headers)
         
         job_data = job_doc.to_dict()
 
         if not job_data:
             logger.error(f"[{request_id}] Job data is None for {job_id}")
-            return jsonify(ResponseBuilder.error("Job data not found", request_id=request_id)), 500, cors_headers
+            return create_response(ResponseBuilder.error("Job data not found", request_id=request_id), 500, cors_headers)
         
         if job_data.get("uid") != uid:
-            return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 403, cors_headers
+            return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 403, cors_headers)
         
         transcript = job_data.get("transcript", [])
         voice_mapping = job_data.get("voiceMapping", {})
         
         if not transcript or not voice_mapping:
-            return jsonify(ResponseBuilder.error("Incomplete job data", request_id=request_id)), 400, cors_headers
+            return create_response(ResponseBuilder.error("Incomplete job data", request_id=request_id), 400, cors_headers)
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to get job: {str(e)}")
-        return jsonify(ResponseBuilder.error("Failed to retrieve job", request_id=request_id)), 500, cors_headers
+        return create_response(ResponseBuilder.error("Failed to retrieve job", request_id=request_id), 500, cors_headers)
     
     # Use translated text if available
     for segment in transcript:
@@ -183,12 +193,12 @@ def dub_clone(req: Request):
             if not success:
                 raise Exception(f"Failed to queue chunk {chunk['chunkId']}: {error}")
         
-        return jsonify(ResponseBuilder.success({
+        return create_response(ResponseBuilder.success({
             "jobId": job_id,
             "status": "cloning",
             "totalChunks": len(chunks),
             "message": "Voice cloning started"
-        }, request_id=request_id)), 202, cors_headers
+        }, request_id=request_id), 202, cors_headers)
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to queue tasks: {str(e)}")
@@ -197,7 +207,7 @@ def dub_clone(req: Request):
             "error": "Failed to queue voice cloning",
             "updatedAt": SERVER_TIMESTAMP
         })
-        return jsonify(ResponseBuilder.error("Failed to queue cloning", request_id=request_id)), 500, cors_headers
+        return create_response(ResponseBuilder.error("Failed to queue cloning", request_id=request_id), 500, cors_headers)
 
 
 def chunk_dialogue_for_inference(transcript: List[Dict]) -> List[Dict[str, Any]]:

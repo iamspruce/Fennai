@@ -4,12 +4,12 @@ Enhanced dubbing transcription route with comprehensive validation,
 retry logic, and proper error handling.
 """
 from firebase_functions import https_fn, options
-from flask import Request, jsonify
+from flask import Request, jsonify, make_response, Response
 import logging
 import os
 import uuid
 import base64
-from typing import Optional
+from typing import Optional, Any, Dict
 from datetime import datetime, timedelta
 from firebase.db import get_db
 from google.cloud.firestore import SERVER_TIMESTAMP
@@ -103,6 +103,16 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     return True, None
 
 
+
+def create_response(body: Any, status: int, headers: Dict[str, str]) -> Response:
+    """Create a Flask Response object with headers."""
+    response = jsonify(body) if isinstance(body, (dict, list)) else make_response(body)
+    response.status_code = status
+    for k, v in headers.items():
+        response.headers[k] = v
+    return response
+
+
 @https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
 def dub_transcribe(req: Request):
     """
@@ -132,21 +142,21 @@ def dub_transcribe(req: Request):
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         }
-        return "", 204, options_headers
+        return create_response("", 204, options_headers)
     
     if req.method != "POST":
-        return jsonify(ResponseBuilder.error("Method not allowed", request_id=request_id)), 405, cors_headers
+        return create_response(ResponseBuilder.error("Method not allowed", request_id=request_id), 405, cors_headers)
     
     # Auth
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
+        return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
     uid = user.get("uid")
     if not uid:
         logger.warning(f"[{request_id}] User missing UID")
-        return jsonify(ResponseBuilder.error("Unauthorized", request_id=request_id)), 401, cors_headers
+        return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -162,13 +172,13 @@ def dub_transcribe(req: Request):
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return jsonify(ResponseBuilder.error("Invalid JSON", request_id=request_id)), 400, cors_headers
+        return create_response(ResponseBuilder.error("Invalid JSON", request_id=request_id), 400, cors_headers)
     
     # Validate request
     is_valid, error_msg = validate_dubbing_request(data, user_tier)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return jsonify(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id)), 400, cors_headers
+        return create_response(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id), 400, cors_headers)
     
     # Extract parameters
     media_base64 = str(data.get("mediaData", ""))
@@ -214,7 +224,7 @@ def dub_transcribe(req: Request):
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
-        return jsonify(ResponseBuilder.error("Failed to upload media", request_id=request_id)), 500, cors_headers
+        return create_response(ResponseBuilder.error("Failed to upload media", request_id=request_id), 500, cors_headers)
     
     # Reserve credits AND create job document atomically
     job_metadata = {
@@ -236,7 +246,7 @@ def dub_transcribe(req: Request):
         logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
         # Clean up uploaded media
         gcs.delete_file(blob_path)
-        return jsonify(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id)), 402, cors_headers
+        return create_response(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id), 402, cors_headers)
     
     # Get job reference (already created by reserve_credits)
     job_ref = db.collection("dubbingJobs").document(job_id)
@@ -269,13 +279,13 @@ def dub_transcribe(req: Request):
         
         release_credits(uid, job_id, cost, collection_name="dubbingJobs")
         
-        return jsonify(ResponseBuilder.error("Failed to queue transcription", request_id=request_id)), 500, cors_headers
+        return create_response(ResponseBuilder.error("Failed to queue transcription", request_id=request_id), 500, cors_headers)
     
     # Return job ID
     logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
     
-    return jsonify(ResponseBuilder.success({
+    return create_response(ResponseBuilder.success({
         "jobId": job_id,
         "status": "uploading",
         "message": "Dubbing job queued successfully"
-    }, request_id=request_id)), 202, cors_headers
+    }, request_id=request_id), 202, cors_headers)

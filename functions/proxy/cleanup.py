@@ -17,6 +17,8 @@ gcloud scheduler jobs create pubsub credit-cleanup-job \
     --message-body="cleanup"
 """
 from firebase_functions import pubsub_fn
+from cloudevents.http import CloudEvent
+from typing import Any
 import logging
 from firebase.credits import cleanup_stale_pending_credits
 
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 @pubsub_fn.on_message_published(topic="credit-cleanup")
-def cleanup_pending_credits(event: pubsub_fn.CloudEvent[pubsub_fn.MessagePublishedData]):
+def cleanup_pending_credits(event: Any):
     """
     Cleanup stale pending credits from expired jobs.
     Triggered by Cloud Scheduler via Pub/Sub.

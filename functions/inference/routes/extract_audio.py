@@ -17,6 +17,7 @@ from utils.audio_processor import extract_audio_from_video
 from utils.validators import validate_request, ExtractAudioRequest
 from middleware import extract_job_info, update_job_status, get_job_document
 from pydantic import ValidationError
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -88,7 +89,7 @@ def extract_audio_route():
     job_ref.update({
         "audioPath": audio_blob_path,
         "audioUrl": f"gs://{config.GCS_DUBBING_BUCKET}/{audio_blob_path}",
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     logger.info(f"Job {job_id}: Audio extraction complete")
@@ -173,7 +174,7 @@ def extract_audio_route():
         "status": "transcribing",
         "step": "Clustering speakers...",
         "progress": 40,
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     logger.info(f"Job {job_id}: Transcription complete, {len(merged_transcript)} segments")

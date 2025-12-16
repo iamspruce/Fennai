@@ -3,7 +3,7 @@ Enhanced AI Script Generator using Google GenAI SDK (2025).
 Uses the new google-genai package with Gemini 2.5 models.
 """
 from firebase_functions import https_fn, options
-from flask import Request, jsonify
+from flask import Request, jsonify, make_response, Response
 import os
 import uuid
 import time
@@ -109,6 +109,16 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
         logger.error(f"Failed to log script generation: {str(e)}")
 
 
+
+def create_response(body: Any, status: int, headers: Dict[str, str]) -> Response:
+    """Create a Flask Response object with headers."""
+    response = jsonify(body) if isinstance(body, (dict, list)) else make_response(body)
+    response.status_code = status
+    for k, v in headers.items():
+        response.headers[k] = v
+    return response
+
+
 @https_fn.on_request(
     memory=options.MemoryOption.GB_1,
     timeout_sec=60,
@@ -132,21 +142,21 @@ def generate_script(req: Request):
             "Access-Control-Allow-Methods": "POST, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         }
-        return "", 204, options_headers
+        return create_response("", 204, options_headers)
     
     if req.method != "POST":
-        return jsonify({"error": "Method not allowed"}), 405, cors_headers
+        return create_response({"error": "Method not allowed"}, 405, cors_headers)
     
     # Authentication
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
-        return jsonify({"error": "Unauthorized"}), 401, cors_headers
+        return create_response({"error": "Unauthorized"}, 401, cors_headers)
     
     uid = user.get("uid")
     if not uid or not isinstance(uid, str):
         logger.error(f"[{request_id}] Invalid user uid")
-        return jsonify({"error": "Unauthorized"}), 401, cors_headers
+        return create_response({"error": "Unauthorized"}, 401, cors_headers)
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
@@ -155,32 +165,32 @@ def generate_script(req: Request):
         client = _get_gemini_client()
     except ValueError as e:
         logger.error(f"[{request_id}] {str(e)}")
-        return jsonify({"error": "AI service not configured"}), 500, cors_headers
+        return create_response({"error": "AI service not configured"}, 500, cors_headers)
     
     # Parse request
     try:
         data = req.get_json(silent=True) or {}
     except Exception as e:
         logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return jsonify({"error": "Invalid JSON"}), 400, cors_headers
+        return create_response({"error": "Invalid JSON"}, 400, cors_headers)
     
     # Validate
     is_valid, error_msg = validate_script_request(data)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return jsonify({"error": error_msg}), 400, cors_headers
+        return create_response({"error": error_msg}, 400, cors_headers)
     
     # Rate limit
     allowed, rate_error = check_rate_limit(uid)
     if not allowed:
         logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
-        return jsonify({"error": rate_error}), 429, cors_headers
+        return create_response({"error": rate_error}, 429, cors_headers)
     
     # Credits
     has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
     if not has_credits:
         logger.warning(f"[{request_id}] Insufficient credits for {uid}")
-        return jsonify({"error": credit_error or "Insufficient credits"}), 402, cors_headers
+        return create_response({"error": credit_error or "Insufficient credits"}, 402, cors_headers)
     
     # Extract parameters
     mode = data.get("mode", "single")
@@ -225,19 +235,19 @@ def generate_script(req: Request):
             f"generation_id={generation_id}"
         )
         
-        return jsonify({
+        return create_response({
             "success": True,
             "script": script,
             "generationId": generation_id,
             "requestId": request_id
-        }), 200, cors_headers
+        }, 200, cors_headers)
         
     except Exception as e:
         logger.error(f"[{request_id}] Gemini API error: {str(e)}", exc_info=True)
-        return jsonify({
+        return create_response({
             "error": "Failed to generate script. Please try again.",
             "details": str(e) if os.getenv("DEBUG") else None
-        }), 500, cors_headers
+        }, 500, cors_headers)
 
 
 def build_enhanced_prompt(

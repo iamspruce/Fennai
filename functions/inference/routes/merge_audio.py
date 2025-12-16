@@ -12,6 +12,7 @@ from utils.gcs_utils import download_to_file, upload_file_to_gcs, generate_signe
 from utils.audio_processor import concatenate_audio_files
 from utils.validators import validate_request, MergeRequest
 from middleware import extract_job_info, get_job_document
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -33,7 +34,7 @@ def merge_audio_route():
         "status": "merging",
         "step": "Merging audio chunks...",
         "progress": 90,
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     # Sort chunks
@@ -72,7 +73,7 @@ def merge_audio_route():
     job_ref.update({
         "clonedAudioPath": merged_blob_path,
         "clonedAudioUrl": merged_url,
-        "updatedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP
     })
     
     # Queue video merge or complete
@@ -111,7 +112,7 @@ def merge_audio_route():
         job_ref.update({
             "step": "Merging video...",
             "progress": 95,
-            "updatedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP
         })
     
     else:
@@ -127,8 +128,8 @@ def merge_audio_route():
             "progress": 100,
             "finalMediaUrl": signed_url,
             "finalMediaPath": merged_blob_path,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-            "completedAt": firestore.SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP,
+            "completedAt": SERVER_TIMESTAMP
         })
         
         logger.info(f"Job {job_id}: Audio dubbing complete")

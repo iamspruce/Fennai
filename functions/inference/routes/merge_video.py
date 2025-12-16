@@ -8,6 +8,7 @@ from utils.cleanup import temp_file
 from utils.gcs_utils import download_to_file, upload_file_to_gcs, generate_signed_url
 from utils.validators import validate_request, MergeRequest
 from middleware import extract_job_info, get_job_document
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -82,8 +83,8 @@ def merge_video_route():
         "progress": 100,
         "finalMediaUrl": signed_url,
         "finalMediaPath": final_blob_path,
-        "updatedAt": firestore.SERVER_TIMESTAMP,
-        "completedAt": firestore.SERVER_TIMESTAMP
+        "updatedAt": SERVER_TIMESTAMP,
+        "completedAt": SERVER_TIMESTAMP
     })
     
     logger.info(f"Job {job_id}: Video dubbing complete")
