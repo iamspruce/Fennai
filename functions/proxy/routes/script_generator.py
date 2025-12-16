@@ -14,7 +14,12 @@ from google.genai import types
 from firebase.db import get_db
 from google.cloud.firestore import SERVER_TIMESTAMP
 from firebase.admin import get_current_user
-from firebase.credits import check_credits_available, confirm_credit_deduction
+from firebase.credits import (
+    check_credits_available, 
+    confirm_credit_deduction, 
+    reserve_credits, 
+    release_credits
+)
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -43,8 +48,8 @@ def check_rate_limit(uid: str) -> Tuple[bool, str]:
         db = get_db()
         recent_scripts = (
             db.collection("scriptGenerations")
-            .where("uid", "==", uid)
-            .where("timestamp", ">=", cutoff)
+            .where(field_path="uid", op_string="==", value=uid)
+            .where(field_path="timestamp", op_string=">=", value=cutoff)
             .stream()
         )
         
@@ -94,19 +99,6 @@ def validate_script_request(data: dict) -> Tuple[bool, str]:
     return True, ""
 
 
-def log_script_generation(uid: str, generation_id: str, data: dict):
-    """Log script generation for analytics."""
-    try:
-        db = get_db()
-        db.collection("scriptGenerations").document(generation_id).set({
-            "uid": uid,
-            "mode": data.get("mode"),
-            "template": data.get("template"),
-            "timestamp": time.time(),
-            "createdAt": SERVER_TIMESTAMP
-        })
-    except Exception as e:
-        logger.error(f"Failed to log script generation: {str(e)}")
 
 
 
@@ -186,26 +178,51 @@ def generate_script(req: Request):
         logger.warning(f"[{request_id}] Rate limit exceeded for {uid}")
         return create_response({"error": rate_error}, 429, cors_headers)
     
-    # Credits
-    has_credits, credit_error = check_credits_available(uid, SCRIPT_COST)
-    if not has_credits:
-        logger.warning(f"[{request_id}] Insufficient credits for {uid}")
+    # Validations passed
+    
+    # 1. Generate ID and reserve credits first
+    generation_id = str(uuid.uuid4())
+    current_time = time.time()
+    
+    # Prepare job data including timestamps for rate limiting
+    job_data = {
+        "uid": uid,
+        "mode": data.get("mode", "single"),
+        "template": data.get("template", "custom"),
+        "timestamp": current_time, # Used for rate limiting
+        "context": data.get("context", ""),
+        "characters": data.get("characters", []),
+        "tone": data.get("tone", "Professional"),
+        "length": data.get("length", "Medium (1-2m)"),
+        "status": "processing"
+    }
+    
+    # Reserve credits and create document
+    credits_ok, credit_error = reserve_credits(
+        uid=uid,
+        job_id=generation_id,
+        cost=SCRIPT_COST,
+        job_data=job_data,
+        collection_name="scriptGenerations"
+    )
+    
+    if not credits_ok:
+        logger.warning(f"[{request_id}] Credit reservation failed for {uid}: {credit_error}")
         return create_response({"error": credit_error or "Insufficient credits"}, 402, cors_headers)
     
-    # Extract parameters
-    mode = data.get("mode", "single")
-    template = data.get("template", "custom")
-    context = data.get("context", "").strip()
-    characters = data.get("characters", [])
-    tone = data.get("tone", "Professional")
-    length = data.get("length", "Medium (1-2m)")
+    # Extract parameters for generation
+    mode = job_data["mode"]
+    template = job_data["template"]
+    context = job_data["context"]
+    characters = job_data["characters"]
+    tone = job_data["tone"]
+    length = job_data["length"]
     
     # Build enhanced prompt
     prompt = build_enhanced_prompt(mode, template, context, characters, tone, length)
     logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
     # Call Gemini using new SDK
-    generation_id = str(uuid.uuid4())
     try:
         # Use Gemini 2.5 Flash for best quality and speed
         response = client.models.generate_content(
@@ -224,11 +241,27 @@ def generate_script(req: Request):
         
         script = response.text.strip()
         
-        # Deduct credits
-        confirm_credit_deduction(uid, generation_id, SCRIPT_COST)
+        # Confirm credits and update document with script
+        confirm_ok, confirm_error = confirm_credit_deduction(
+            uid=uid,
+            job_id=generation_id,
+            cost=SCRIPT_COST,
+            collection_name="scriptGenerations"
+        )
         
-        # Log generation
-        log_script_generation(uid, generation_id, data)
+        if not confirm_ok:
+            logger.error(f"Failed to confirm credits for {generation_id}: {confirm_error}")
+            # Note: We still return success as user got their script, but we log the error
+        
+        # Update document with result
+        try:
+            get_db().collection("scriptGenerations").document(generation_id).update({
+                "script": script,
+                "status": "completed",
+                "completedAt": SERVER_TIMESTAMP
+            })
+        except Exception as e:
+            logger.error(f"Failed to update script document: {e}")
         
         logger.info(
             f"[{request_id}] Script generated successfully for user {uid}, "
@@ -244,6 +277,25 @@ def generate_script(req: Request):
         
     except Exception as e:
         logger.error(f"[{request_id}] Gemini API error: {str(e)}", exc_info=True)
+        
+        # Release reserved credits on failure
+        release_credits(
+            uid=uid,
+            job_id=generation_id,
+            cost=SCRIPT_COST,
+            collection_name="scriptGenerations"
+        )
+        
+        # Mark job as failed
+        try:
+            get_db().collection("scriptGenerations").document(generation_id).update({
+                "status": "failed",
+                "error": str(e),
+                "failedAt": SERVER_TIMESTAMP
+            })
+        except:
+            pass
+            
         return create_response({
             "error": "Failed to generate script. Please try again.",
             "details": str(e) if os.getenv("DEBUG") else None

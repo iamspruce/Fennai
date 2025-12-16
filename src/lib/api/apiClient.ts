@@ -361,7 +361,6 @@ export async function generateScript(
 
     const token = await getAuthToken();
 
-    console.log('🚀 Token:', token);
     if (!token) {
         throw new Error('Not authenticated');
     }
