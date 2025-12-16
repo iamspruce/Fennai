@@ -657,7 +657,7 @@ export async function transcribeDubbing(
         throw new Error('Not authenticated');
     }
 
-    const response = await fetch(`${API_BASE_URL}/dub/transcribe`, {
+    const response = await fetch(`${API_BASE_URL}/dub_transcribe`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -696,7 +696,7 @@ export async function translateDubbing(
         throw new Error('Not authenticated');
     }
 
-    const response = await fetch(`${API_BASE_URL}/dub/translate`, {
+    const response = await fetch(`${API_BASE_URL}/dub_translate`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -735,7 +735,7 @@ export async function cloneDubbing(
         throw new Error('Not authenticated');
     }
 
-    const response = await fetch(`${API_BASE_URL}/dub/clone`, {
+    const response = await fetch(`${API_BASE_URL}/dub_clone`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,

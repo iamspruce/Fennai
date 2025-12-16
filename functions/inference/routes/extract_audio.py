@@ -64,9 +64,10 @@ def extract_audio_route():
         
         # Extract audio if video
         if media_type == "video":
-            with temp_file(suffix=".wav") as audio_file_path:
-                extract_audio_from_video(media_file_path, audio_file_path)
-                
+            # extract_audio_from_video returns the path to the extracted audio
+            audio_file_path = extract_audio_from_video(media_file_path)
+            
+            try:
                 # Upload extracted audio
                 audio_blob_path = f"jobs/{job_id}/audio.wav"
                 upload_file_to_gcs(
@@ -75,6 +76,11 @@ def extract_audio_route():
                     audio_file_path,
                     content_type="audio/wav"
                 )
+            finally:
+                # Clean up the temporary file created by extract_audio_from_video
+                import os
+                if os.path.exists(audio_file_path):
+                    os.remove(audio_file_path)
         else:
             # Audio file - just re-upload
             audio_blob_path = f"jobs/{job_id}/audio.wav"

@@ -36,8 +36,20 @@ export default function DubMediaSelectModal({
             setIsOpen(true);
             resetForm();
         };
+
+        const handleMediaSaved = (e: CustomEvent) => {
+            console.log('[DubMediaSelectModal] Media saved from preview:', e.detail);
+            // The file is already set, just reopen the modal
+            setIsOpen(true);
+        };
+
         window.addEventListener('open-dubbing-modal', handleOpen);
-        return () => window.removeEventListener('open-dubbing-modal', handleOpen);
+        window.addEventListener('media-preview-saved', handleMediaSaved as EventListener);
+
+        return () => {
+            window.removeEventListener('open-dubbing-modal', handleOpen);
+            window.removeEventListener('media-preview-saved', handleMediaSaved as EventListener);
+        };
     }, []);
 
     const resetForm = () => {

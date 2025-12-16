@@ -1,5 +1,6 @@
 """Speaker clustering route with improved resource management"""
 import logging
+import os
 from firebase_admin import firestore
 
 from config import config
@@ -82,28 +83,34 @@ def cluster_speakers_route():
             )
             
             if sample_path:
-                sample_blob_path = f"jobs/{job_id}/samples/{speaker_id}.wav"
-                upload_file_to_gcs(
-                    config.GCS_DUBBING_BUCKET,
-                    sample_blob_path,
-                    sample_path,
-                    "audio/wav"
-                )
-                
-                sample_url = f"gs://{config.GCS_DUBBING_BUCKET}/{sample_blob_path}"
-                speaker_voice_samples[speaker_id] = sample_url
-                
-                total_duration = sum(s["endTime"] - s["startTime"] for s in segments)
-                
-                speakers_info.append({
-                    "id": speaker_id,
-                    "voiceSampleUrl": sample_url,
-                    "voiceSamplePath": sample_blob_path,
-                    "totalDuration": total_duration,
-                    "segmentCount": len(segments)
-                })
-                
-                logger.info(f"Job {job_id}: Generated sample for {speaker_id}")
+                try:
+                    sample_blob_path = f"jobs/{job_id}/samples/{speaker_id}.wav"
+                    upload_file_to_gcs(
+                        config.GCS_DUBBING_BUCKET,
+                        sample_blob_path,
+                        sample_path,
+                        "audio/wav"
+                    )
+                    
+                    sample_url = f"gs://{config.GCS_DUBBING_BUCKET}/{sample_blob_path}"
+                    speaker_voice_samples[speaker_id] = sample_url
+                    
+                    total_duration = sum(s["endTime"] - s["startTime"] for s in segments)
+                    
+                    speakers_info.append({
+                        "id": speaker_id,
+                        "voiceSampleUrl": sample_url,
+                        "voiceSamplePath": sample_blob_path,
+                        "totalDuration": total_duration,
+                        "segmentCount": len(segments)
+                    })
+                    
+                    logger.info(f"Job {job_id}: Generated sample for {speaker_id}")
+                finally:
+                    # Clean up temp file after upload
+                    if os.path.exists(sample_path):
+                        os.unlink(sample_path)
+
     
     # Update job
     job_ref.update({

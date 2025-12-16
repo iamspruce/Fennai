@@ -171,6 +171,7 @@ export default function PreviewEditModal() {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           }
 
+          // For videos, we still decode the audio track for waveform visualization
           const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
 
           setAudioBuffer(decodedBuffer);
@@ -178,6 +179,11 @@ export default function PreviewEditModal() {
           setEndTime(decodedBuffer.duration);
         } catch (error) {
           console.error('[PreviewModal] Error decoding audio:', error);
+          // For videos, if audio decoding fails, just use the video duration
+          if (mediaType === 'video' && mediaRef.current) {
+            setDuration(mediaRef.current.duration || 0);
+            setEndTime(mediaRef.current.duration || 0);
+          }
         }
       };
       decodeAudio();
@@ -319,58 +325,86 @@ export default function PreviewEditModal() {
   }, [startTime, duration]);
 
   const handleSave = async () => {
-    if (!audioBuffer || isSaving || mediaType === 'video') return;
+    if (!audioBlob || isSaving) return;
 
     setIsSaving(true);
 
     try {
-      const sampleRate = audioBuffer.sampleRate;
-      const startFrame = Math.floor(startTime * sampleRate);
-      const endFrame = Math.floor(endTime * sampleRate);
-      const frameCount = endFrame - startFrame;
+      let finalBlob: Blob;
+      let finalDuration: number;
 
-      if (frameCount <= 0) {
-        throw new Error('Invalid trim selection');
-      }
-
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-
-      const newBuffer = audioContextRef.current.createBuffer(
-        audioBuffer.numberOfChannels,
-        frameCount,
-        sampleRate
-      );
-
-      for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-        const channelData = audioBuffer.getChannelData(i);
-        const newChannelData = newBuffer.getChannelData(i);
-        newChannelData.set(channelData.subarray(startFrame, endFrame));
-      }
-
-      const trimmedBlob = bufferToWave(newBuffer, frameCount);
-
-      console.log('[PreviewModal] Dispatching voice-edited event');
-
-      window.dispatchEvent(new CustomEvent('voice-edited', {
-        detail: {
-          blob: trimmedBlob,
-          source: source,
-          characterId: metadata?.characterId,
-          text: metadata?.text,
-          isMultiCharacter: metadata?.isMultiCharacter,
-          characterIds: metadata?.characterIds,
-          texts: metadata?.texts,
-          mediaType: mediaType,
-          duration: (endTime - startTime)
+      // For videos, just pass through without trimming
+      if (mediaType === 'video') {
+        finalBlob = audioBlob;
+        finalDuration = duration;
+      } else {
+        // For audio, trim as usual
+        if (!audioBuffer) {
+          throw new Error('Audio buffer not ready');
         }
-      }));
+
+        const sampleRate = audioBuffer.sampleRate;
+        const startFrame = Math.floor(startTime * sampleRate);
+        const endFrame = Math.floor(endTime * sampleRate);
+        const frameCount = endFrame - startFrame;
+
+        if (frameCount <= 0) {
+          throw new Error('Invalid trim selection');
+        }
+
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+
+        const newBuffer = audioContextRef.current.createBuffer(
+          audioBuffer.numberOfChannels,
+          frameCount,
+          sampleRate
+        );
+
+        for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+          const channelData = audioBuffer.getChannelData(i);
+          const newChannelData = newBuffer.getChannelData(i);
+          newChannelData.set(channelData.subarray(startFrame, endFrame));
+        }
+
+        finalBlob = bufferToWave(newBuffer, frameCount);
+        finalDuration = endTime - startTime;
+      }
+
+      console.log('[PreviewModal] Dispatching media-preview-saved event');
+
+      // Dispatch event based on source
+      if (source === 'dubbing') {
+        // For dubbing, notify DubMediaSelectModal
+        window.dispatchEvent(new CustomEvent('media-preview-saved', {
+          detail: {
+            blob: finalBlob,
+            mediaType: mediaType,
+            duration: finalDuration
+          }
+        }));
+      } else {
+        // For voice cloning, use the old event
+        window.dispatchEvent(new CustomEvent('voice-edited', {
+          detail: {
+            blob: finalBlob,
+            source: source,
+            characterId: metadata?.characterId,
+            text: metadata?.text,
+            isMultiCharacter: metadata?.isMultiCharacter,
+            characterIds: metadata?.characterIds,
+            texts: metadata?.texts,
+            mediaType: mediaType,
+            duration: finalDuration
+          }
+        }));
+      }
 
       handleClose();
     } catch (error) {
       console.error('[PreviewModal] Save failed:', error);
-      alert('Failed to save trimmed audio. Please try again.');
+      alert(`Failed to save ${mediaType}. Please try again.`);
     } finally {
       setIsSaving(false);
     }
@@ -490,14 +524,13 @@ export default function PreviewEditModal() {
           <button className="ios-btn-text" onClick={handleClose} disabled={isSaving}>
             Cancel
           </button>
-          <span className="ios-title">{mediaType === 'video' ? 'Preview Video' : 'Trim Audio'}</span>
+          <span className="ios-title">{mediaType === 'video' ? 'Preview & Confirm' : 'Trim Audio'}</span>
           <button
             className="ios-btn-text bold"
             onClick={handleSave}
-            disabled={isSaving || mediaType === 'video'}
-            style={{ opacity: mediaType === 'video' ? 0 : 1, pointerEvents: mediaType === 'video' ? 'none' : 'auto' }}
+            disabled={isSaving}
           >
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? 'Saving...' : mediaType === 'video' ? 'Use Video' : 'Save'}
           </button>
         </div>
 
@@ -551,7 +584,9 @@ export default function PreviewEditModal() {
           </div>
 
           <div className="ios-controls">
-            {mediaType === 'audio' && <div className="ios-helper-text">Drag yellow handles to trim</div>}
+            <div className="ios-helper-text">
+              {mediaType === 'audio' ? 'Drag yellow handles to trim' : 'Preview your video and click "Use Video" to continue'}
+            </div>
             <button className="ios-play-btn" onClick={togglePlay} disabled={isSaving}>
               <Icon
                 icon={isPlaying ? 'lucide:pause' : 'lucide:play'}

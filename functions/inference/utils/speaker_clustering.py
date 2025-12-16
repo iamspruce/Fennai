@@ -21,9 +21,21 @@ def get_encoder():
     return encoder
 
 
-def cluster_speakers_embeddings(audio_chunk_paths: List[str]) -> Dict[int, int]:
+def cluster_speakers_embeddings(
+    audio_chunk_paths: List[str],
+    eps: float = 0.15,
+    min_samples: int = 2
+) -> Dict[int, int]:
     """
     Cluster audio chunks by speaker using voice embeddings
+    
+    Args:
+        audio_chunk_paths: List of paths to audio chunks
+        eps: Maximum cosine distance between samples to be neighbors (default: 0.15)
+             Lower = stricter clustering (more speakers)
+             Higher = looser clustering (fewer speakers)
+        min_samples: Minimum samples to form a cluster (default: 2)
+    
     Returns: {chunk_index: cluster_id}
     """
     enc = get_encoder()
@@ -36,9 +48,10 @@ def cluster_speakers_embeddings(audio_chunk_paths: List[str]) -> Dict[int, int]:
         try:
             wav = preprocess_wav(path)
             
-            # Skip very short chunks (< 0.5 seconds)
+            # Skip very short chunks (<0.5 seconds)
+            # Resemblyzer uses 16kHz sample rate
             if len(wav) < 8000:  # 16kHz * 0.5s
-                logger.warning(f"Skipping chunk {i}: too short")
+                logger.warning(f"Skipping chunk {i}: too short ({len(wav)/16000:.2f}s)")
                 continue
             
             embed = enc.embed_utterance(wav)
@@ -53,27 +66,49 @@ def cluster_speakers_embeddings(audio_chunk_paths: List[str]) -> Dict[int, int]:
         raise ValueError("No valid embeddings extracted")
     
     embeddings = np.array(embeddings)
+    logger.info(f"Extracted {len(embeddings)} valid embeddings from {len(audio_chunk_paths)} chunks")
     
     # Cluster using DBSCAN (density-based clustering)
     # eps: maximum distance between samples to be considered neighbors
     # min_samples: minimum cluster size
-    clustering = DBSCAN(eps=0.15, min_samples=2, metric='cosine')
+    clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine')
     labels = clustering.fit_predict(embeddings)
+    
+    # Count noise points and valid clusters
+    noise_count = sum(1 for l in labels if l == -1)
+    max_cluster_id = max(labels) if len(labels) > 0 else -1
+    
+    logger.info(f"DBSCAN found {max_cluster_id + 1} clusters, {noise_count} noise points")
     
     # Map back to original indices
     speaker_mapping = {}
+    next_noise_id = max_cluster_id + 1  # Start assigning noise points after valid clusters
+    
     for valid_idx, label in zip(valid_indices, labels):
-        # Handle noise points (label=-1)
+        # Handle noise points (label=-1) by assigning sequential IDs
         if label == -1:
-            # Assign unique speaker ID
-            label = max(labels) + 1 + valid_idx
-        speaker_mapping[valid_idx] = int(label)
+            speaker_mapping[valid_idx] = next_noise_id
+            next_noise_id += 1
+        else:
+            speaker_mapping[valid_idx] = int(label)
     
     # Fill in skipped chunks with nearest neighbor
     for i in range(len(audio_chunk_paths)):
         if i not in speaker_mapping:
-            # Assign to previous speaker or 0
-            speaker_mapping[i] = speaker_mapping.get(i-1, 0)
+            # Find nearest previous valid chunk
+            prev_speaker = None
+            for j in range(i - 1, -1, -1):
+                if j in speaker_mapping:
+                    prev_speaker = speaker_mapping[j]
+                    break
+            
+            # Assign to previous speaker or create new cluster
+            if prev_speaker is not None:
+                speaker_mapping[i] = prev_speaker
+            else:
+                # No previous speaker found, assign new ID
+                speaker_mapping[i] = next_noise_id
+                next_noise_id += 1
     
     unique_speakers = len(set(speaker_mapping.values()))
     logger.info(f"Clustered {len(audio_chunk_paths)} chunks into {unique_speakers} speakers")
@@ -118,8 +153,12 @@ def generate_speaker_sample(
     if total_duration > target_duration:
         speaker_audio = speaker_audio[:int(target_duration * 1000)]
     
-    # Export
-    output_path = tempfile.mktemp(suffix="_speaker_sample.wav")
+    # Export to temp file
+    # Use NamedTemporaryFile with delete=False so we can return the path
+    # Caller is responsible for cleanup
+    with tempfile.NamedTemporaryFile(suffix="_speaker_sample.wav", delete=False) as tmp_file:
+        output_path = tmp_file.name
+    
     speaker_audio.export(output_path, format="wav")
     
     final_duration = len(speaker_audio) / 1000.0

@@ -17,6 +17,19 @@ from firebase_admin import firestore
 logger = logging.getLogger(__name__)
 _db = None
 
+# Explicitly export public functions for type checkers
+__all__ = [
+    'get_db',
+    'require_internal_token',
+    'validate_payload_size',
+    'handle_job_errors',
+    'extract_job_info',
+    'validate_required_fields',
+    'log_request_info',
+    'get_job_document',
+    'update_job_status',
+]
+
 def get_db():
     """Lazy load Firestore client"""
     global _db

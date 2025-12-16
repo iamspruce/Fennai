@@ -189,7 +189,8 @@ def dub_clone(req: Request):
                 "chunk_id": chunk["chunkId"]
             }
             
-            success, error = create_cloud_task(task_payload, endpoint="/clone-audio")
+            
+            success, error = create_cloud_task(task_payload, endpoint="/inference")
             if not success:
                 raise Exception(f"Failed to queue chunk {chunk['chunkId']}: {error}")
         
