@@ -1,5 +1,5 @@
 ---
-// src/pages/character/[id].astro (OPTIMIZED)
+// src/pages/character/[id].astro (UPDATED WITH VOICESLIST)
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import { getCurrentUser } from "@/lib/firebase/auth";
 import {
@@ -12,12 +12,12 @@ import {
 import CharacterHeader from "@/components/character/CharacterHeader.astro";
 import Pagination from "@/components/character/Pagination.astro";
 import StorageWarning from "@/components/character/StorageWarning.astro";
+import MigrationBanner from "@/components/character/MigrationBanner";
+import VoicesList from "@/components/character/VoicesList"; // NEW
+import VoiceInputSection from "@/components/character/VoiceInputSection";
 
 // React Islands
-import VoiceCard from "@/islands/VoiceCard";
 import CloningModal from "@/islands/CloningModal";
-import VoiceInputSection from "@/islands/VoiceInputSection";
-import VoicesHeader from "@/islands/VoicesHeader";
 import ScriptGeneratorModal from "@/islands/ScriptGeneratorModal";
 import DubMediaSelectModal from "@/islands/dub/DubMediaSelectModal";
 import DubSettingsModal from "@/islands/dub/DubSettingsModal";
@@ -36,10 +36,10 @@ const limit = 20;
 
 // OPTIMIZATION: Run all queries in parallel
 const startTime = Date.now();
-const [character, { characters: allCharacters }, { voices: paginatedVoices }] =
+const [character, { characters: allCharacters }, { voices: allVoices }] =
   await Promise.all([
     getCharacter(id, user.uid),
-    getCharacters(user.uid, { limit: 100 }), // Limit characters if you have many
+    getCharacters(user.uid, { limit: 100 }),
     getVoices(id, user.uid, {
       limit: limit + 1, // Fetch limit + 1 to check if there are more
     }),
@@ -51,9 +51,16 @@ console.log(
 
 if (!character) return Astro.redirect("/profile");
 
-// Check if there are more voices
-const hasMore = paginatedVoices.length > limit;
-const voices = hasMore ? paginatedVoices.slice(0, limit) : paginatedVoices;
+// NEW: Split voices by storage type
+const cloudVoices = allVoices.filter((v) => v.storageType === "cloud");
+const localOnlyVoices = allVoices.filter((v) => v.storageType === "local-only");
+
+// Extract local-only IDs for client-side checking
+const localOnlyIds = localOnlyVoices.map((v) => v.id);
+
+// Pagination based on total voices
+const hasMore = allVoices.length > limit;
+const voices = hasMore ? allVoices.slice(0, limit) : allVoices;
 const hasPrevious = page > 1;
 
 const userTier = user.isPro ? "pro" : "free";
@@ -65,34 +72,35 @@ const userTier = user.isPro ? "pro" : "free";
   userName={user.displayName}
 >
   <StorageWarning />
+  <MigrationBanner
+    client:load
+    characterId={character.id}
+    isPro={user.isPro}
+    saveAcrossBrowsers={character.saveAcrossBrowsers || false}
+  />
 
   <div class="page-modal">
     <CharacterHeader character={character} voiceCount={character.voiceCount} />
 
     <main class="character-main">
       {
-        voices.length > 0 && (
-          <>
-            <VoicesHeader client:only totalVoices={character.voiceCount} />
-            <div class="voices-list">
-              {voices.map((voice) => (
-                <VoiceCard
-                  client:visible
-                  voice={voice}
-                  mainCharacter={character}
-                  allCharacters={allCharacters}
-                />
-              ))}
-            </div>
-            <Pagination
-              page={page}
-              hasMore={hasMore}
-              hasPrevious={hasPrevious}
-              baseUrl={`/character/${id}`}
-            />
-          </>
-        )
+        /* NEW: Use VoicesList component instead of mapping VoiceCard directly */
       }
+      <VoicesList
+        client:only="react"
+        cloudVoices={cloudVoices}
+        localOnlyIds={localOnlyIds}
+        mainCharacter={character}
+        allCharacters={allCharacters}
+      />
+
+      <Pagination
+        page={page}
+        hasMore={hasMore}
+        hasPrevious={hasPrevious}
+        baseUrl={`/character/${id}`}
+      />
+
       <div style="height: 200px;"></div>
     </main>
   </div>
@@ -130,6 +138,51 @@ const userTier = user.isPro ? "pro" : "free";
 
   let pendingVoiceData: any = null;
 
+  // Safari-compatible WAV validation function
+  async function validateWAVBlob(blob: Blob): Promise<boolean> {
+    if (blob.size < 44) {
+      console.error("[Voice] Audio file too small");
+      return false;
+    }
+
+    try {
+      const headerBuffer = await blob.slice(0, 44).arrayBuffer();
+      const view = new DataView(headerBuffer);
+
+      // Check RIFF signature
+      const riff = String.fromCharCode(
+        view.getUint8(0),
+        view.getUint8(1),
+        view.getUint8(2),
+        view.getUint8(3),
+      );
+
+      if (riff !== "RIFF") {
+        console.error("[Voice] Invalid RIFF header:", riff);
+        return false;
+      }
+
+      // Check WAVE signature
+      const wave = String.fromCharCode(
+        view.getUint8(8),
+        view.getUint8(9),
+        view.getUint8(10),
+        view.getUint8(11),
+      );
+
+      if (wave !== "WAVE") {
+        console.error("[Voice] Invalid WAVE header:", wave);
+        return false;
+      }
+
+      console.log("[Voice] WAV validation passed ✓");
+      return true;
+    } catch (error) {
+      console.error("[Voice] WAV validation error:", error);
+      return false;
+    }
+  }
+
   // Handle Preview Modal - Store character dialogue data
   window.addEventListener("open-preview-modal", (e: any) => {
     if (e.detail.characterId && e.detail.text) {
@@ -143,30 +196,79 @@ const userTier = user.isPro ? "pro" : "free";
               }))
             : [{ characterId: e.detail.characterId, text: e.detail.text }],
       };
+
+      console.log("[Voice] Preview modal opened with data:", {
+        characterId: pendingVoiceData.characterId,
+        isMultiCharacter: pendingVoiceData.isMultiCharacter,
+      });
     }
   });
 
-  // Handle Save Logic with Hybrid Storage + storageType
+  // Enhanced Save Logic with Safari validation
   window.addEventListener("voice-edited", async (e: any) => {
     if (!pendingVoiceData) {
-      console.error("No pending voice data");
+      console.error("[Voice] No pending voice data");
+      alert("Error: No voice data to save. Please try recording again.");
       return;
     }
 
     const { blob } = e.detail;
 
     if (!blob || !(blob instanceof Blob)) {
-      console.error("Invalid audio blob");
+      console.error("[Voice] Invalid audio blob");
       alert("Failed to save: Invalid audio data");
       return;
     }
 
+    if (blob.size === 0) {
+      console.error("[Voice] Empty audio blob");
+      alert("Failed to save: Audio file is empty");
+      return;
+    }
+
     try {
+      // Validate WAV blob for Safari compatibility
+      console.log("[Voice] Validating audio format...");
+      const isValid = await validateWAVBlob(blob);
+
+      if (!isValid) {
+        console.error("[Voice] WAV validation failed");
+        alert(
+          "Failed to save: Audio file appears corrupted. Please try trimming again.",
+        );
+        return;
+      }
+
+      // Calculate actual duration from audio buffer if available
+      let duration = blob.size / 16000; // Fallback estimate
+      try {
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioContext = new (
+          window.AudioContext || (window as any).webkitAudioContext
+        )();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        duration = audioBuffer.duration;
+        audioContext.close();
+        console.log("[Voice] Calculated duration:", duration);
+      } catch (err) {
+        console.warn(
+          "[Voice] Could not decode audio for duration, using estimate:",
+          duration,
+        );
+      }
+
+      console.log("[Voice] Preparing to save:", {
+        characterId: pendingVoiceData.characterId,
+        blobSize: blob.size,
+        blobType: blob.type,
+        duration,
+      });
+
       const formData = new FormData();
       formData.append("characterId", pendingVoiceData.characterId);
       formData.append("text", pendingVoiceData.text);
-      formData.append("audioBlob", blob);
-      formData.append("duration", String(blob.size / 16000));
+      formData.append("audioBlob", blob, "voice.wav");
+      formData.append("duration", String(duration));
       formData.append(
         "isMultiCharacter",
         String(pendingVoiceData.isMultiCharacter || false),
@@ -187,6 +289,7 @@ const userTier = user.isPro ? "pro" : "free";
       }
 
       // Save to server
+      console.log("[Voice] Sending to server...");
       const response = await fetch("/api/voices/save", {
         method: "POST",
         body: formData,
@@ -194,19 +297,56 @@ const userTier = user.isPro ? "pro" : "free";
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("[Voice] Server error:", errorData);
         throw new Error(errorData.error || "Failed to save voice");
       }
 
       const data = await response.json();
+      console.log("[Voice] Server response:", data);
 
       // Handle storage based on storageType
       if (data.storageType === "cloud") {
-        // Cloud storage - no local caching needed
+        console.log("[Voice] Saved to cloud storage ✓");
+
+        // Optional: Cache locally for offline access
+        if (data.audioUrl) {
+          try {
+            console.log("[Voice] Caching audio locally...");
+            const audioResponse = await fetch(data.audioUrl);
+            const audioBlob = await audioResponse.blob();
+
+            if (audioBlob.size === 0) {
+              throw new Error("Received empty audio blob from cloud");
+            }
+
+            await saveVoiceToIndexedDB({
+              id: data.voiceId,
+              characterId: pendingVoiceData.characterId,
+              text: pendingVoiceData.text,
+              audioBlob,
+              isMultiCharacter: pendingVoiceData.isMultiCharacter || false,
+              characterIds: pendingVoiceData.characterIds,
+              dialogues: pendingVoiceData.dialogues,
+              duration: duration,
+              createdAt: Date.now(),
+              isInCloudStorage: true,
+            });
+
+            console.log("[Voice] Cached locally for offline access ✓");
+          } catch (cacheError) {
+            console.warn(
+              "[Voice] Failed to cache locally (non-critical):",
+              cacheError,
+            );
+          }
+        }
       } else if (
         data.storageType === "local-only" &&
         data.audioData &&
         data.voiceId
       ) {
+        console.log("[Voice] Saving to local storage...");
+
         try {
           const base64Response = await fetch(data.audioData);
           const audioBlob = await base64Response.blob();
@@ -223,23 +363,42 @@ const userTier = user.isPro ? "pro" : "free";
             isMultiCharacter: pendingVoiceData.isMultiCharacter || false,
             characterIds: pendingVoiceData.characterIds,
             dialogues: pendingVoiceData.dialogues,
-            duration: audioBlob.size / 16000,
+            duration: duration,
             createdAt: Date.now(),
             isInCloudStorage: false,
           });
+
+          console.log("[Voice] Saved to IndexedDB ✓");
         } catch (idbError) {
-          console.error("Failed to save to IndexedDB:", idbError);
+          console.error("[Voice] Failed to save to IndexedDB:", idbError);
           alert(
             "Voice metadata saved but failed to cache locally. Refresh to see it in the list.",
           );
         }
       }
 
-      // Success - reload to show new voice
-      window.location.reload();
+      // Clear pending data
+      pendingVoiceData = null;
+
+      // Success - show notification and reload
+      console.log("[Voice] Save complete! Reloading page...");
+
+      // Brief delay for user feedback
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
     } catch (error) {
-      console.error("Save failed:", error);
-      alert(error instanceof Error ? error.message : "Failed to save voice");
+      console.error("[Voice] Save failed:", error);
+
+      // Show detailed error to user
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to save voice";
+
+      alert(
+        `Save failed: ${errorMessage}\n\nPlease try again. If the problem persists, try:\n1. Refreshing the page\n2. Using a different browser\n3. Contacting support`,
+      );
+
+      // Don't clear pending data on error - allow retry
     }
   });
 </script>

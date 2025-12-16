@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Character } from '../types/character';
+import type { Character } from '@/types/character';
 import { Icon } from '@iconify/react';
 
 interface CharacterInput {

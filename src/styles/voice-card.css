@@ -1,411 +1,289 @@
-  .voices-list {
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-s);
-      margin-bottom: var(--space-xl);
-  }
+/* src/styles/voice-card.css */
 
-  .voice-card {
-      padding: var(--space-xs);
-      background: var(--mauve-3);
-      border: 1px solid var(--mauve-6);
-      border-radius: var(--radius-m);
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-s);
-      opacity: 0;
-      transform: translateY(20px);
-      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+:root {
+    --ios-blur: saturate(180%) blur(20px);
+    --ios-radius: 20px;
+    --ios-radius-sm: 12px;
+    --ios-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+    --ios-blue: var(--blue-9);
+    --ios-gray-bg: var(--mauve-1);
+    --ios-separator: var(--mauve-6);
+}
 
-  .voice-card.visible {
-      opacity: 1;
-      transform: translateY(0);
-  }
+.voice-card {
+    position: relative;
+    /* Glassmorphism background */
+    background: var(--mauve-3);
+    backdrop-filter: var(--ios-blur);
+    -webkit-backdrop-filter: var(--ios-blur);
 
-  .voice-card:hover {
-      border-color: var(--mauve-8);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  }
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: var(--ios-shadow);
+    border-radius: var(--ios-radius);
 
-  .voice-top {
-      display: flex;
-      gap: var(--space-s);
-      align-items: center;
-      justify-content: space-between;
-  }
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 
-  .voice-avatars {
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
-  }
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+}
 
-  .voice-avatar {
-      width: 44px;
-      height: 44px;
-      border-radius: var(--radius-full);
-      border: 2px solid var(--mauve-6);
-      transition: transform 0.3s ease;
-  }
+.voice-card.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
 
-  .voice-avatar:hover {
-      transform: scale(1.1);
-      z-index: 20 !important;
-  }
+/* Hover state on desktop (subtle lift) */
+@media (hover: hover) {
+    .voice-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+    }
+}
 
-  .voice-text {
-      flex: 1;
-      font-size: var(--space-0);
-      color: var(--mauve-12);
-      margin: 0;
-      line-height: 1.6;
-      overflow: hidden;
-      text-overflow: ellipsis;
-  }
+/* -----------------------------------------------------------
+   TOP SECTION: Avatars & Status
+----------------------------------------------------------- */
+.voice-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
 
-  .voice-bottom {
-      display: flex;
-      align-items: center;
-      gap: var(--space-s);
-  }
+.voice-header-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
 
-  /* Voice card delete animation */
-  .voice-card.deleting {
-      opacity: 0;
-      transform: scale(0.95) translateX(-20px);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+/* iOS Tag Style for Cloud/Local */
+.storage-badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
 
-  /* Voice card actions container */
-  .voice-actions {
-      display: flex;
-      gap: var(--space-2xs);
-      align-items: center;
-  }
+.storage-badge.cloud {
+    background: rgba(0, 122, 255, 0.1);
+    /* iOS Blue tint */
+    color: var(--ios-blue);
+}
 
-  /* Delete button */
-  .delete-voice-btn {
-      width: 40px;
-      height: 40px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--mauve-4);
-      border: 1px solid var(--mauve-6);
-      border-radius: var(--radius-m);
-      color: var(--mauve-11);
-      cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.storage-badge.local {
+    background: rgba(255, 149, 0, 0.1);
+    /* iOS Orange tint */
+    color: var(--orange-9);
+}
 
-  .delete-voice-btn:hover {
-      background: var(--red-4);
-      border-color: var(--red-7);
-      color: var(--red-11);
-      transform: scale(1.05);
-  }
+.voice-summary-text {
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--mauve-11);
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    margin: 0;
+}
 
-  .delete-voice-btn:active {
-      transform: scale(0.95);
-  }
+/* Facepile (Overlapping Avatars) */
+.voice-avatars {
+    display: flex;
+    padding-left: 8px;
+}
 
-  .delete-voice-btn.deleting {
-      opacity: 0.5;
-      cursor: not-allowed;
-      animation: pulse 1.5s ease-in-out infinite;
-  }
+.voice-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--mauve-12);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    object-fit: cover;
+    transition: transform 0.2s ease;
+}
 
-  /* Update voice-bottom to accommodate both buttons */
-  .voice-bottom {
-      display: flex;
-      align-items: center;
-      gap: var(--space-s);
-  }
+.avatar-overflow {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--mauve-12);
+    color: var(--mauve-11);
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--mauve-12);
+}
 
-  .voice-player-wrapper {
-      flex: 1;
-      min-width: 0;
-      /* Allow flex item to shrink below content size */
-  }
+/* -----------------------------------------------------------
+   DIALOGUE SECTION (iMessage Style)
+----------------------------------------------------------- */
+.dialogue-section {
+    background: var(--mauve-1);
+    border-radius: var(--ios-radius-sm);
+    overflow: hidden;
+}
 
-  /* Mobile responsive adjustments */
-  @media (max-width: 640px) {
-      .voice-actions {
-          gap: var(--space-3xs);
-      }
+.expand-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
 
-      .delete-voice-btn,
-      .download-voice-btn {
-          width: 36px;
-          height: 36px;
-      }
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mauve-11);
+}
 
-      .delete-voice-btn svg,
-      .download-voice-btn svg {
-          width: 18px;
-          height: 18px;
-      }
-  }
+.expand-toggle:hover {
+    background: var(--mauve-2);
+}
 
-  .download-voice-btn {
-      width: 40px;
-      height: 40px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--mauve-4);
-      border: 1px solid var(--mauve-6);
-      border-radius: var(--radius-m);
-      color: var(--mauve-11);
-      cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.chevron {
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    opacity: 0.5;
+}
 
-  .download-voice-btn:hover {
-      background: var(--mauve-6);
-      border-color: var(--mauve-8);
-      color: var(--mauve-12);
-      transform: scale(1.05);
-  }
+.chevron.expanded {
+    transform: rotate(180deg);
+}
 
-  .download-voice-btn:active {
-      transform: scale(0.95);
-  }
+.dialogue-list {
+    padding: 0 12px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    animation: slideDown 0.3s ease-out;
+}
 
-  .download-voice-btn.downloading {
-      animation: pulse 1.5s ease-in-out infinite;
-  }
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
 
-  .download-voice-btn.downloaded {
-      background: var(--green-4);
-      border-color: var(--green-7);
-      color: var(--green-11);
-  }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
 
-  @keyframes pulse {
+/* Chat Bubbles */
+.dialogue-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
 
-      0%,
-      100% {
-          opacity: 1;
-      }
+.dialogue-avatar-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
 
-      50% {
-          opacity: 0.5;
-      }
-  }
+.dialogue-bubble {
+    background: var(--mauve-1);
+    padding: 8px 12px;
+    border-radius: 16px;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    max-width: 90%;
+}
 
-  @media (max-width: 640px) {
-      .character-avatar-large {
-          width: 60px;
-          height: 60px;
-      }
+.dialogue-name {
+    font-size: 11px;
+    color: var(--mauve-11);
+    margin-bottom: 2px;
+    font-weight: 500;
+}
 
-      .character-name-large {
-          font-size: var(--step-0);
-      }
+.dialogue-text {
+    font-size: 14px;
+    color: var(--mauve-12);
+    line-height: 1.4;
+    margin: 0;
+}
 
-      .voice-avatar {
-          width: 36px;
-          height: 36px;
-      }
+/* -----------------------------------------------------------
+   BOTTOM SECTION: Player & Actions
+----------------------------------------------------------- */
+.voice-bottom {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    /* Top hairline separator */
+    border-top: 1px solid var(--ios-separator);
+    padding-top: 12px;
+}
 
-      .voice-text {
-          font-size: calc(var(--space-0) * 0.95);
-      }
-  }
+.voice-player-wrapper {
+    flex: 1;
+    /* Assuming AudioPlayer renders something. 
+     If possible, style the audio player to be pill-shaped 
+     with a gray background #E5E5EA */
+}
 
-  /* src/styles/VoiceCard.css  (or put in your global CSS) */
+.voice-actions {
+    display: flex;
+    gap: 8px;
+}
 
-  .storage-badge {
-      padding: var(--space-3xs) var(--space-2xs);
-      border-radius: var(--radius-full);
-      font-size: calc(var(--step-0) * 0.5);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      pointer-events: none;
-      box-shadow: var(--shadow-xs);
-      display: inline-flex;
-      align-items: center;
-      gap: var(--space-2xs);
-  }
+/* iOS-style Icon Buttons */
+.action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    /* Perfect circle */
+    border: none;
+    background: var(--blue-2);
+    color: var(--blue-9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
 
-  .storage-badge.cloud {
-      position: relative;
-      background: linear-gradient(135deg, var(--blue-4), var(--blue-7));
-      color: var(--blue-12);
-  }
+.action-btn:hover {
+    background: var(--blue-6);
+    transform: scale(1.05);
+}
 
-  .storage-badge.local {
-      background: linear-gradient(135deg, var(--orange-4), var(--orange-7));
-      color: var(--orange-12);
-  }
+.action-btn:active {
+    transform: scale(0.92);
+    /* Authentic touch feedback */
+    background: var(--blue-6);
+}
 
-  /* Optional: subtle pulse animation when it's cloud (Pro feature) */
-  .storage-badge.cloud::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: var(--radius-m);
-      background: inherit;
-      opacity: 0.3;
-      animation: pulse-cloud 4s infinite;
-  }
+.action-btn.delete {
+    color: var(--red-9);
+    /* iOS Red */
+    background: rgba(255, 59, 48, 0.1);
+}
 
-  @keyframes pulse-cloud {
+.action-btn.delete:hover {
+    background: rgba(255, 59, 48, 0.2);
+}
 
-      0%,
-      100% {
-          transform: scale(1);
-      }
-
-      50% {
-          transform: scale(1.05);
-      }
-  }
-
-  /* Avatars */
-  .voice-avatars {
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
-  }
-
-  .voice-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-full);
-      border: 2px solid var(--mauve-2);
-      object-fit: cover;
-      flex-shrink: 0;
-  }
-
-  @media (min-width: 768px) {
-      .voice-avatar {
-          width: 44px;
-          height: 44px;
-      }
-  }
-
-  .avatar-overflow {
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius-full);
-      border: 2px solid var(--mauve-2);
-      background: var(--mauve-5);
-      color: var(--mauve-11);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      font-weight: 700;
-      flex-shrink: 0;
-  }
-
-  @media (min-width: 768px) {
-      .avatar-overflow {
-          width: 44px;
-          height: 44px;
-          font-size: 12px;
-      }
-  }
-
-  /* Dialogue Section */
-  .dialogue-section {
-      padding-top: var(--space-xs);
-      margin-bottom: var(--space-xs);
-  }
-
-  .expand-toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      padding: var(--space-2xs) var(--space-xs);
-      background: var(--mauve-1);
-      border: 1px solid var(--mauve-6);
-      border-radius: var(--radius-l);
-      color: var(--mauve-12);
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-  }
-
-  .expand-toggle:hover {
-      background: var(--mauve-12);
-      color: var(--mauve-1);
-  }
-
-  .chevron {
-      display: flex;
-      align-items: center;
-      transition: transform 0.2s ease;
-  }
-
-  .chevron.expanded {
-      transform: rotate(180deg);
-  }
-
-  .dialogue-list {
-      margin-top: var(--space-xs);
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-3xs);
-  }
-
-  .dialogue-item {
-      background: var(--mauve-1);
-      border: 1px solid var(--mauve-6);
-      border-radius: var(--radius-s);
-      padding: var(--space-2xs);
-      transition: all 0.2s ease;
-  }
-
-  .dialogue-item:hover {
-      background: var(--mauve-12);
-      color: var(--mauve-1);
-  }
-
-  .dialogue-header {
-      display: flex;
-      align-items: center;
-      gap: var(--space-2xs);
-      margin-bottom: var(--space-2xs);
-  }
-
-  .dialogue-avatar {
-      width: 24px;
-      height: 24px;
-      border-radius: var(--radius-m);
-      border: 2px solid var(--mauve-6);
-      object-fit: cover;
-  }
-
-  .dialogue-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: inherit;
-      flex: 1;
-  }
-
-  .dialogue-order {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--mauve-11);
-      background: var(--mauve-5);
-      padding: 2px 6px;
-      border-radius: var(--radius-s);
-  }
-
-  .dialogue-text {
-      margin: 0;
-      font-size: 14px;
-      color: var(--mauve-11);
-      line-height: 1.5;
-      padding-left: calc(24px + var(--space-2xs));
-  }
+.action-btn.downloading {
+    animation: pulse 1s infinite;
+}

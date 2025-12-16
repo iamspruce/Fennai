@@ -1,4 +1,4 @@
-// src/components/StorageManager.tsx
+// src/components/character/StorageManager.tsx
 import { useState, useEffect } from 'react';
 import {
     getStorageStats,

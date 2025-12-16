@@ -509,10 +509,20 @@ export async function cloneMultiVoice(
         throw new Error('Not authenticated');
     }
 
-    const characterIds = params.characters.map(char => char.characterId);
+    const uniqueCharIds: string[] = [];
+    const charIdToSpeakerMap = new Map<string, string>();
+
     const text = params.characters
-        .map((char, index) => `Speaker ${index + 1}: ${char.text}`)
+        .map(char => {
+            if (!charIdToSpeakerMap.has(char.characterId)) {
+                charIdToSpeakerMap.set(char.characterId, `Speaker ${uniqueCharIds.length + 1}`);
+                uniqueCharIds.push(char.characterId);
+            }
+            return `${charIdToSpeakerMap.get(char.characterId)}: ${char.text}`;
+        })
         .join('\n');
+
+    const characterIds = uniqueCharIds;
 
     const response = await fetch(`${API_BASE_URL}/voice_clone`, {
         method: 'POST',

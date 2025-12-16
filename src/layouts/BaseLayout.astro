@@ -18,7 +18,7 @@ const {
 // specific to Astro - generates the full URL for the current page
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 
-import StorageManager from "@/islands/StorageManager";
+import StorageManager from "@/components/character/StorageManager";
 import DeleteConfirmationModal from "@/islands/DeleteConfirmationModal";
 import PreviewEditModal from "@/islands/PreviewEditModal";
 import CreateCharacterModal from "@/islands/CreateCharacterModal";

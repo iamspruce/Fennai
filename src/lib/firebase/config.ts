@@ -40,10 +40,8 @@ if (typeof window !== 'undefined' && USE_EMULATORS) {
 // Initialize Firebase only if not already initialized
 if (!getApps().length) {
     app = initializeApp(firebaseConfig);
-    console.log('🔥 Firebase app initialized');
 } else {
     app = getApps()[0];
-    console.log('♻️ Using existing Firebase app');
 }
 
 // Initialize Auth
@@ -69,13 +67,6 @@ try {
     }
 
     db = initializeFirestore(app, settings);
-
-    console.log('✅ Firestore initialized with FORCED long polling');
-    console.log('📋 Settings applied:', {
-        forceLongPolling: true,
-        autoDetect: true,
-        hasCache: !!settings.localCache
-    });
 } catch (error: any) {
     // If already initialized, get the existing instance
     if (error.message?.includes('already been called') || error.message?.includes('already')) {
@@ -105,7 +96,6 @@ if (USE_EMULATORS && !emulatorsConnected) {
         connectStorageEmulator(storage, '127.0.0.1', 9199);
 
         emulatorsConnected = true;
-        console.log('🔧 Connected to Firebase Emulators');
     } catch (error: any) {
         // Ignore "already connected" errors
         if (!error.message?.includes('already')) {
@@ -122,7 +112,6 @@ if (typeof window !== 'undefined') {
             // Delete all Firebase apps before unload
             const apps = getApps();
             await Promise.all(apps.map(app => deleteApp(app)));
-            console.log('🧹 Firebase apps cleaned up before unload');
         } catch (error) {
             console.warn('Failed to cleanup Firebase:', error);
         }
@@ -133,7 +122,6 @@ if (typeof window !== 'undefined') {
     // Also monitor sync state
     import('firebase/firestore').then(({ onSnapshotsInSync }) => {
         onSnapshotsInSync(db, () => {
-            console.log('🔄 Firestore synced');
         });
     }).catch(() => {
         // Silently ignore if this feature isn't available

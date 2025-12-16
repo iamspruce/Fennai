@@ -91,6 +91,7 @@ export async function createCharacter(
         avatarUrl: string;
         sampleAudioUrl: string;
         sampleAudioStoragePath: string;
+        saveAcrossBrowsers: boolean;
     }
 ): Promise<string> {
     return FirestoreMonitor.track(
@@ -104,6 +105,7 @@ export async function createCharacter(
                 avatarUrl: data.avatarUrl,
                 sampleAudioUrl: data.sampleAudioUrl,
                 sampleAudioStoragePath: data.sampleAudioStoragePath,
+                saveAcrossBrowsers: data.saveAcrossBrowsers,
                 voiceCount: 0,
                 createdAt: now,
                 updatedAt: now,
@@ -142,6 +144,7 @@ export async function getCharacter(characterId: string, userId: string): Promise
                 sampleAudioUrl: data.sampleAudioUrl,
                 sampleAudioStoragePath: data.sampleAudioStoragePath,
                 voiceCount: data.voiceCount || 0,
+                saveAcrossBrowsers: data.saveAcrossBrowsers || false,
                 createdAt: data.createdAt?.toDate() || new Date(),
                 updatedAt: data.updatedAt?.toDate() || new Date(),
             };

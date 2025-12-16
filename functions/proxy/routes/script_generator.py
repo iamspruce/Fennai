@@ -1,39 +1,40 @@
 """
-Enhanced AI Script Generator with improved prompts for better quality.
+Enhanced AI Script Generator using Google GenAI SDK (2025).
+Uses the new google-genai package with Gemini 2.5 models.
 """
 from firebase_functions import https_fn, options
 from flask import Request, jsonify
-import logging
 import os
 import uuid
 import time
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+
 from google import genai
+from google.genai import types
 from firebase.db import get_db
 from google.cloud.firestore import SERVER_TIMESTAMP
-
 from firebase.admin import get_current_user
 from firebase.credits import check_credits_available, confirm_credit_deduction
-from utils.logging_config import get_logger, log_request
+from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Configuration
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
 SCRIPT_COST = 1
 MAX_CONTEXT_LENGTH = 2000
 MAX_CHARACTERS = 10
 RATE_LIMIT_WINDOW = 60
 MAX_REQUESTS_PER_WINDOW = 10
 
-def _get_gemini_client():
-    """Get configured Gemini client."""
+def _get_gemini_client() -> genai.Client:
+    """Get configured Gemini client using the new SDK."""
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY not configured")
     return genai.Client(api_key=GEMINI_API_KEY)
 
 
-def check_rate_limit(uid: str) -> tuple[bool, str]:
+def check_rate_limit(uid: str) -> Tuple[bool, str]:
     """Check if user has exceeded rate limit."""
     try:
         now = time.time()
@@ -59,14 +60,12 @@ def check_rate_limit(uid: str) -> tuple[bool, str]:
         return True, ""
 
 
-def validate_script_request(data: dict) -> tuple[bool, str]:
+def validate_script_request(data: dict) -> Tuple[bool, str]:
     """Validate script generation request data."""
     mode = data.get("mode", "single")
     template = data.get("template", "custom")
     context = data.get("context", "").strip()
     characters = data.get("characters", [])
-    tone = data.get("tone", "")
-    length = data.get("length", "")
     
     if mode not in ["single", "dialogue"]:
         return False, "Invalid mode. Must be 'single' or 'dialogue'"
@@ -110,9 +109,13 @@ def log_script_generation(uid: str, generation_id: str, data: dict):
         logger.error(f"Failed to log script generation: {str(e)}")
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
+@https_fn.on_request(
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=60,
+    max_instances=10
+)
 def generate_script(req: Request):
-    """Generate AI script using Gemini 1.5 Pro."""
+    """Generate AI script using Gemini 2.5."""
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Script generation request received")
     
@@ -122,7 +125,7 @@ def generate_script(req: Request):
         "Access-Control-Allow-Origin": "*"
     }
     
-    # CORS
+    # Handle OPTIONS (CORS preflight)
     if req.method == "OPTIONS":
         options_headers = {
             "Access-Control-Allow-Origin": "*",
@@ -134,7 +137,7 @@ def generate_script(req: Request):
     if req.method != "POST":
         return jsonify({"error": "Method not allowed"}), 405, cors_headers
     
-    # Auth
+    # Authentication
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
@@ -191,19 +194,19 @@ def generate_script(req: Request):
     prompt = build_enhanced_prompt(mode, template, context, characters, tone, length)
     logger.info(f"[{request_id}] Generated prompt for mode={mode}, template={template}")
     
-    # Call Gemini - Use new SDK
+    # Call Gemini using new SDK
     generation_id = str(uuid.uuid4())
     try:
-        # Use Gemini 1.5 Pro for best quality
+        # Use Gemini 2.5 Flash for best quality and speed
         response = client.models.generate_content(
-            model='gemini-1.5-pro',
+            model='gemini-2.5-flash',
             contents=prompt,
-            config={
-                'temperature': 0.85,
-                'top_p': 0.95,
-                'top_k': 40,
-                'max_output_tokens': 2048,
-            }
+            config=types.GenerateContentConfig(
+                temperature=0.85,
+                top_p=0.95,
+                top_k=40,
+                max_output_tokens=2048,
+            )
         )
         
         if not response.text:
@@ -230,11 +233,12 @@ def generate_script(req: Request):
         }), 200, cors_headers
         
     except Exception as e:
-        logger.error(f"[{request_id}] Gemini API error: {str(e)}")
+        logger.error(f"[{request_id}] Gemini API error: {str(e)}", exc_info=True)
         return jsonify({
             "error": "Failed to generate script. Please try again.",
             "details": str(e) if os.getenv("DEBUG") else None
         }), 500, cors_headers
+
 
 def build_enhanced_prompt(
     mode: str,
