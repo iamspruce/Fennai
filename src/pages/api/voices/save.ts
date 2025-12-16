@@ -229,8 +229,9 @@ export const POST: APIRoute = async ({ request }) => {
 
 // NEW: Safari-compatible WAV validation
 async function validateWAVBlob(blob: Blob): Promise<void> {
+    // Minimum WAV file size check
     if (blob.size < 44) {
-        throw new Error('Audio file too small to be valid WAV');
+        throw new Error('Audio file too small to be valid WAV (minimum 44 bytes)');
     }
 
     try {
@@ -238,7 +239,7 @@ async function validateWAVBlob(blob: Blob): Promise<void> {
         const headerBuffer = await blob.slice(0, 44).arrayBuffer();
         const view = new DataView(headerBuffer);
 
-        // Check RIFF signature
+        // Check RIFF signature (bytes 0-3)
         const riff = String.fromCharCode(
             view.getUint8(0),
             view.getUint8(1),
@@ -250,7 +251,7 @@ async function validateWAVBlob(blob: Blob): Promise<void> {
             throw new Error(`Invalid RIFF header: expected 'RIFF', got '${riff}'`);
         }
 
-        // Check WAVE signature
+        // Check WAVE signature (bytes 8-11)
         const wave = String.fromCharCode(
             view.getUint8(8),
             view.getUint8(9),
@@ -262,20 +263,24 @@ async function validateWAVBlob(blob: Blob): Promise<void> {
             throw new Error(`Invalid WAVE header: expected 'WAVE', got '${wave}'`);
         }
 
-        // Check file size consistency
+        // Check file size consistency (bytes 4-7)
         const declaredSize = view.getUint32(4, true) + 8;
-        const sizeDiff = Math.abs(declaredSize - blob.size);
+        const actualSize = blob.size;
+        const sizeDiff = Math.abs(declaredSize - actualSize);
 
+        // Safari mobile is strict about size - allow max 1 byte difference for padding
         if (sizeDiff > 1) {
             console.warn('[API] WAV size mismatch:', {
                 declared: declaredSize,
-                actual: blob.size,
+                actual: actualSize,
                 difference: sizeDiff
             });
-            // Don't throw, just warn - some encoders have slight discrepancies
+
+            // Don't fail - just warn
+            // Some encoders have slight discrepancies that are acceptable
         }
 
-        // Check for 'fmt ' chunk
+        // Check for 'fmt ' chunk (bytes 12-15)
         const fmt = String.fromCharCode(
             view.getUint8(12),
             view.getUint8(13),
@@ -287,19 +292,58 @@ async function validateWAVBlob(blob: Blob): Promise<void> {
             throw new Error(`Invalid format chunk: expected 'fmt ', got '${fmt}'`);
         }
 
-        // Check audio format (should be 1 for PCM)
+        // Verify audio format is PCM (bytes 20-21)
         const audioFormat = view.getUint16(20, true);
         if (audioFormat !== 1) {
-            console.warn('[API] Non-PCM audio format:', audioFormat);
-            // Don't throw - some valid formats use non-PCM
+            console.warn('[API] Non-PCM audio format detected:', audioFormat);
+            // Don't fail - some valid WAV files use non-PCM formats
         }
 
-        console.log('[API] WAV validation passed ✓');
+        // Verify reasonable channel count (bytes 22-23)
+        const channels = view.getUint16(22, true);
+        if (channels < 1 || channels > 2) {
+            throw new Error(`Invalid channel count: ${channels} (expected 1 or 2)`);
+        }
+
+        // Verify reasonable sample rate (bytes 24-27)
+        const sampleRate = view.getUint32(24, true);
+        if (sampleRate < 8000 || sampleRate > 48000) {
+            console.warn('[API] Unusual sample rate:', sampleRate);
+            // Don't fail - just warn
+        }
+
+        // Check for 'data' chunk (bytes 36-39)
+        const data = String.fromCharCode(
+            view.getUint8(36),
+            view.getUint8(37),
+            view.getUint8(38),
+            view.getUint8(39)
+        );
+
+        if (data !== 'data') {
+            throw new Error(`Invalid data chunk: expected 'data', got '${data}'`);
+        }
+
+        // Verify data size (bytes 40-43)
+        const dataSize = view.getUint32(40, true);
+        const expectedMaxDataSize = actualSize - 44;
+
+        if (dataSize > expectedMaxDataSize + 1) {
+            throw new Error(`Data size ${dataSize} exceeds file capacity ${expectedMaxDataSize}`);
+        }
+
+        console.log('[API] WAV validation passed ✓', {
+            format: audioFormat,
+            channels,
+            sampleRate,
+            dataSize
+        });
+
     } catch (error) {
         if (error instanceof Error) {
             throw error;
         }
-        throw new Error('Failed to validate WAV file');
+        throw new Error('Failed to validate WAV file structure');
     }
 }
 

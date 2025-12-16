@@ -23,7 +23,7 @@ const formatTime = (seconds: number): string => {
 const bufferToWave = (audioBuffer: AudioBuffer, length: number): Blob => {
   const numberOfChannels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
-  const format = 1;
+  const format = 1; // PCM
   const bitDepth = 16;
 
   const bytesPerSample = bitDepth / 8;
@@ -31,7 +31,10 @@ const bufferToWave = (audioBuffer: AudioBuffer, length: number): Blob => {
   const byteRate = sampleRate * blockAlign;
   const dataSize = length * numberOfChannels * bytesPerSample;
 
-  const buffer = new ArrayBuffer(44 + dataSize);
+  // CRITICAL: Ensure data size is even for Safari mobile
+  const adjustedDataSize = dataSize % 2 === 0 ? dataSize : dataSize + 1;
+
+  const buffer = new ArrayBuffer(44 + adjustedDataSize);
   const view = new DataView(buffer);
 
   const writeString = (offset: number, string: string) => {
@@ -40,29 +43,40 @@ const bufferToWave = (audioBuffer: AudioBuffer, length: number): Blob => {
     }
   };
 
+  // RIFF header
   writeString(0, 'RIFF');
-  view.setUint32(4, 36 + dataSize, true);
+  view.setUint32(4, 36 + adjustedDataSize, true); // File size - 8
   writeString(8, 'WAVE');
+
+  // fmt chunk
   writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, format, true);
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, format, true); // Audio format (1 = PCM)
   view.setUint16(22, numberOfChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, byteRate, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, bitDepth, true);
-  writeString(36, 'data');
-  view.setUint32(40, dataSize, true);
 
+  // data chunk
+  writeString(36, 'data');
+  view.setUint32(40, adjustedDataSize, true); // Data size
+
+  // Write audio samples
   let offset = 44;
   for (let i = 0; i < length; i++) {
     for (let channel = 0; channel < numberOfChannels; channel++) {
       const channelData = audioBuffer.getChannelData(channel);
-      const sample = Math.max(-1, Math.min(1, channelData[i]));
+      const sample = Math.max(-1, Math.min(1, channelData[i] || 0));
       const int16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
       view.setInt16(offset, int16, true);
       offset += 2;
     }
+  }
+
+  // If we added padding byte, set it to 0
+  if (adjustedDataSize !== dataSize) {
+    view.setUint8(offset, 0);
   }
 
   return new Blob([buffer], { type: 'audio/wav' });
