@@ -49,6 +49,18 @@ class ClusterSpeakersRequest(BaseModel):
         extra = 'ignore'
 
 
+
+class TranslateTranscriptRequest(BaseModel):
+    """Validation model for transcript translation requests"""
+    
+    job_id: str = Field(..., min_length=1, max_length=100)
+    uid: str = Field(..., min_length=1, max_length=100)
+    target_language: str = Field(..., min_length=2, max_length=10)
+    
+    class Config:
+        extra = 'ignore'
+
+
 class CloneAudioRequest(BaseModel):
     """Validation model for audio cloning requests"""
     
