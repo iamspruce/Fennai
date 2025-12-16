@@ -183,13 +183,25 @@ export default function ScriptGeneratorModal({
             const result = await generateScript({
                 mode,
                 template,
-                context, // Send CLEAN context
+                context,
                 characters: selectedCharacters.map(c => ({ id: c.id, name: c.name })),
                 tone: selectedTone,
                 length: selectedLength,
             });
 
-            setGeneratedScript(result.script);
+            // Format as HTML for RichTextEditor
+            const rawScript = result.script || '';
+            const htmlScript = rawScript.split('\n').map((line: string) => {
+                const l = line.trim();
+                if (!l) return '<p><br></p>';
+                // Simple markdown to HTML
+                const htmlLine = l
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>');
+                return `<p>${htmlLine}</p>`;
+            }).join('');
+
+            setGeneratedScript(htmlScript);
 
         } catch (err: any) {
             console.error('Script generation error:', err);
@@ -204,15 +216,32 @@ export default function ScriptGeneratorModal({
     const handleUseScript = () => {
         if (!generatedScript || !onGenerateRef.current) return;
 
+        // Helper to extract text from HTML content
+        const getPlainText = (html: string) => {
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            // Prefer iterating paragraphs to preserve newlines cleanly
+            const paragraphs = temp.querySelectorAll('p');
+            if (paragraphs.length > 0) {
+                return Array.from(paragraphs).map(p => p.innerText.trim()).join('\n');
+            }
+            return temp.innerText;
+        };
+
         if (mode === 'single') {
+            // For single mode, we pass potential HTML if the receiver supports it, 
+            // OR we can pass plain text. Assuming receiver is also RichText, passing HTML implies layout.
+            // But to be safe and consistent with 'onScriptGenerated' signature (usually text), let's pass text?
+            // Actually, if the user requested "Use my RichTextEditor", they probably want to keep formatting.
             onGenerateRef.current({ mainText: generatedScript });
         } else {
-            const lines = generatedScript.split('\n').filter(l => l.trim());
+            const cleanText = getPlainText(generatedScript);
+            const lines = cleanText.split('\n').filter((l: string) => l.trim());
             const dialogueMap = new Map<string, string[]>();
             const dialogueRegex = /^(\*\*?|\[)?(.*?)(?:\*\*?|\]|\))?:\s*(.+)$/;
             let currentSpeakerId = selectedCharacters[0].id;
 
-            lines.forEach(line => {
+            lines.forEach((line: string) => {
                 const match = line.match(dialogueRegex);
                 if (match) {
                     const extractedName = match[2].toLowerCase();
@@ -454,18 +483,28 @@ export default function ScriptGeneratorModal({
                                                 <Icon icon="lucide:check-circle" width={20} /><h4>Script Ready</h4>
                                             </div>
                                             <div className="preview-actions">
-                                                <span className="word-count">{generatedScript.split(' ').length} words</span>
-                                                <button className="copy-btn" onClick={() => navigator.clipboard.writeText(generatedScript)}>
+                                                <span className="word-count">
+                                                    {(() => {
+                                                        const temp = document.createElement('div');
+                                                        temp.innerHTML = generatedScript;
+                                                        return (temp.innerText || '').split(/\s+/).length;
+                                                    })()} words
+                                                </span>
+                                                <button className="copy-btn" onClick={() => {
+                                                    const temp = document.createElement('div');
+                                                    temp.innerHTML = generatedScript;
+                                                    navigator.clipboard.writeText(temp.innerText || '');
+                                                }}>
                                                     <Icon icon="lucide:copy" width={16} />
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="script-content">
-                                            {generatedScript.split('\n').map((line, idx) => (
-                                                <p key={idx} className={line.includes(':') ? 'dialogue-line' : 'action-line'}>
-                                                    {line || '\u00A0'}
-                                                </p>
-                                            ))}
+                                        <div className="editor-wrapper script-result-editor">
+                                            <RichTextEditor
+                                                initialValue={generatedScript}
+                                                onChange={setGeneratedScript}
+                                                placeholder="Script will appear here..."
+                                            />
                                         </div>
                                     </motion.div>
                                     <div className="action-buttons">
@@ -537,6 +576,14 @@ export default function ScriptGeneratorModal({
                             .script-content p { margin: 8px 0; line-height: 1.5; font-size: 14px; }
                             .dialogue-line { color: var(--mauve-12, #000); }
                             .action-line { color: var(--mauve-11, #666); font-style: italic; }
+
+                            /* Ensure RichTextEditor takes full height in preview */
+                            .script-result-editor .editor-content {
+                                min-height: 300px;
+                                max-height: 500px; /* larger max height for preview */
+                                background: var(--mauve-1, #fff); /* White background for editing */
+                            }
+
 
                             .action-buttons { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; margin-top: auto; }
                             .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer; transition: all 0.2s; border: none; }

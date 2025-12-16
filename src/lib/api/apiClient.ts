@@ -383,14 +383,14 @@ export async function generateScript(
 
     const result = await response.json();
 
-    console.log('📄 Full API Response:', JSON.stringify(result, null, 2));
 
-    if (!result.data?.script) {
+
+    if (!result?.script) {
         throw new Error('No script returned from API');
     }
 
     return {
-        script: result.data.script,
+        script: result.script,
         generationId: result.generationId,
         requestId: result.requestId,
     };

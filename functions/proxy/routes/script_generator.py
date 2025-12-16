@@ -226,7 +226,7 @@ def generate_script(req: Request):
     try:
         # Use Gemini 2.5 Flash for best quality and speed
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3-pro-preview',
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.85,
