@@ -51,7 +51,7 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
                     }
 
                     // Auto-redirect to review modal when cloning starts
-                    if (data.status === 'cloning') {
+                    if (data.status === 'cloning' || data.status === 'translating' || data.status === 'merging') {
                         setIsOpen(false);
                         window.dispatchEvent(
                             new CustomEvent('open-dub-review', {
@@ -155,7 +155,16 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
 
     if (!isOpen) return null;
 
-    if (!job || ['uploading', 'transcribing', 'extracting', 'retrying', 'failed'].includes(job.status)) {
+    const isProcessingStatus = !job || [
+        'uploading',
+        'processing',
+        'extracting',
+        'transcribing',
+        'clustering',
+        'retrying',
+    ].includes(job.status);
+
+    if (isProcessingStatus || job.status === 'failed') {
         const isFailed = job?.status === 'failed';
         const isRetrying = job?.status === 'retrying';
 

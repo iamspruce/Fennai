@@ -13,7 +13,7 @@ import CharacterHeader from "@/components/character/CharacterHeader.astro";
 import Pagination from "@/components/character/Pagination.astro";
 import StorageWarning from "@/components/character/StorageWarning.astro";
 import MigrationBanner from "@/components/character/MigrationBanner";
-import VoicesList from "@/components/character/VoicesList"; // NEW
+import MediaList from "@/components/character/MediaList"; // NEW
 import VoiceInputSection from "@/components/character/VoiceInputSection";
 
 // React Islands
@@ -86,7 +86,7 @@ const userTier = user.isPro ? "pro" : "free";
       {
         /* NEW: Use VoicesList component instead of mapping VoiceCard directly */
       }
-      <VoicesList
+      <MediaList
         client:only="react"
         cloudVoices={cloudVoices}
         localOnlyIds={localOnlyIds}

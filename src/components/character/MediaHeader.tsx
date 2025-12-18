@@ -1,14 +1,14 @@
-// src/islands/VoicesHeader.tsx
+// src/components/character/MediaHeader.tsx
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 
-interface VoicesHeaderProps {
+interface MediaHeaderProps {
   totalVoices: number;
   totalDubbing?: number;
 }
 
-export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHeaderProps) {
+export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHeaderProps) {
   const [showFilter, setShowFilter] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'single' | 'multi'>('all');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -110,8 +110,8 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
   const totalMedia = totalVoices + totalDubbing;
 
   return (
-    <div className="voices-header">
-      <div className="voices-summary">
+    <div className="media-header">
+      <div className="media-summary">
         <h2>
           Media <span className="count">({visibleCount > 0 ? visibleCount : totalMedia})</span>
         </h2>
@@ -129,7 +129,7 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
         )}
       </div>
 
-      <motion.div className="voices-header-actions">
+      <motion.div className="media-header-actions">
         <motion.button
           className={`header-btn download-all ${isDownloading ? 'loading' : ''}`}
           onClick={handleDownloadMultiple}
@@ -186,7 +186,7 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
                     whileHover={{ backgroundColor: 'var(--mauve-5)' }}
                   >
                     <span>
-                      {filter === 'all' ? 'All Voices' : filter === 'single' ? 'Single Character' : 'Multi-Character'}
+                      {filter === 'all' ? 'All Media' : filter === 'single' ? 'Single Character' : 'Multi-Character'}
                     </span>
                     {selectedFilter === filter && (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -202,7 +202,7 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
       </motion.div>
 
       <style>{`
-        .voices-header {
+        .media-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -211,13 +211,13 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
           gap: var(--space-s);
         }
 
-        .voices-summary {
+        .media-summary {
           display: flex;
           align-items: center;
           gap: var(--space-m);
         }
 
-        .voices-summary h2 {
+        .media-summary h2 {
           font-size: 1.5rem;
           font-weight: 600;
           color: var(--mauve-12);
@@ -259,7 +259,7 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
           color: var(--mauve-8);
         }
 
-        .voices-header-actions {
+        .media-header-actions {
           display: flex;
           gap: var(--space-xs);
         }
@@ -359,12 +359,12 @@ export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHe
         }
 
         @media (max-width: 640px) {
-          .voices-header {
+          .media-header {
             flex-direction: column;
             align-items: stretch;
           }
 
-          .voices-header-actions {
+          .media-header-actions {
             justify-content: stretch;
           }
 

@@ -3,10 +3,13 @@ import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 
 interface DeleteConfirmationProps {
-    voiceId: string;
-    voiceText: string;
+    id: string; // Generic ID (voiceId or jobId)
+    title?: string;
+    description?: string;
+    itemLabel?: string;
+    itemText?: string; // Preview text (voice script or file name)
     onConfirm: () => void;
-    onCancel: () => void;
+    onCancel?: () => void;
 }
 
 export default function DeleteConfirmationModal() {
@@ -57,7 +60,7 @@ export default function DeleteConfirmationModal() {
                 <div className="modal-header">
                     <div className="modal-title-group">
                         <Icon icon="lucide:trash-2" width={20} style={{ color: 'var(--red-9)' }} />
-                        <h3 className="modal-title" style={{ color: 'var(--red-9)' }}>Delete Voice</h3>
+                        <h3 className="modal-title" style={{ color: 'var(--red-9)' }}>{data.title || 'Delete Item'}</h3>
                     </div>
                     <button className="modal-close" onClick={handleCancel} disabled={isDeleting}>
                         <Icon icon="lucide:x" width={20} />
@@ -107,28 +110,29 @@ export default function DeleteConfirmationModal() {
                             padding: '0 var(--space-m)',
                             lineHeight: 1.5
                         }}>
-                            This action cannot be undone.
+                            {data.description || 'This action cannot be undone.'}
                         </p>
 
-                        {/* Voice Text Preview */}
-                        <div style={{
-                            width: '100%',
-                            padding: 'var(--space-s)',
-                            background: 'var(--mauve-2)',
-                            border: '1px solid var(--mauve-6)',
-                            borderRadius: 'var(--radius-m)',
-                            marginBottom: 'var(--space-l)'
-                        }}>
-                            <p style={{
-                                fontSize: '14px',
-                                color: 'var(--mauve-12)',
-                                fontStyle: 'italic',
-                                margin: 0,
-                                wordBreak: 'break-word'
+                        {data.itemText && (
+                            <div style={{
+                                width: '100%',
+                                padding: 'var(--space-s)',
+                                background: 'var(--mauve-2)',
+                                border: '1px solid var(--mauve-6)',
+                                borderRadius: 'var(--radius-m)',
+                                marginBottom: 'var(--space-l)'
                             }}>
-                                "{data.voiceText.length > 60 ? data.voiceText.substring(0, 60) + '...' : data.voiceText}"
-                            </p>
-                        </div>
+                                <p style={{
+                                    fontSize: '14px',
+                                    color: 'var(--mauve-12)',
+                                    fontStyle: 'italic',
+                                    margin: 0,
+                                    wordBreak: 'break-word'
+                                }}>
+                                    "{data.itemText.length > 60 ? data.itemText.substring(0, 60) + '...' : data.itemText}"
+                                </p>
+                            </div>
+                        )}
 
                         {/* Action Buttons */}
                         <div className="action-buttons" style={{ width: '100%' }}>
@@ -159,7 +163,7 @@ export default function DeleteConfirmationModal() {
                                         }} />
                                         Deleting...
                                     </span>
-                                ) : 'Delete Voice'}
+                                ) : (data.itemLabel || 'Delete Voice')}
                             </button>
 
                             <button

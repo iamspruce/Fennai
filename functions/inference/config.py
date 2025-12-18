@@ -25,6 +25,8 @@ class Config:
         
         # Cloud Run Configuration
         self.CLOUD_RUN_URL: str = os.getenv("CLOUD_RUN_URL", "")
+        if self.CLOUD_RUN_URL and not self.CLOUD_RUN_URL.startswith(("http://", "https://")):
+            self.CLOUD_RUN_URL = f"https://{self.CLOUD_RUN_URL}"
         
         # Cloud Tasks Configuration
         self.GCP_PROJECT: str = os.getenv("GCP_PROJECT", "fennai")

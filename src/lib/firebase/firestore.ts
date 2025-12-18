@@ -654,5 +654,60 @@ export async function updateVoiceLibraryEntry(
     );
 }
 
+// ============================================================================
+// DUBBING JOBS
+// ============================================================================
+
+export async function getDubbingJob(jobId: string, userId: string): Promise<any | null> {
+    return FirestoreMonitor.track(
+        'getDubbingJob',
+        async () => {
+            const docRef = adminDb.collection('dubbingJobs').doc(jobId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                return null;
+            }
+
+            const data = docSnap.data()!;
+
+            // Security check
+            if (data.uid !== userId) {
+                throw new Error('Permission denied: Dubbing job does not belong to user');
+            }
+
+            return {
+                id: docSnap.id,
+                ...data,
+                createdAt: data.createdAt?.toDate() || new Date(),
+                updatedAt: data.updatedAt?.toDate() || new Date(),
+            };
+        },
+        { jobId, userId }
+    );
+}
+
+export async function deleteDubbingJob(jobId: string, userId: string): Promise<void> {
+    return FirestoreMonitor.track(
+        'deleteDubbingJob',
+        async () => {
+            const docRef = adminDb.collection('dubbingJobs').doc(jobId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new Error('Dubbing job not found');
+            }
+
+            const data = docSnap.data()!;
+            if (data.uid !== userId) {
+                throw new Error('Permission denied: Dubbing job does not belong to user');
+            }
+
+            await docRef.delete();
+        },
+        { jobId, userId }
+    );
+}
+
 // Export the error class
 export { FirestoreError };

@@ -98,8 +98,11 @@ export default function VoiceCard({ voice, mainCharacter, allCharacters }: Voice
         if (isDeleting) return;
         window.dispatchEvent(new CustomEvent('open-delete-modal', {
             detail: {
-                voiceId: voice.id,
-                voiceText: voice.text,
+                id: voice.id,
+                itemText: voice.text,
+                title: 'Delete Voice',
+                description: 'This action cannot be undone. This voice will be permanently removed.',
+                itemLabel: 'Delete Voice',
                 onConfirm: async () => {
                     setIsDeleting(true);
                     try {

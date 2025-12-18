@@ -1,15 +1,15 @@
-// src/islands/VoicesList.tsx
+// src/components/character/MediaList.tsx
 import { useState, useEffect } from 'react';
 import VoiceCard from '@/components/character/VoiceCard';
 import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
-import VoicesHeader from './VoicesHeader';
+import MediaHeader from './MediaHeader';
 import { db } from '@/lib/firebase/config';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
 
-interface VoicesListProps {
+interface MediaListProps {
     cloudVoices: any[];
     localOnlyIds: string[];
     mainCharacter: any;
@@ -24,13 +24,13 @@ type MediaItem = {
     data: any;
 };
 
-export default function VoicesList({
+export default function MediaList({
     cloudVoices,
     localOnlyIds,
     mainCharacter,
     allCharacters,
     userId
-}: VoicesListProps) {
+}: MediaListProps) {
     const [availableLocalVoices, setAvailableLocalVoices] = useState<any[]>([]);
     const [dubbingJobs, setDubbingJobs] = useState<DubbingJob[]>([]);
     const [isCheckingLocal, setIsCheckingLocal] = useState(true);
@@ -71,7 +71,7 @@ export default function VoicesList({
 
                 setAvailableLocalVoices(available);
             } catch (err) {
-                console.error('[VoicesList] Error checking local voices:', err);
+                console.error('[MediaList] Error checking local voices:', err);
             } finally {
                 setIsCheckingLocal(false);
             }
@@ -105,7 +105,7 @@ export default function VoicesList({
                 setIsLoadingDubbing(false);
             },
             (err: Error) => {
-                console.error('[VoicesList] Error listening to dubbing jobs:', err);
+                console.error('[MediaList] Error listening to dubbing jobs:', err);
                 setIsLoadingDubbing(false);
             }
         );
@@ -133,24 +133,33 @@ export default function VoicesList({
 
     // Combine voices and dubbing jobs, sorted by creation date
     const allMediaItems: MediaItem[] = [
-        ...cloudVoices.map(voice => ({
-            id: voice.id,
-            type: 'voice' as const,
-            createdAt: voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt),
-            data: voice
-        })),
-        ...availableLocalVoices.map(voice => ({
-            id: voice.id,
-            type: 'voice' as const,
-            createdAt: voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt),
-            data: voice
-        })),
-        ...dubbingJobs.map(job => ({
-            id: job.id,
-            type: 'dubbing' as const,
-            createdAt: job.createdAt instanceof Date ? job.createdAt : new Date(job.createdAt),
-            data: job
-        }))
+        ...cloudVoices.map(voice => {
+            const date = voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt);
+            return {
+                id: voice.id,
+                type: 'voice' as const,
+                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
+                data: voice
+            };
+        }),
+        ...availableLocalVoices.map(voice => {
+            const date = voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt);
+            return {
+                id: voice.id,
+                type: 'voice' as const,
+                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
+                data: voice
+            };
+        }),
+        ...dubbingJobs.map(job => {
+            const date = job.createdAt instanceof Date ? job.createdAt : new Date(job.createdAt);
+            return {
+                id: job.id,
+                type: 'dubbing' as const,
+                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
+                data: job
+            };
+        })
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const handlePlayDubbing = (jobId: string) => {
@@ -162,25 +171,46 @@ export default function VoicesList({
     };
 
     const handleDeleteDubbing = async (jobId: string) => {
-        try {
-            // Call API to delete dubbing job
-            await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+        const job = dubbingJobs.find(j => j.id === jobId);
+        if (!job) return;
 
-            // Remove from local state
-            setDubbingJobs(prev => prev.filter(job => job.id !== jobId));
-        } catch (err) {
-            console.error('[VoicesList] Error deleting dubbing job:', err);
-            alert('Failed to delete dubbed media');
-        }
+        window.dispatchEvent(new CustomEvent('open-delete-modal', {
+            detail: {
+                id: jobId,
+                title: 'Delete Dubbed Media',
+                description: 'This will permanently remove the dubbed media and its associated files.',
+                itemLabel: 'Delete Media',
+                itemText: job.fileName || 'Untitled Dubbing',
+                onConfirm: async () => {
+                    try {
+                        const response = await fetch(`/api/dubbing/${jobId}`, {
+                            method: 'DELETE'
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Failed to delete');
+                        }
+
+                        // Remove from local state
+                        setDubbingJobs(prev => prev.filter(j => j.id !== jobId));
+                    } catch (err) {
+                        console.error('[MediaList] Error deleting dubbing job:', err);
+                        alert('Failed to delete dubbed media');
+                        throw err; // Re-throw for modal to handle
+                    }
+                }
+            }
+        }));
     };
 
     if (isCheckingLocal || isLoadingDubbing) {
         return (
-            <div className="voices-loading">
+            <div className="media-loading">
                 <div className="spinner" />
                 <p>Loading your media...</p>
                 <style>{`
-                    .voices-loading {
+                    .media-loading {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
@@ -188,18 +218,18 @@ export default function VoicesList({
                         padding: var(--space-xl) var(--space-m);
                         color: var(--mauve-11);
                     }
-                    .voices-loading .spinner {
+                    .media-loading .spinner {
                         width: 40px;
                         height: 40px;
                         border: 4px solid var(--mauve-6);
                         border-top: 4px solid var(--orange-9);
                         border-radius: 50%;
-                        animation: spinVoices 1s linear infinite;
+                        animation: spinMedia 1s linear infinite;
                     }
-                    @keyframes spinVoices {
+                    @keyframes spinMedia {
                         to { transform: rotate(360deg); }
                     }
-                    .voices-loading p {
+                    .media-loading p {
                         margin: 0;
                         font-size: 0.95rem;
                     }
@@ -210,7 +240,7 @@ export default function VoicesList({
 
     if (allMediaItems.length === 0) {
         return (
-            <div className="no-voices">
+            <div className="no-media">
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.3, marginBottom: '16px' }}>
                     <path d="M9 18V5l12-2v13" />
                     <circle cx="6" cy="18" r="3" />
@@ -218,7 +248,7 @@ export default function VoicesList({
                 </svg>
                 <p>No voices or dubbed media yet. Generate your first one below!</p>
                 <style>{`
-                    .no-voices {
+                    .no-media {
                         display: flex;
                         flex-direction: column;
                         align-items: center;
@@ -226,7 +256,7 @@ export default function VoicesList({
                         padding: var(--space-xl) var(--space-m);
                         color: var(--mauve-11);
                     }
-                    .no-voices p {
+                    .no-media p {
                         margin: 0;
                         font-size: 0.95rem;
                     }
@@ -237,11 +267,11 @@ export default function VoicesList({
 
     return (
         <>
-            <VoicesHeader
+            <MediaHeader
                 totalVoices={cloudVoices.length + availableLocalVoices.length}
                 totalDubbing={dubbingJobs.length}
             />
-            <div className="voices-list">
+            <div className="media-list">
                 {allMediaItems.map((item) => (
                     item.type === 'voice' ? (
                         <VoiceCard
@@ -262,46 +292,12 @@ export default function VoicesList({
                 ))}
             </div>
             <style>{`
-                .voices-header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: var(--space-m);
-                    padding: 0 var(--space-xs);
-                }
-                .voices-header h2 {
-                    margin: 0;
-                    font-size: 1.25rem;
-                    font-weight: 600;
-                    color: var(--mauve-12);
-                }
-                .voices-breakdown {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--space-xs);
-                    font-size: 0.85rem;
-                    color: var(--mauve-11);
-                }
-                .breakdown-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
-                }
-                .breakdown-item.cloud {
-                    color: var(--blue-11);
-                }
-                .breakdown-item.local {
-                    color: var(--mauve-11);
-                }
-                .breakdown-divider {
-                    color: var(--mauve-8);
-                }
-                .voices-list {
+                .media-list {
                     display: grid;
                     gap: var(--space-m);
                 }
                 @media (max-width: 768px) {
-                    .voices-header {
+                    .media-header {
                         flex-direction: column;
                         align-items: flex-start;
                         gap: var(--space-xs);

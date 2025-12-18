@@ -182,28 +182,69 @@ def extract_audio_route():
         # Wait for operation to complete
         response = operation.result(timeout=config.STT_TIMEOUT)
         
-        # Process results
-        transcript = []
+        # Process results - collect all words first to deduplicate
+        all_words = []
+        seen_words = set()  # (start, end, word)
+        
         for result in response.results:
+            if not result.alternatives:
+                continue
+                
             alternative = result.alternatives[0]
+            # Some results might be alternatives or overlaps, especially with diarization.
+            # We collect all words and deduplicate by time and content.
             for word_info in alternative.words:
-                speaker_tag = word_info.speaker_tag
-                word = word_info.word
                 start_time = word_info.start_time.total_seconds()
                 end_time = word_info.end_time.total_seconds()
+                word = word_info.word
+                speaker_tag = word_info.speaker_tag
                 
-                # Group consecutive words from same speaker
-                if transcript and transcript[-1]["speakerId"] == f"speaker_{speaker_tag}":
-                    transcript[-1]["text"] += f" {word}"
-                    transcript[-1]["endTime"] = end_time
-                else:
-                    transcript.append({
+                # Deduplication key
+                # We use a small epsilon for time comparison if needed, but usually exact match works
+                word_key = (round(start_time, 3), round(end_time, 3), word.strip().lower())
+                
+                if word_key not in seen_words:
+                    all_words.append({
                         "speakerId": f"speaker_{speaker_tag}",
                         "text": word,
                         "startTime": start_time,
                         "endTime": end_time,
-                        "confidence": alternative.confidence,
+                        "confidence": alternative.confidence
                     })
+                    seen_words.add(word_key)
+        
+        # Sort words by start time
+        all_words.sort(key=lambda x: x["startTime"])
+        
+        # Group consecutive words from same speaker
+        transcript = []
+        for word_data in all_words:
+            speaker_id = word_data["speakerId"]
+            word = word_data["text"]
+            start_time = word_data["startTime"]
+            end_time = word_data["endTime"]
+            
+            if transcript and transcript[-1]["speakerId"] == speaker_id:
+                # Check for large gaps (e.g. > 3 seconds) - start a new segment if gap is large
+                if start_time - transcript[-1]["endTime"] > 3.0:
+                    transcript.append({
+                        "speakerId": speaker_id,
+                        "text": word,
+                        "startTime": start_time,
+                        "endTime": end_time,
+                        "confidence": word_data["confidence"]
+                    })
+                else:
+                    transcript[-1]["text"] += f" {word}"
+                    transcript[-1]["endTime"] = end_time
+            else:
+                transcript.append({
+                    "speakerId": speaker_id,
+                    "text": word,
+                    "startTime": start_time,
+                    "endTime": end_time,
+                    "confidence": word_data["confidence"]
+                })
         
         # Merge short segments (less than 2 seconds)
         merged_transcript = []

@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 CLOUD_RUN_URL = os.environ.get("CLOUD_RUN_URL")
+if CLOUD_RUN_URL and not CLOUD_RUN_URL.startswith(("http://", "https://")):
+    CLOUD_RUN_URL = f"https://{CLOUD_RUN_URL}"
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN")
 
 GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT") or "fennai"
