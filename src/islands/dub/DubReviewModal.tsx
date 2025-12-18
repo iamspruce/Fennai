@@ -1,15 +1,18 @@
 // src/islands/DubReviewModal.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify/react';
 import { db } from '@/lib/firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
+import { getDubbingMedia } from '@/lib/db/indexdb';
 
 export default function DubReviewModal() {
     const [isOpen, setIsOpen] = useState(false);
     const [jobId, setJobId] = useState('');
     const [job, setJob] = useState<DubbingJob | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
+    const [originalMediaUrl, setOriginalMediaUrl] = useState<string | null>(null);
+    const originalUrlRef = useRef<string | null>(null);
 
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
@@ -34,6 +37,42 @@ export default function DubReviewModal() {
 
         return () => unsubscribe();
     }, [jobId]);
+
+    // Fetch original media from IndexedDB
+    useEffect(() => {
+        if (!jobId || !isOpen) return;
+
+        const loadOriginalMedia = async () => {
+            try {
+                const media = await getDubbingMedia(jobId);
+                if (media) {
+                    // Clean up previous URL
+                    if (originalUrlRef.current) {
+                        URL.revokeObjectURL(originalUrlRef.current);
+                    }
+
+                    // Create blob from stored data
+                    const blob = new Blob([media.audioData], { type: media.audioType });
+                    const url = URL.createObjectURL(blob);
+
+                    originalUrlRef.current = url;
+                    setOriginalMediaUrl(url);
+                }
+            } catch (error) {
+                console.error('[DubReviewModal] Failed to load original media:', error);
+            }
+        };
+
+        loadOriginalMedia();
+
+        return () => {
+            // Cleanup on unmount
+            if (originalUrlRef.current) {
+                URL.revokeObjectURL(originalUrlRef.current);
+                originalUrlRef.current = null;
+            }
+        };
+    }, [jobId, isOpen]);
 
     const handleDownloadAndDelete = async () => {
         if (!job?.finalMediaUrl) return;
@@ -60,6 +99,7 @@ export default function DubReviewModal() {
 
     const isComplete = job.status === 'completed';
     const progress = job.progress || 0;
+    const currentMediaUrl = showOriginal ? originalMediaUrl : job.finalMediaUrl;
 
     return (
         <div className="modal-overlay">
@@ -68,6 +108,11 @@ export default function DubReviewModal() {
                     <h3 className="modal-title">
                         {isComplete ? 'Dubbing Complete!' : 'Processing...'}
                     </h3>
+                    {isComplete && (
+                        <button className="modal-close" onClick={() => setIsOpen(false)}>
+                            <Icon icon="lucide:x" width={20} />
+                        </button>
+                    )}
                 </div>
 
                 <div className="modal-body">
@@ -102,35 +147,44 @@ export default function DubReviewModal() {
                         </div>
                     ) : (
                         <>
-                            {/* Media Preview */}
-                            <div className="preview-toggle">
-                                <button
-                                    className={!showOriginal ? 'active' : ''}
-                                    onClick={() => setShowOriginal(false)}
-                                >
-                                    Dubbed Version
-                                </button>
-                                <button
-                                    className={showOriginal ? 'active' : ''}
-                                    onClick={() => setShowOriginal(true)}
-                                >
-                                    Original
-                                </button>
-                            </div>
+                            {/* Media Preview with Tabs */}
+                            <div className="preview-section">
+                                <div className="preview-tabs">
+                                    <button
+                                        className={`preview-tab ${!showOriginal ? 'active' : ''}`}
+                                        onClick={() => setShowOriginal(false)}
+                                    >
+                                        <Icon icon="lucide:sparkles" width={16} />
+                                        Dubbed Version
+                                    </button>
+                                    <button
+                                        className={`preview-tab ${showOriginal ? 'active' : ''}`}
+                                        onClick={() => setShowOriginal(true)}
+                                        disabled={!originalMediaUrl}
+                                    >
+                                        <Icon icon="lucide:file-audio" width={16} />
+                                        Original
+                                    </button>
+                                </div>
 
-                            {job.mediaType === 'video' ? (
-                                <video
-                                    controls
-                                    src={showOriginal ? job.originalMediaUrl : job.finalMediaUrl}
-                                    style={{ width: '100%', borderRadius: 'var(--radius-m)' }}
-                                />
-                            ) : (
-                                <audio
-                                    controls
-                                    src={showOriginal ? job.audioUrl : job.finalMediaUrl}
-                                    style={{ width: '100%' }}
-                                />
-                            )}
+                                <div className="media-container">
+                                    {job.mediaType === 'video' ? (
+                                        <video
+                                            key={currentMediaUrl} // Force reload when switching
+                                            controls
+                                            src={currentMediaUrl || undefined}
+                                            className="media-player"
+                                        />
+                                    ) : (
+                                        <audio
+                                            key={currentMediaUrl}
+                                            controls
+                                            src={currentMediaUrl || undefined}
+                                            className="media-player"
+                                        />
+                                    )}
+                                </div>
+                            </div>
 
                             {/* Action Buttons */}
                             <div className="action-buttons">
@@ -153,6 +207,136 @@ export default function DubReviewModal() {
                     )}
                 </div>
             </div>
+
+            <style>{`
+                .preview-section {
+                    margin-bottom: var(--space-m);
+                }
+
+                .preview-tabs {
+                    display: flex;
+                    gap: var(--space-2xs);
+                    margin-bottom: var(--space-m);
+                    background: var(--mauve-3);
+                    padding: 4px;
+                    border-radius: var(--radius-m);
+                }
+
+                .preview-tab {
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-2xs);
+                    padding: var(--space-xs) var(--space-s);
+                    background: transparent;
+                    border: none;
+                    border-radius: var(--radius-s);
+                    color: var(--mauve-11);
+                    font-size: 14px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+
+                .preview-tab:hover:not(:disabled) {
+                    background: var(--mauve-4);
+                    color: var(--mauve-12);
+                }
+
+                .preview-tab.active {
+                    background: white;
+                    color: var(--orange-9);
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                }
+
+                .preview-tab:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                .media-container {
+                    background: var(--mauve-2);
+                    border-radius: var(--radius-m);
+                    padding: var(--space-s);
+                    min-height: 200px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .media-player {
+                    width: 100%;
+                    border-radius: var(--radius-m);
+                }
+
+                .action-buttons {
+                    display: flex;
+                    gap: var(--space-s);
+                    margin-top: var(--space-m);
+                }
+
+                .btn {
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: var(--space-xs);
+                    padding: var(--space-s);
+                    border-radius: var(--radius-m);
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    border: none;
+                }
+
+                .btn-primary {
+                    background: var(--orange-9);
+                    color: white;
+                }
+
+                .btn-primary:hover {
+                    background: var(--orange-10);
+                }
+
+                .btn-secondary {
+                    background: var(--mauve-3);
+                    color: var(--mauve-12);
+                    border: 1px solid var(--mauve-6);
+                }
+
+                .btn-secondary:hover {
+                    background: var(--mauve-4);
+                }
+
+                .progress-section {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: var(--space-m);
+                    padding: var(--space-xl) 0;
+                }
+
+                .circular-progress {
+                    position: relative;
+                }
+
+                .progress-text {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    font-size: var(--step-2);
+                    font-weight: 700;
+                    color: var(--orange-9);
+                }
+
+                .progress-status {
+                    font-size: 14px;
+                    color: var(--mauve-11);
+                    text-align: center;
+                }
+            `}</style>
         </div>
     );
 }

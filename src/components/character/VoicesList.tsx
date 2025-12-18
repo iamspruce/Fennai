@@ -1,24 +1,39 @@
 // src/islands/VoicesList.tsx
 import { useState, useEffect } from 'react';
 import VoiceCard from '@/components/character/VoiceCard';
+import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 import VoicesHeader from './VoicesHeader';
+import { db } from '@/lib/firebase/config';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import type { DubbingJob } from '@/types/dubbing';
 
 interface VoicesListProps {
     cloudVoices: any[];
     localOnlyIds: string[];
     mainCharacter: any;
     allCharacters: any[];
+    userId: string; // User's UID for filtering dubbing jobs
 }
+
+type MediaItem = {
+    id: string;
+    type: 'voice' | 'dubbing';
+    createdAt: Date;
+    data: any;
+};
 
 export default function VoicesList({
     cloudVoices,
     localOnlyIds,
     mainCharacter,
-    allCharacters
+    allCharacters,
+    userId
 }: VoicesListProps) {
     const [availableLocalVoices, setAvailableLocalVoices] = useState<any[]>([]);
+    const [dubbingJobs, setDubbingJobs] = useState<DubbingJob[]>([]);
     const [isCheckingLocal, setIsCheckingLocal] = useState(true);
+    const [isLoadingDubbing, setIsLoadingDubbing] = useState(true);
 
     useEffect(() => {
         const checkLocalVoices = async () => {
@@ -28,8 +43,6 @@ export default function VoicesList({
             }
 
             try {
-
-
                 // Check which local-only voices actually exist in IndexedDB
                 const available = [];
 
@@ -52,10 +65,8 @@ export default function VoicesList({
                         }
                     } catch (err) {
                         // Voice doesn't exist locally, skip it
-
                     }
                 }
-
 
                 setAvailableLocalVoices(available);
             } catch (err) {
@@ -68,22 +79,90 @@ export default function VoicesList({
         checkLocalVoices();
     }, [localOnlyIds]);
 
-    // Combine and sort all available voices by creation date (newest first)
-    const allAvailableVoices = [
-        ...cloudVoices,
-        ...availableLocalVoices
-    ].sort((a, b) => {
-        const dateA = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-        const dateB = b.createdAt instanceof Date ? b.createdAt : new Date(b.createdAt);
-        return dateB.getTime() - dateA.getTime();
-    });
+    // Fetch dubbing jobs for this user
+    useEffect(() => {
+        const fetchDubbingJobs = async () => {
+            try {
+                const dubbingQuery = query(
+                    collection(db, 'dubbingJobs'),
+                    where('uid', '==', userId),
+                    where('status', '==', 'completed'),
+                    orderBy('createdAt', 'desc'),
+                    limit(50)
+                );
 
+                const snapshot = await getDocs(dubbingQuery);
+                const jobs: DubbingJob[] = [];
 
-    if (isCheckingLocal) {
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    jobs.push({
+                        ...data,
+                        id: doc.id,
+                        createdAt: data.createdAt?.toDate() || new Date(),
+                        updatedAt: data.updatedAt?.toDate() || new Date(),
+                    } as DubbingJob);
+                });
+
+                setDubbingJobs(jobs);
+            } catch (err) {
+                console.error('[VoicesList] Error fetching dubbing jobs:', err);
+            } finally {
+                setIsLoadingDubbing(false);
+            }
+        };
+
+        fetchDubbingJobs();
+    }, [userId]);
+
+    // Combine voices and dubbing jobs, sorted by creation date
+    const allMediaItems: MediaItem[] = [
+        ...cloudVoices.map(voice => ({
+            id: voice.id,
+            type: 'voice' as const,
+            createdAt: voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt),
+            data: voice
+        })),
+        ...availableLocalVoices.map(voice => ({
+            id: voice.id,
+            type: 'voice' as const,
+            createdAt: voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt),
+            data: voice
+        })),
+        ...dubbingJobs.map(job => ({
+            id: job.id,
+            type: 'dubbing' as const,
+            createdAt: job.createdAt instanceof Date ? job.createdAt : new Date(job.createdAt),
+            data: job
+        }))
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const handlePlayDubbing = (jobId: string) => {
+        window.dispatchEvent(
+            new CustomEvent('open-dub-review', {
+                detail: { jobId }
+            })
+        );
+    };
+
+    const handleDeleteDubbing = async (jobId: string) => {
+        try {
+            // Call API to delete dubbing job
+            await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+
+            // Remove from local state
+            setDubbingJobs(prev => prev.filter(job => job.id !== jobId));
+        } catch (err) {
+            console.error('[VoicesList] Error deleting dubbing job:', err);
+            alert('Failed to delete dubbed media');
+        }
+    };
+
+    if (isCheckingLocal || isLoadingDubbing) {
         return (
             <div className="voices-loading">
                 <div className="spinner" />
-                <p>Loading your voices...</p>
+                <p>Loading your media...</p>
                 <style>{`
                     .voices-loading {
                         display: flex;
@@ -113,7 +192,7 @@ export default function VoicesList({
         );
     }
 
-    if (allAvailableVoices.length === 0) {
+    if (allMediaItems.length === 0) {
         return (
             <div className="no-voices">
                 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.3, marginBottom: '16px' }}>
@@ -121,7 +200,7 @@ export default function VoicesList({
                     <circle cx="6" cy="18" r="3" />
                     <circle cx="18" cy="16" r="3" />
                 </svg>
-                <p>No voices yet. Generate your first one below!</p>
+                <p>No voices or dubbed media yet. Generate your first one below!</p>
                 <style>{`
                     .no-voices {
                         display: flex;
@@ -142,15 +221,27 @@ export default function VoicesList({
 
     return (
         <>
-            <VoicesHeader totalVoices={allAvailableVoices.length} />
+            <VoicesHeader
+                totalVoices={cloudVoices.length + availableLocalVoices.length}
+                totalDubbing={dubbingJobs.length}
+            />
             <div className="voices-list">
-                {allAvailableVoices.map((voice) => (
-                    <VoiceCard
-                        key={voice.id}
-                        voice={voice}
-                        mainCharacter={mainCharacter}
-                        allCharacters={allCharacters}
-                    />
+                {allMediaItems.map((item) => (
+                    item.type === 'voice' ? (
+                        <VoiceCard
+                            key={item.id}
+                            voice={item.data}
+                            mainCharacter={mainCharacter}
+                            allCharacters={allCharacters}
+                        />
+                    ) : (
+                        <DubbingVideoCard
+                            key={item.id}
+                            job={item.data}
+                            onPlay={handlePlayDubbing}
+                            onDelete={handleDeleteDubbing}
+                        />
+                    )
                 ))}
             </div>
             <style>{`

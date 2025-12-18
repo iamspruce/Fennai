@@ -7,6 +7,7 @@ interface PreviewEventDetail {
   audioBlob: Blob;
   source: string;
   mediaType?: 'audio' | 'video';
+  fileName?: string;
   characterId?: string;
   text?: string;
   isMultiCharacter?: boolean;
@@ -87,6 +88,7 @@ export default function PreviewEditModal() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [source, setSource] = useState<string>('');
   const [mediaType, setMediaType] = useState<'audio' | 'video'>('audio');
+  const [fileName, setFileName] = useState<string>('');
   const [metadata, setMetadata] = useState<any>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -127,6 +129,7 @@ export default function PreviewEditModal() {
       setAudioBlob(e.detail.audioBlob);
       setSource(e.detail.source);
       setMediaType(e.detail.mediaType || 'audio');
+      setFileName(e.detail.fileName || '');
       setMetadata({
         characterId: e.detail.characterId,
         text: e.detail.text,
@@ -381,7 +384,8 @@ export default function PreviewEditModal() {
           detail: {
             blob: finalBlob,
             mediaType: mediaType,
-            duration: finalDuration
+            duration: finalDuration,
+            fileName: fileName
           }
         }));
       } else {
@@ -425,6 +429,13 @@ export default function PreviewEditModal() {
 
     playPromiseRef.current = null;
   }, []);
+
+  const handleCancel = useCallback(() => {
+    if (source === 'dubbing') {
+      window.dispatchEvent(new CustomEvent('media-preview-cancelled'));
+    }
+    handleClose();
+  }, [handleClose, source]);
 
   const drawWaveform = useCallback((buffer: AudioBuffer, playbackPos: number) => {
     const canvas = canvasRef.current;
@@ -521,7 +532,7 @@ export default function PreviewEditModal() {
     <div className="ios-modal-overlay">
       <div className="ios-modal-card">
         <div className="ios-header">
-          <button className="ios-btn-text" onClick={handleClose} disabled={isSaving}>
+          <button className="ios-btn-text" onClick={handleCancel} disabled={isSaving}>
             Cancel
           </button>
           <span className="ios-title">{mediaType === 'video' ? 'Preview & Confirm' : 'Trim Audio'}</span>
@@ -554,7 +565,7 @@ export default function PreviewEditModal() {
             </>
           )}
 
-          <div className="ios-waveform-area" style={{ marginTop: mediaType === 'video' ? '20px' : '0' }}>
+          {mediaType === 'audio' && <div className="ios-waveform-area">
             <canvas ref={canvasRef} className="ios-canvas" />
             {mediaType === 'audio' && (
               <>
@@ -581,7 +592,7 @@ export default function PreviewEditModal() {
                 </div>
               </>
             )}
-          </div>
+          </div>}
 
           <div className="ios-controls">
             <div className="ios-helper-text">

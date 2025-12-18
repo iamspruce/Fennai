@@ -19,8 +19,9 @@ export const getEnv = (key: string, defaultValue?: string) => {
 };
 
 
-const isDev = process.env.NODE_ENV === "development";
-const isEmulator = process.env.PUBLIC_USE_FIREBASE_EMULATORS === "true" && isDev;
+const isDev = getEnv("NODE_ENV", "development") === "development";
+const isEmulator = getEnv("PUBLIC_USE_FIREBASE_EMULATORS", "false") === "true";
+
 
 // Singleton pattern - only initialize once
 let app: App;
@@ -41,7 +42,9 @@ function initializeFirebase() {
     }
 
     // Configure emulator settings
-    if (isEmulator) {
+    if (isEmulator && isDev) {
+        console.log(isDev, isEmulator)
+
         process.env.FIRESTORE_EMULATOR_HOST =
             process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:8081";
         process.env.FIREBASE_AUTH_EMULATOR_HOST =
@@ -53,10 +56,12 @@ function initializeFirebase() {
         const storageBucket = getEnv("PUBLIC_FIREBASE_STORAGE_BUCKET");
 
         app = initializeApp({
-            projectId: getEnv("APP_FIREBASE_PROJECT_ID", "demo-project"),
+            projectId: getEnv("PUBLIC_FIREBASE_PROJECT_ID", "demo-project"),
             storageBucket: storageBucket || undefined,
         });
-    } else if (isDev) {
+    } else if (isDev && !isEmulator) {
+        console.log("dev mode")
+
         const projectId = getEnv("APP_FIREBASE_PROJECT_ID");
         const clientEmail = getEnv("APP_FIREBASE_CLIENT_EMAIL");
         const privateKey = getEnv("APP_FIREBASE_PRIVATE_KEY");
@@ -77,6 +82,7 @@ function initializeFirebase() {
             storageBucket,
         });
     } else {
+        console.log("i ran")
         const storageBucket = getEnv("PUBLIC_FIREBASE_STORAGE_BUCKET");
 
         app = initializeApp({

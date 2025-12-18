@@ -17,7 +17,7 @@
     backdrop-filter: var(--ios-blur);
     -webkit-backdrop-filter: var(--ios-blur);
 
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    border: 1px solid var(--mauve-6);
     box-shadow: var(--ios-shadow);
     border-radius: var(--ios-radius);
 

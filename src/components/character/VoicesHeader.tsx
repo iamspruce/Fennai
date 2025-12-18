@@ -5,9 +5,10 @@ import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 
 interface VoicesHeaderProps {
   totalVoices: number;
+  totalDubbing?: number;
 }
 
-export default function VoicesHeader({ totalVoices }: VoicesHeaderProps) {
+export default function VoicesHeader({ totalVoices, totalDubbing = 0 }: VoicesHeaderProps) {
   const [showFilter, setShowFilter] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'single' | 'multi'>('all');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -106,13 +107,21 @@ export default function VoicesHeader({ totalVoices }: VoicesHeaderProps) {
   };
 
   const visibleCount = document.querySelectorAll('.voice-card.visible').length;
+  const totalMedia = totalVoices + totalDubbing;
 
   return (
     <div className="voices-header">
       <div className="voices-summary">
         <h2>
-          Voices <span className="count">({visibleCount > 0 ? visibleCount : totalVoices})</span>
+          Media <span className="count">({visibleCount > 0 ? visibleCount : totalMedia})</span>
         </h2>
+        {totalDubbing > 0 && (
+          <div className="media-breakdown">
+            <span className="breakdown-item">{totalVoices} voices</span>
+            <span className="breakdown-divider">•</span>
+            <span className="breakdown-item dubbed">{totalDubbing} dubbed</span>
+          </div>
+        )}
         {selectedFilter !== 'all' && (
           <button className="clear-filter" onClick={() => applyFilter('all')}>
             Clear filter
@@ -228,6 +237,26 @@ export default function VoicesHeader({ totalVoices }: VoicesHeaderProps) {
           font-size: 0.9rem;
           cursor: pointer;
           text-decoration: underline;
+        }
+
+        .media-breakdown {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2xs);
+          font-size: 0.85rem;
+          color: var(--mauve-11);
+        }
+
+        .breakdown-item {
+          font-weight: 500;
+        }
+
+        .breakdown-item.dubbed {
+          color: var(--orange-11);
+        }
+
+        .breakdown-divider {
+          color: var(--mauve-8);
         }
 
         .voices-header-actions {

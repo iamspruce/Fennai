@@ -39,16 +39,29 @@ export default function DubMediaSelectModal({
 
         const handleMediaSaved = (e: CustomEvent) => {
             console.log('[DubMediaSelectModal] Media saved from preview:', e.detail);
-            // The file is already set, just reopen the modal
+            const { blob, duration, mediaType, fileName } = e.detail;
+
+            const newFile = new File([blob], fileName || 'media', { type: blob.type });
+            setFile(newFile);
+            setDuration(duration);
+            setMediaType(mediaType);
+            setIsOpen(true);
+        };
+
+        const handleCancel = () => {
+            console.log('[DubMediaSelectModal] Media preview cancelled');
+            resetForm();
             setIsOpen(true);
         };
 
         window.addEventListener('open-dubbing-modal', handleOpen);
         window.addEventListener('media-preview-saved', handleMediaSaved as EventListener);
+        window.addEventListener('media-preview-cancelled', handleCancel);
 
         return () => {
             window.removeEventListener('open-dubbing-modal', handleOpen);
             window.removeEventListener('media-preview-saved', handleMediaSaved as EventListener);
+            window.removeEventListener('media-preview-cancelled', handleCancel);
         };
     }, []);
 
@@ -117,8 +130,9 @@ export default function DubMediaSelectModal({
                 return;
             }
 
-            setDuration(fileDuration);
-            setFile(selectedFile);
+            // We don't set the file yet, we wait for confirmation in the preview modal
+            // setDuration(fileDuration);
+            // setFile(selectedFile);
 
             // Auto-open preview/edit modal
             const reader = new FileReader();
@@ -127,6 +141,7 @@ export default function DubMediaSelectModal({
                     new CustomEvent('open-preview-modal', {
                         detail: {
                             audioBlob: selectedFile,
+                            fileName: selectedFile.name,
                             source: 'dubbing',
                             mediaType: isVideo ? 'video' : 'audio',
                         }

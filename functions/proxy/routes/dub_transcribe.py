@@ -113,7 +113,7 @@ def create_response(body: Any, status: int, headers: Dict[str, str]) -> Response
     return response
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=60, max_instances=10)
+@https_fn.on_request(memory=options.MemoryOption.GB_2, timeout_sec=120, max_instances=10)
 def dub_transcribe(req: Request):
     """
     Initiate dubbing job:
@@ -148,6 +148,7 @@ def dub_transcribe(req: Request):
         return create_response(ResponseBuilder.error("Method not allowed", request_id=request_id), 405, cors_headers)
     
     # Auth
+    logger.info(f"[{request_id}] Checking authentication...")
     user = get_current_user(req)
     if not user:
         logger.warning(f"[{request_id}] Unauthorized request")
@@ -160,21 +161,23 @@ def dub_transcribe(req: Request):
     
     logger.info(f"[{request_id}] User authenticated: {uid}")
     
+    # Parse request
+    logger.info(f"[{request_id}] Parsing request JSON...")
+    try:
+        data = req.get_json(silent=True) or {}
+        logger.info(f"[{request_id}] JSON parsed successfully")
+    except Exception as e:
+        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
+        return create_response(ResponseBuilder.error("Invalid JSON format", request_id=request_id), 400, cors_headers)
+    
     # Get user tier
     user_doc = db.collection("users").document(uid).get()
     user_data = user_doc.to_dict() or {}
     user_tier = get_user_tier(user_data)
-    
     logger.info(f"[{request_id}] User tier: {user_tier}")
     
-    # Parse request
-    try:
-        data = req.get_json(silent=True) or {}
-    except Exception as e:
-        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return create_response(ResponseBuilder.error("Invalid JSON", request_id=request_id), 400, cors_headers)
-    
     # Validate request
+    logger.info(f"[{request_id}] Validating dubbing request...")
     is_valid, error_msg = validate_dubbing_request(data, user_tier)
     if not is_valid:
         logger.warning(f"[{request_id}] Validation failed: {error_msg}")
@@ -189,33 +192,65 @@ def dub_transcribe(req: Request):
     detected_language = data.get("detectedLanguage")
     other_languages = data.get("otherLanguages", [])
     
-    # Calculate cost (no translation yet)
-    cost = calculate_dubbing_cost(duration, False, media_type == 'video')
-    job_id = str(uuid.uuid4())
+    # Reserve credits AND create job document atomically (FIRST, before GCS upload)
+    job_metadata = {
+        "mediaType": media_type,
+        "duration": duration,
+        "fileSize": file_size_mb,
+        "detectedLanguage": detected_language,
+        "otherLanguages": other_languages,
+        "requestId": request_id,
+        "status": "uploading",
+        "step": "Initializing dubbing request...",
+        "progress": 5,
+        "expiresAt": datetime.utcnow() + timedelta(days=7),
+    }
     
-    logger.info(
-        f"[{request_id}] Creating dubbing job {job_id}: duration={duration}s, "
-        f"cost={cost}, type={media_type}"
-    )
+    logger.info(f"[{request_id}] Reserving credits for job {job_id}...")
+    success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")
+    if not success:
+        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
+        return create_response(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id), 402, cors_headers)
     
-    # Upload media to GCS FIRST (before reserving credits)
+    # Get job reference
+    job_ref = db.collection("dubbingJobs").document(job_id)
+
+    # Upload media to GCS (AFTER reserving credits)
+    logger.info(f"[{request_id}] Uploading media to GCS...")
+    blob_path = ""
     try:
         import tempfile
         
         media_bytes = base64.b64decode(media_base64)
-        extension = 'mp4' if media_type == 'video' else 'wav'
-        blob_path = f"jobs/{job_id}/original.{extension}"
+        
+        # Determine extension from filename, fall back to type
+        ext = os.path.splitext(file_name)[1].lstrip('.')
+        if not ext:
+            ext = 'mp4' if media_type == 'video' else 'wav'
+            
+        blob_path = f"jobs/{job_id}/original.{ext}"
+        
+        # Update job status
+        job_ref.update({
+            "step": "Uploading media to storage...",
+            "originalMediaPath": blob_path,
+            "progress": 10
+        })
         
         # Write to temp file and upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{extension}") as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
             tmp.write(media_bytes)
             tmp_path = tmp.name
         
         content_type = 'video/mp4' if media_type == 'video' else 'audio/wav'
+        if ext in ['mp3', 'm4a', 'flac']:
+            content_type = f'audio/{ext}'
+            
         success, error = gcs.upload_file(tmp_path, blob_path, content_type)
         
         # Cleanup temp file
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
         
         if not success:
             raise Exception(f"GCS upload failed: {error}")
@@ -224,34 +259,13 @@ def dub_transcribe(req: Request):
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
+        # Release credits
+        release_credits(uid, job_id, cost, collection_name="dubbingJobs")
+        job_ref.update({"status": "failed", "error": f"Upload failed: {str(e)}", "updatedAt": SERVER_TIMESTAMP})
         return create_response(ResponseBuilder.error("Failed to upload media", request_id=request_id), 500, cors_headers)
     
-    # Reserve credits AND create job document atomically
-    job_metadata = {
-        "mediaType": media_type,
-        "duration": duration,
-        "fileSize": file_size_mb,
-        "detectedLanguage": detected_language,
-        "otherLanguages": other_languages,
-        "originalMediaPath": blob_path,
-        "requestId": request_id,
-        "status": "uploading",
-        "step": "Uploading media to cloud storage...",
-        "progress": 5,
-        "expiresAt": datetime.utcnow() + timedelta(days=7),
-    }
-    
-    success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")
-    if not success:
-        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
-        # Clean up uploaded media
-        gcs.delete_file(blob_path)
-        return create_response(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id), 402, cors_headers)
-    
-    # Get job reference (already created by reserve_credits)
-    job_ref = db.collection("dubbingJobs").document(job_id)
-    
     # Queue Cloud Task for audio extraction & transcription
+    logger.info(f"[{request_id}] Queuing transcription task...")
     try:
         task_payload = {
             "job_id": job_id,
@@ -270,6 +284,10 @@ def dub_transcribe(req: Request):
         
     except Exception as e:
         logger.error(f"[{request_id}] Failed to queue task: {str(e)}")
+        
+        # Cleanup
+        if blob_path:
+            gcs.delete_file(blob_path)
         
         job_ref.update({
             "status": "failed",

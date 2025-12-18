@@ -9,6 +9,7 @@ export interface DubbingJob {
 
     // Media info
     mediaType: 'audio' | 'video';
+    fileName?: string; // Original file name
     originalMediaUrl: string;
     originalMediaPath: string;
     audioUrl?: string; // Extracted audio if video
