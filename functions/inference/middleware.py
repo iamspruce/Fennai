@@ -28,6 +28,8 @@ __all__ = [
     'log_request_info',
     'get_job_document',
     'update_job_status',
+    'get_retry_info',
+    'update_job_retry_status',
 ]
 
 def get_db():
@@ -156,7 +158,7 @@ def handle_job_errors(collection: str = "voiceJobs", release_credits: bool = Tru
                             data = job_doc.to_dict() or {}
                             cost = data.get("cost", 0)
                             if cost > 0:
-                                release_credits_func(uid, job_id, cost)
+                                release_credits_func(uid, job_id, cost, collection_name=collection)
                     except Exception as credit_error:
                         logger.error(f"Failed to release credits: {credit_error}")
                 
@@ -304,3 +306,47 @@ def update_job_status(
     job_ref.update(updates)
     
     logger.info(f"Job {job_id}: Updated status to {status}")
+
+
+def get_retry_info() -> tuple[int, bool, bool]:
+    """
+    Extract retry information from Cloud Tasks headers.
+    Returns: (retry_count, is_retry, is_final_attempt)
+    """
+    retry_count = int(request.headers.get('X-CloudTasks-TaskRetryCount', '0'))
+    max_retries = config.MAX_RETRY_ATTEMPTS
+    is_retry = retry_count > 0
+    is_final_attempt = retry_count >= max_retries
+    
+    return retry_count, is_retry, is_final_attempt
+
+
+def update_job_retry_status(
+    job_ref,
+    retry_count: int,
+    error_message: str,
+    is_final: bool,
+    max_retries: Optional[int] = None
+):
+    """Update job document with retry information."""
+    if max_retries is None:
+        max_retries = config.MAX_RETRY_ATTEMPTS
+        
+    if is_final:
+        job_ref.update({
+            "status": "failed",
+            "error": error_message,
+            "retryCount": retry_count,
+            "retriesExhausted": True,
+            "failedAt": SERVER_TIMESTAMP,
+            "updatedAt": SERVER_TIMESTAMP
+        })
+    else:
+        job_ref.update({
+            "status": "retrying",
+            "lastError": error_message,
+            "retryCount": retry_count,
+            "maxRetries": max_retries,
+            "nextRetryAttempt": retry_count + 1,
+            "updatedAt": SERVER_TIMESTAMP
+        })

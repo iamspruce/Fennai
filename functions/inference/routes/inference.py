@@ -378,8 +378,8 @@ def inference_route(processor, model):
             logger.error(f"❌ {error_msg}")
             
             if is_final_attempt:
-                update_job_status(job_id, "failed", error=error_msg)
-                release_credits(uid, job_id, reserved_cost)
+                update_job_status(job_id, "failed", error=error_msg, collection=f"{job_type}Jobs")
+                release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
                 return jsonify({"error": error_msg}), 500
             else:
                 update_job_retry_status(job_ref, retry_count, error_msg, False)
@@ -545,7 +545,7 @@ def inference_route(processor, model):
         if is_final_attempt:
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, True)
-            release_credits(uid, job_id, reserved_cost)
+            release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
             return jsonify({"error": "GPU OOM after retries"}), 503
         else:
             if job_ref:
@@ -557,8 +557,8 @@ def inference_route(processor, model):
         error_msg = str(e)
         logger.error(f"❌ Validation error: {error_msg}")
         if job_ref:
-            update_job_status(job_id, "failed", error=error_msg)
-        release_credits(uid, job_id, reserved_cost)
+            update_job_status(job_id, "failed", error=error_msg, collection=f"{job_type}Jobs")
+        release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
         return jsonify({"error": error_msg}), 400
     
     except Exception as e:
@@ -568,7 +568,7 @@ def inference_route(processor, model):
         if is_final_attempt:
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, True)
-            release_credits(uid, job_id, reserved_cost)
+            release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
             return jsonify({"error": "Internal error after retries"}), 500
         else:
             if job_ref:
@@ -651,7 +651,7 @@ def _handle_multi_chunk_completion(
                 total_duration = sum(c.get("duration", 0) for c in cloned_chunks)
             
             actual_cost = calculate_cost_from_duration(total_duration, is_multi_character)
-            confirm_credit_deduction(uid, job_id, actual_cost)
+            confirm_credit_deduction(uid, job_id, actual_cost, collection_name=f"{job_type}Jobs")
             
             job_ref.update({
                 "status": "completed",
@@ -673,7 +673,7 @@ def _handle_multi_chunk_completion(
                 "error": f"Failed to merge audio chunks: {str(e)}",
                 "updatedAt": SERVER_TIMESTAMP
             })
-            release_credits(uid, job_id, reserved_cost)
+            release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
             return jsonify({"error": "Failed to merge chunks"}), 500
     
     return jsonify({
@@ -697,7 +697,7 @@ def _handle_single_chunk_completion(
 ):
     """Handle single chunk completion."""
     actual_cost = calculate_cost_from_duration(audio_duration, is_multi_character)
-    confirm_credit_deduction(uid, job_id, actual_cost)
+    confirm_credit_deduction(uid, job_id, actual_cost, collection_name="voiceJobs")
     
     signed_url = generate_signed_url(config.GCS_BUCKET, blob_name, 24, service_account_email=config.SERVICE_ACCOUNT_EMAIL)
     

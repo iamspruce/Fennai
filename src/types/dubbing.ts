@@ -2,10 +2,16 @@
 export interface DubbingJob {
     id: string;
     uid: string;
-    status: 'uploading' | 'transcribing' | 'transcribing_done' | 'clustering' | 'translating' |
-    'cloning' | 'merging' | 'completed' | 'failed';
+    status: 'uploading' | 'extracting' | 'transcribing' | 'transcribing_done' | 'clustering' | 'translating' |
+    'cloning' | 'merging' | 'completed' | 'failed' | 'retrying';
     step: string; // Human-readable status message
     progress: number; // 0-100
+
+    // Retry Info
+    retryCount?: number;
+    maxRetries?: number;
+    lastError?: string;
+    retriesExhausted?: boolean;
 
     // Media info
     mediaType: 'audio' | 'video';

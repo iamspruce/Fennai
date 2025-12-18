@@ -7,29 +7,63 @@ interface DubbingVideoCardProps {
     job: DubbingJob;
     onPlay?: (jobId: string) => void;
     onDelete?: (jobId: string) => void;
+    onAction?: (jobId: string, status: string) => void;
 }
 
-export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideoCardProps) {
+export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: DubbingVideoCardProps) {
     const [showOriginal, setShowOriginal] = useState(false);
 
+    const isCompleted = job.status === 'completed';
+    const isFailed = job.status === 'failed';
+    const isTranscribingDone = job.status === 'transcribing_done';
+    const isRetrying = job.status === 'retrying';
+    const isProcessing = ['uploading', 'processing', 'extracting', 'transcribing', 'clustering', 'translating', 'cloning', 'merging'].includes(job.status || '');
+
     const handleCardClick = () => {
-        // Toggle between original and dubbed
+        if (!isCompleted) {
+            handleActionClick();
+            return;
+        }
+        // Toggle between original and dubbed only if completed
         setShowOriginal(!showOriginal);
+    };
+
+    const handleActionClick = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+
+        // If transcribing is done or processing, open settings/progress
+        if (isTranscribingDone || isProcessing || isRetrying) {
+            window.dispatchEvent(new CustomEvent('open-dub-settings', {
+                detail: { jobId: job.id }
+            }));
+        } else if (isFailed) {
+            // If failed, we might want a specific retry logic, but for now 
+            // reopening settings is a good start if it failed during user flow
+            // or we can add a retry handler
+            onAction?.(job.id, 'retry');
+        } else if (isCompleted) {
+            onPlay?.(job.id);
+        }
     };
 
     const handlePlayClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        onPlay?.(job.id);
+        if (isCompleted) {
+            onPlay?.(job.id);
+        } else {
+            handleActionClick(e);
+        }
     };
 
     const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Delete this dubbed media?')) {
+        if (confirm('Delete this dubbing job?')) {
             onDelete?.(job.id);
         }
     };
 
     const formatDuration = (seconds: number) => {
+        if (!seconds) return '0:00';
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -41,66 +75,120 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
+    const getStatusText = () => {
+        if (isRetrying) return 'Something went wrong, retrying...';
+        if (isFailed) return 'Failed';
+        if (isTranscribingDone) return 'Ready for Settings';
+
+        switch (job.status) {
+            case 'uploading': return 'Uploading...';
+            case 'processing': return 'Initializing...';
+            case 'extracting': return 'Extracting Audio...';
+            case 'transcribing': return 'Transcribing...';
+            case 'clustering': return 'Analyzing Speakers...';
+            case 'translating': return 'Translating...';
+            case 'cloning': return 'Synthesizing...';
+            case 'merging': return 'Finalizing...';
+            default: return job.status || 'Processing...';
+        }
+    };
+
+    const renderProcessingState = () => (
+        <div className="card-layer processing-layer">
+            <div className="card-thumbnail">
+                {isRetrying ? (
+                    <Icon icon="lucide:refresh-cw" width={48} className="spin text-amber-500" />
+                ) : (
+                    <Icon icon="lucide:loader-2" width={48} className="spin primary-color" />
+                )}
+
+                <div className="card-badge processing-badge">
+                    {isFailed ? 'Error' : isRetrying ? 'Retrying' : 'Processing'}
+                </div>
+            </div>
+            <div className="card-content">
+                <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
+                <div className="processing-info">
+                    <p className="status-text">{getStatusText()}</p>
+                    {job.progress !== undefined && (
+                        <div className="mini-progress-bar">
+                            <div className="fill" style={{ width: `${job.progress}%` }} />
+                        </div>
+                    )}
+                </div>
+                <div className="card-meta">
+                    <span>{formatDate(job.createdAt)}</span>
+                    {isFailed && <span className="error-hint">• Click to retry</span>}
+                    {isTranscribingDone && <span className="ready-hint">• Click to continue</span>}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
-        <div className="dubbing-video-card-container">
+        <div className={`dubbing-video-card-container ${!isCompleted ? 'is-incomplete' : ''}`}>
             <div
-                className={`dubbing-video-card ${showOriginal ? 'show-original' : 'show-dubbed'}`}
+                className={`dubbing-video-card ${isCompleted ? (showOriginal ? 'show-original' : 'show-dubbed') : 'show-processing'}`}
                 onClick={handleCardClick}
             >
-                {/* Dubbed Version (Top Card) */}
-                <div className="card-layer dubbed-layer">
-                    <div className="card-thumbnail">
-                        {job.mediaType === 'video' ? (
-                            <Icon icon="lucide:video" width={32} />
-                        ) : (
-                            <Icon icon="lucide:music" width={32} />
-                        )}
-                        <div className="card-badge dubbed-badge">
-                            <Icon icon="lucide:sparkles" width={12} />
-                            Dubbed
+                {isCompleted ? (
+                    <>
+                        {/* Dubbed Version (Top Card) */}
+                        <div className="card-layer dubbed-layer">
+                            <div className="card-thumbnail">
+                                {job.mediaType === 'video' ? (
+                                    <Icon icon="lucide:video" width={32} />
+                                ) : (
+                                    <Icon icon="lucide:music" width={32} />
+                                )}
+                                <div className="card-badge dubbed-badge">
+                                    <Icon icon="lucide:sparkles" width={12} />
+                                    Dubbed
+                                </div>
+                            </div>
+                            <div className="card-content">
+                                <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
+                                <div className="card-meta">
+                                    <span>{formatDuration(job.duration || 0)}</span>
+                                    <span>•</span>
+                                    <span>{formatDate(job.createdAt)}</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div className="card-content">
-                        <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
-                        <div className="card-meta">
-                            <span>{formatDuration(job.duration || 0)}</span>
-                            <span>•</span>
-                            <span>{formatDate(job.createdAt)}</span>
-                        </div>
-                    </div>
-                </div>
 
-                {/* Original Version (Bottom Card) */}
-                <div className="card-layer original-layer">
-                    <div className="card-thumbnail">
-                        {job.mediaType === 'video' ? (
-                            <Icon icon="lucide:video" width={32} />
-                        ) : (
-                            <Icon icon="lucide:music" width={32} />
-                        )}
-                        <div className="card-badge original-badge">
-                            <Icon icon="lucide:file-audio" width={12} />
-                            Original
+                        {/* Original Version (Bottom Card) */}
+                        <div className="card-layer original-layer">
+                            <div className="card-thumbnail">
+                                {job.mediaType === 'video' ? (
+                                    <Icon icon="lucide:video" width={32} />
+                                ) : (
+                                    <Icon icon="lucide:music" width={32} />
+                                )}
+                                <div className="card-badge original-badge">
+                                    <Icon icon="lucide:file-audio" width={12} />
+                                    Original
+                                </div>
+                            </div>
+                            <div className="card-content">
+                                <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
+                                <div className="card-meta">
+                                    <span>{formatDuration(job.duration || 0)}</span>
+                                    <span>•</span>
+                                    <span>{formatDate(job.createdAt)}</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div className="card-content">
-                        <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
-                        <div className="card-meta">
-                            <span>{formatDuration(job.duration || 0)}</span>
-                            <span>•</span>
-                            <span>{formatDate(job.createdAt)}</span>
-                        </div>
-                    </div>
-                </div>
+                    </>
+                ) : renderProcessingState()}
 
                 {/* Action Buttons */}
                 <div className="card-actions">
                     <button
                         className="card-action-btn play-btn"
                         onClick={handlePlayClick}
-                        title="Play"
+                        title={isCompleted ? "Play" : "Resume"}
                     >
-                        <Icon icon="lucide:play" width={18} />
+                        <Icon icon={isCompleted ? "lucide:play" : (isFailed ? "lucide:refresh-cw" : "lucide:external-link")} width={18} />
                     </button>
                     <button
                         className="card-action-btn delete-btn"
@@ -179,6 +267,12 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                     z-index: 1;
                 }
 
+                .processing-layer {
+                    z-index: 3;
+                    border-style: dashed;
+                    border-width: 2px;
+                }
+
                 .card-thumbnail {
                     flex: 1;
                     display: flex;
@@ -214,6 +308,11 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                     color: white;
                 }
 
+                .processing-badge {
+                    background: var(--mauve-6);
+                    color: var(--mauve-11);
+                }
+
                 .card-content {
                     padding: var(--space-s);
                     background: white;
@@ -230,12 +329,47 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                     text-overflow: ellipsis;
                 }
 
+                .processing-info {
+                    margin-bottom: var(--space-xs);
+                }
+
+                .status-text {
+                    font-size: 13px;
+                    color: var(--orange-11);
+                    font-weight: 500;
+                    margin: 0 0 4px 0;
+                }
+
+                .mini-progress-bar {
+                    width: 100%;
+                    height: 4px;
+                    background: var(--mauve-4);
+                    border-radius: 2px;
+                    overflow: hidden;
+                }
+
+                .mini-progress-bar .fill {
+                    height: 100%;
+                    background: var(--orange-9);
+                    transition: width 0.3s ease;
+                }
+
                 .card-meta {
                     display: flex;
                     align-items: center;
                     gap: var(--space-2xs);
                     font-size: 12px;
                     color: var(--mauve-11);
+                }
+
+                .error-hint {
+                    color: var(--red-11);
+                    font-weight: 500;
+                }
+
+                .ready-hint {
+                    color: var(--green-11);
+                    font-weight: 500;
                 }
 
                 .card-actions {
@@ -282,6 +416,15 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                     background: var(--red-9);
                     color: white;
                     border-color: var(--red-9);
+                }
+
+                .spin {
+                    animation: spin 2s linear infinite;
+                }
+
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
                 }
 
                 @media (max-width: 768px) {

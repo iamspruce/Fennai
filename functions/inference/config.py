@@ -73,6 +73,7 @@ class Config:
         self.PARALLEL_DOWNLOAD_WORKERS: int = 5
         self.MODEL_COMPILE_MODE: str = "reduce-overhead"
         self.DDPM_INFERENCE_STEPS: int = 10
+        self.MAX_RETRY_ATTEMPTS: int = 3
         
         # Logging
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

@@ -47,7 +47,8 @@ def reserve_credits(
     uid: str, 
     job_id: str, 
     cost: int, 
-    job_data: Dict[str, Any]
+    job_data: Dict[str, Any],
+    collection_name: str = "voiceJobs"
 ) -> Tuple[bool, Optional[str]]:
     """
     Atomically reserve credits and create job document.
@@ -55,7 +56,7 @@ def reserve_credits(
     """
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
-    job_ref = db.collection("voiceJobs").document(job_id)
+    job_ref = db.collection(collection_name).document(job_id)
     
     @transactional
     def update_in_transaction(transaction):
@@ -132,7 +133,8 @@ def reserve_credits(
 def confirm_credit_deduction(
     uid: str, 
     job_id: str, 
-    cost: int
+    cost: int,
+    collection_name: str = "voiceJobs"
 ) -> Tuple[bool, Optional[str]]:
     """
     Convert pending credits to actual deduction after successful generation.
@@ -140,7 +142,7 @@ def confirm_credit_deduction(
     """
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
-    job_ref = db.collection("voiceJobs").document(job_id)
+    job_ref = db.collection(collection_name).document(job_id)
     
     @transactional
     def update_in_transaction(transaction):
@@ -201,7 +203,8 @@ def confirm_credit_deduction(
 def release_credits(
     uid: str, 
     job_id: str, 
-    cost: int
+    cost: int,
+    collection_name: str = "voiceJobs"
 ) -> Tuple[bool, Optional[str]]:
     """
     Release reserved credits when generation fails.
@@ -209,7 +212,7 @@ def release_credits(
     """
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
-    job_ref = db.collection("voiceJobs").document(job_id)
+    job_ref = db.collection(collection_name).document(job_id)
     
     @transactional
     def update_in_transaction(transaction):

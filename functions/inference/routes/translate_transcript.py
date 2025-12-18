@@ -13,7 +13,13 @@ from google.cloud.firestore import SERVER_TIMESTAMP
 
 from config import config
 from utils.validators import validate_request, TranslateTranscriptRequest
-from middleware import extract_job_info, get_job_document, update_job_status
+from middleware import (
+    extract_job_info, 
+    get_job_document, 
+    update_job_status,
+    get_retry_info,
+    update_job_retry_status
+)
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -23,8 +29,18 @@ def translate_transcript_route():
     """
     Translate transcript and queue inference jobs.
     """
+    # Get retry info
+    retry_count, is_retry, is_final_attempt = get_retry_info()
+    
+    if is_retry:
+        logger.info(f"🔄 Retry attempt {retry_count}/{config.MAX_RETRY_ATTEMPTS} for translate_transcript")
+
     # Validate request
-    req = validate_request(TranslateTranscriptRequest, extract_job_info()[2])
+    try:
+        req = validate_request(TranslateTranscriptRequest, extract_job_info()[2])
+    except Exception as e:
+        return {"error": "Invalid request", "details": str(e)}, 400
+        
     job_id = req.job_id
     uid = req.uid
     target_language = req.target_language
@@ -32,16 +48,21 @@ def translate_transcript_route():
     logger.info(f"Job {job_id}: Starting translation to {target_language}")
     
     # Get job data
-    job_ref, job_data = get_job_document(job_id, "dubbingJobs")
-    transcript = job_data.get("transcript", [])
-    
-    if not transcript:
-        raise ValueError("No transcript found")
-    
-    update_job_status(job_id, "translating", "Translating transcript...", 60, "dubbingJobs")
-    
-    # Translate
     try:
+        job_ref, job_data = get_job_document(job_id, "dubbingJobs")
+    except Exception as e:
+        logger.error(f"Job {job_id} not found: {str(e)}")
+        return {"error": "Job not found"}, 404
+
+    try:
+        transcript = job_data.get("transcript", [])
+        
+        if not transcript:
+            raise ValueError("No transcript found")
+        
+        update_job_status(job_id, "translating", "Translating transcript...", 60, "dubbingJobs")
+        
+        # Translate
         translate_client = translate.Client()
         
         full_text = [t["text"] for t in transcript]
@@ -141,8 +162,14 @@ def translate_transcript_route():
         }, 200
         
     except Exception as e:
-        logger.error(f"Translation failed: {str(e)}", exc_info=True)
-        # We don't want to fail the job immediately if it's a transient translation error,
-        # but the route handler doesn't have retry logic built-in yet (handled by Caller or Task queue)
-        # However, we should probably raise so the generic error handler catches it
-        raise
+        error_msg = f"Translation failed: {str(e)}"
+        logger.error(f"Job {job_id}: {error_msg}", exc_info=True)
+        
+        if is_final_attempt:
+            update_job_retry_status(job_ref, retry_count, error_msg, True)
+            from firebase.credits import release_credits
+            release_credits(uid, job_id, job_data.get("cost", 0), collection_name="dubbingJobs")
+            return {"error": error_msg}, 500
+        else:
+            update_job_retry_status(job_ref, retry_count, error_msg, False)
+            return {"error": "Retrying", "retry": retry_count}, 500

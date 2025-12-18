@@ -5,7 +5,8 @@ import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 import VoicesHeader from './VoicesHeader';
 import { db } from '@/lib/firebase/config';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
 
 interface VoicesListProps {
@@ -79,21 +80,18 @@ export default function VoicesList({
         checkLocalVoices();
     }, [localOnlyIds]);
 
-    // Fetch dubbing jobs for this user
+    // Listen to dubbing jobs for this user in real-time
     useEffect(() => {
-        const fetchDubbingJobs = async () => {
-            try {
-                const dubbingQuery = query(
-                    collection(db, 'dubbingJobs'),
-                    where('uid', '==', userId),
-                    where('status', '==', 'completed'),
-                    orderBy('createdAt', 'desc'),
-                    limit(50)
-                );
+        const dubbingQuery = query(
+            collection(db, 'dubbingJobs'),
+            where('uid', '==', userId),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+        );
 
-                const snapshot = await getDocs(dubbingQuery);
+        const unsubscribe = onSnapshot(dubbingQuery,
+            (snapshot: QuerySnapshot<DocumentData>) => {
                 const jobs: DubbingJob[] = [];
-
                 snapshot.forEach((doc) => {
                     const data = doc.data();
                     jobs.push({
@@ -103,17 +101,35 @@ export default function VoicesList({
                         updatedAt: data.updatedAt?.toDate() || new Date(),
                     } as DubbingJob);
                 });
-
                 setDubbingJobs(jobs);
-            } catch (err) {
-                console.error('[VoicesList] Error fetching dubbing jobs:', err);
-            } finally {
+                setIsLoadingDubbing(false);
+            },
+            (err: Error) => {
+                console.error('[VoicesList] Error listening to dubbing jobs:', err);
                 setIsLoadingDubbing(false);
             }
-        };
+        );
 
-        fetchDubbingJobs();
+        return () => unsubscribe();
     }, [userId]);
+
+    const handleActionDubbing = async (jobId: string, action: string) => {
+        if (action === 'retry') {
+            const job = dubbingJobs.find(j => j.id === jobId);
+            if (!job) return;
+
+            try {
+                // Determine which step to retry based on status/error
+                // For now, let's just trigger the proxy again if it was a start failure
+                // or open the settings modal if it's awaiting user input
+                window.dispatchEvent(new CustomEvent('open-dub-settings', {
+                    detail: { jobId }
+                }));
+            } catch (err) {
+                console.error('Failed to retry dubbing:', err);
+            }
+        }
+    };
 
     // Combine voices and dubbing jobs, sorted by creation date
     const allMediaItems: MediaItem[] = [
@@ -240,6 +256,7 @@ export default function VoicesList({
                             job={item.data}
                             onPlay={handlePlayDubbing}
                             onDelete={handleDeleteDubbing}
+                            onAction={handleActionDubbing}
                         />
                     )
                 ))}

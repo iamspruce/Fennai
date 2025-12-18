@@ -6,7 +6,7 @@ import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import type { Character } from '@/types/character';
 import type { DubbingJob, VoiceMapEntry } from '@/types/dubbing';
 import { SUPPORTED_LANGUAGES } from '@/types/dubbing';
-import { cloneDubbing } from '@/lib/api/apiClient';
+import { cloneDubbing, transcribeDubbing } from '@/lib/api/apiClient';
 
 interface DubSettingsModalProps {
     allCharacters: Character[];
@@ -33,10 +33,21 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
                     const data = snapshot.data() as DubbingJob;
                     setJob(data);
 
-                    // Auto-open when transcription complete
-                    if (data.status === 'transcribing_done' && !isOpen) {
-                        setIsOpen(true);
-                        initializeVoiceMapping(data);
+                    // Auto-initialize voice mapping if not already set
+                    if (data.status === 'transcribing_done') {
+                        if (data.voiceMapping && Object.keys(data.voiceMapping).length > 0 && Object.keys(voiceMapping).length === 0) {
+                            setVoiceMapping(data.voiceMapping);
+                        } else if (Object.keys(voiceMapping).length === 0) {
+                            initializeVoiceMapping(data);
+                        }
+                    }
+
+                    // Restore language settings if available
+                    if (data.targetLanguage && !targetLanguage) {
+                        setTargetLanguage(data.targetLanguage);
+                    }
+                    if (data.translateAll !== undefined && translateAll === false) {
+                        setTranslateAll(data.translateAll);
                     }
 
                     // Auto-redirect to review modal when cloning starts
@@ -53,12 +64,13 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
         );
 
         return () => unsubscribe();
-    }, [jobId, isOpen]);
+    }, [jobId, isOpen, voiceMapping, targetLanguage, translateAll]);
 
     // Open modal handler
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
             setJobId(e.detail.jobId);
+            setIsOpen(true);
         };
         window.addEventListener('open-dub-settings', handleOpen as EventListener);
         return () => window.removeEventListener('open-dub-settings', handleOpen as EventListener);
@@ -141,7 +153,95 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
     };
 
 
-    if (!isOpen || !job) return null;
+    if (!isOpen) return null;
+
+    if (!job || ['uploading', 'transcribing', 'extracting', 'retrying', 'failed'].includes(job.status)) {
+        const isFailed = job?.status === 'failed';
+        const isRetrying = job?.status === 'retrying';
+
+        const handleRetry = async () => {
+            if (!job) return;
+            setIsProcessing(true);
+            setError(null);
+            try {
+                // To retry, we re-trigger the transcription flow
+                await transcribeDubbing({
+                    mediaPath: (job.originalMediaPath || (job as any).mediaPath || '') as string,
+                    mediaType: job.mediaType as 'audio' | 'video',
+                    duration: job.duration || 0,
+                    fileSizeMB: (job.fileSize || (job as any).fileSizeMB || 0) as number,
+                    fileName: (job.fileName || 'Untitled') as string,
+                    detectedLanguage: job.detectedLanguage || '',
+                    detectedLanguageCode: job.detectedLanguageCode || ''
+                });
+                // The onSnapshot will pick up the status change
+            } catch (err: any) {
+                console.error('Retry failed:', err);
+                setError(err.message || 'Failed to restart process');
+            } finally {
+                setIsProcessing(false);
+            }
+        };
+
+        return (
+            <div className="modal-overlay">
+                <div className="modal-content">
+                    <div className="modal-header">
+                        <h3 className="modal-title">
+                            {isRetrying ? 'Something went wrong, retrying...' : isFailed ? 'Processing Failed' : 'Processing Media'}
+                        </h3>
+                        <button className="modal-close" onClick={() => setIsOpen(false)}>
+                            <Icon icon="lucide:x" width={20} />
+                        </button>
+                    </div>
+                    <div className="modal-body">
+                        <div className="processing-state">
+                            {isRetrying ? (
+                                <Icon icon="lucide:refresh-cw" width={48} className="spin text-amber-500" />
+                            ) : isFailed ? (
+                                <Icon icon="lucide:alert-circle" width={48} className="text-red-500" />
+                            ) : (
+                                <Icon icon="lucide:loader-2" width={48} className="spin primary-color" />
+                            )}
+
+                            <h4>{job?.step || (isRetrying ? 'Retrying last step...' : isFailed ? 'An error occurred' : 'Initializing...')}</h4>
+
+                            {(isRetrying || isFailed) && (job?.lastError || job?.error) && (
+                                <p className="retry-error">{job.lastError || job.error}</p>
+                            )}
+
+                            {job?.retryCount !== undefined && job.retryCount > 0 && !isFailed && (
+                                <p className="retry-count">Attempt {job.retryCount + 1} of {job.maxRetries || 3}</p>
+                            )}
+
+                            {!isRetrying && !isFailed && (
+                                <p>This may take a minute depending on the file size.</p>
+                            )}
+
+                            {isFailed && (
+                                <button className="btn btn-primary" onClick={handleRetry} disabled={isProcessing}>
+                                    {isProcessing ? (
+                                        <><Icon icon="lucide:loader-2" className="spin" /> Restarting...</>
+                                    ) : (
+                                        'Restart Dubbing Process'
+                                    )}
+                                </button>
+                            )}
+
+                            {job?.progress !== undefined && !isFailed && (
+                                <div className="progress-bar-container">
+                                    <div
+                                        className="progress-bar-fill"
+                                        style={{ width: `${job.progress}%` }}
+                                    ></div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const detectedLang = SUPPORTED_LANGUAGES.find(l => l.code === job.detectedLanguageCode);
 

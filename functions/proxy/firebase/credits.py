@@ -76,17 +76,18 @@ def reserve_credits(
     def update_in_transaction(transaction):
         logger.info(f"Transaction started for job {job_id}")
         
-        # Check if job already exists (prevent double reservation)
         try:
             job_snapshot = job_ref.get(transaction=transaction)
             if job_snapshot.exists:
-                logger.error(f"Job {job_id} already exists - double reservation prevented")
-                raise ValueError("Job already exists - credits may already be reserved")
+                current_job = job_snapshot.to_dict() or {}
+                if current_job.get("status") != "failed":
+                    logger.error(f"Job {job_id} already exists and is not failed - double reservation prevented")
+                    raise ValueError("Job already exists")
+                else:
+                    logger.info(f"Job {job_id} exists but is failed - allowing retry/overwrite")
         except Exception as e:
-            # If it's our ValueError, re-raise it
             if "already exists" in str(e):
                 raise
-            # Otherwise, job doesn't exist - continue
             logger.debug(f"Job {job_id} doesn't exist (expected): {str(e)}")
         
         # Get user document
