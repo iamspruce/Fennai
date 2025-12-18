@@ -70,7 +70,7 @@ export interface GenerateScriptResponse {
 // ==================== DUBBING TYPES ====================
 
 export interface TranscribeDubbingParams {
-    mediaData: string; // base64
+    mediaPath: string; // GCS path
     mediaType: 'audio' | 'video';
     fileName: string;
     duration: number;
@@ -78,6 +78,16 @@ export interface TranscribeDubbingParams {
     detectedLanguage: string;
     detectedLanguageCode: string;
     otherLanguages?: string[];
+}
+
+export interface GetUploadUrlParams {
+    fileName: string;
+    contentType: string;
+}
+
+export interface GetUploadUrlResponse {
+    uploadUrl: string;
+    mediaPath: string;
 }
 
 export interface TranscribeDubbingResponse {
@@ -643,13 +653,47 @@ export async function resumeJob(
 // ==================== DUBBING API ====================
 
 /**
+ * Get a signed URL for direct media upload to GCS
+ */
+export async function getDubbingUploadUrl(
+    params: GetUploadUrlParams
+): Promise<GetUploadUrlResponse> {
+    const token = await getAuthToken();
+    if (!token) {
+        throw new Error('Not authenticated');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/dub_transcribe?action=get_upload_url`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({
+            error: 'Failed to get upload URL'
+        }));
+        throw new Error(error.error || 'Failed to get upload URL');
+    }
+
+    const { data } = await response.json();
+    return {
+        uploadUrl: data.uploadUrl,
+        mediaPath: data.mediaPath,
+    };
+}
+
+/**
  * Upload and transcribe media for dubbing
  */
 export async function transcribeDubbing(
     params: TranscribeDubbingParams
 ): Promise<TranscribeDubbingResponse> {
     if (USE_MOCK_API) {
-        return transcribeDubbingMock(params);
+        return transcribeDubbingMock(params as any);
     }
 
     const token = await getAuthToken();
@@ -676,7 +720,7 @@ export async function transcribeDubbing(
     const result = await response.json();
 
     return {
-        jobId: result.job_id,
+        jobId: result.data?.jobId || result.job_id,
         status: result.status,
     };
 }

@@ -50,25 +50,16 @@ def get_user_tier(user_data: Optional[dict]) -> str:
 
 
 def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional[str]]:
-    """
-    Validate dubbing request data.
-    
-    Args:
-        data: Request data
-        user_tier: User's subscription tier
-        
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    media_base64 = data.get("mediaData")
+    """Validate dubbing request data."""
+    media_path = data.get("mediaPath")
     media_type = data.get("mediaType", "audio")
     duration = float(data.get("duration", 0))
     file_size_mb = float(data.get("fileSizeMB", 0))
     file_name = data.get("fileName", "")
     
     # Check required fields
-    if not media_base64:
-        return False, "Media data is required"
+    if not media_path:
+        return False, "mediaPath is required"
     
     if duration <= 0:
         return False, "Invalid duration"
@@ -86,7 +77,7 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     # Validate tier limits
     limits = UPLOAD_LIMITS[user_tier]
     
-    # Check duration limit (handles infinity)
+    # Check duration limit
     max_duration = limits['maxDurationSeconds']
     if max_duration != float('inf') and duration > max_duration:
         return False, f"Duration ({duration:.1f}s) exceeds limit of {max_duration}s (Your {user_tier} tier limit)"
@@ -95,10 +86,6 @@ def validate_dubbing_request(data: dict, user_tier: str) -> tuple[bool, Optional
     is_valid, error = validate_file_size(int(file_size_mb * 1024 * 1024), limits['maxFileSizeMB'])
     if not is_valid:
         return False, f"{error} (Your {user_tier} tier limit)"
-    
-    # Validate base64 size
-    if len(media_base64) > MAX_BASE64_SIZE:
-        return False, "Media data too large"
     
     return True, None
 
@@ -113,23 +100,22 @@ def create_response(body: Any, status: int, headers: Dict[str, str]) -> Response
     return response
 
 
-@https_fn.on_request(memory=options.MemoryOption.GB_2, timeout_sec=120, max_instances=10)
+@https_fn.on_request(memory=options.MemoryOption.GB_1, timeout_sec=120, max_instances=10)
 def dub_transcribe(req: Request):
     """
     Initiate dubbing job:
-    1. Validate media file
-    2. Reserve credits
-    3. Upload to GCS
-    4. Queue transcription task
+    1. Generate signed URL for direct upload (action=get_upload_url)
+    2. Start transcription for uploaded media (default action)
     """
     request_id = str(uuid.uuid4())
-    logger.info(f"[{request_id}] Dubbing transcribe request received")
+    import psutil
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info().rss / (1024 * 1024)
+    logger.info(f"[{request_id}] Handle start: Action={req.args.get('action')}, Memory={memory_info:.1f}MB")
 
     db = get_db()
-    # Lazy GCS initialization - only create when needed
     gcs = GCSHelper(GCS_DUBBING_BUCKET)
     
-    # CORS headers
     cors_headers = {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*"
@@ -148,162 +134,114 @@ def dub_transcribe(req: Request):
         return create_response(ResponseBuilder.error("Method not allowed", request_id=request_id), 405, cors_headers)
     
     # Auth
-    logger.info(f"[{request_id}] Checking authentication...")
     user = get_current_user(req)
     if not user:
-        logger.warning(f"[{request_id}] Unauthorized request")
         return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
     uid = user.get("uid")
-    if not uid:
-        logger.warning(f"[{request_id}] User missing UID")
-        return create_response(ResponseBuilder.error("Unauthorized", request_id=request_id), 401, cors_headers)
     
-    logger.info(f"[{request_id}] User authenticated: {uid}")
-    
-    # Parse request
-    logger.info(f"[{request_id}] Parsing request JSON...")
+    # Check if we are generating an upload URL
+    action = req.args.get("action")
+    if action == "get_upload_url":
+        try:
+            data = req.get_json(silent=True) or {}
+            file_name = sanitize_filename(data.get("fileName", "media"))
+            content_type = data.get("contentType", "application/octet-stream")
+            
+            job_id = str(uuid.uuid4())
+            ext = os.path.splitext(file_name)[1].lstrip('.') or "media"
+            blob_path = f"jobs/{job_id}/original.{ext}"
+            
+            success, upload_url, error = gcs.generate_signed_url(blob_path, content_type)
+            if not success:
+                return create_response(ResponseBuilder.error(f"Failed to generate URL: {error}", request_id=request_id), 500, cors_headers)
+                
+            return create_response(ResponseBuilder.success({
+                "uploadUrl": upload_url,
+                "mediaPath": blob_path,
+                "jobId": job_id
+            }, request_id=request_id), 200, cors_headers)
+        except Exception as e:
+            logger.error(f"[{request_id}] Get upload URL failed: {str(e)}")
+            return create_response(ResponseBuilder.error(str(e), request_id=request_id), 500, cors_headers)
+
+    # Standard Transcription Flow
     try:
         data = req.get_json(silent=True) or {}
-        logger.info(f"[{request_id}] JSON parsed successfully")
     except Exception as e:
-        logger.error(f"[{request_id}] JSON parse error: {str(e)}")
-        return create_response(ResponseBuilder.error("Invalid JSON format", request_id=request_id), 400, cors_headers)
+        return create_response(ResponseBuilder.error("Invalid JSON", request_id=request_id), 400, cors_headers)
     
-    # Get user tier
-    user_doc = db.collection("users").document(uid).get()
-    user_data = user_doc.to_dict() or {}
-    user_tier = get_user_tier(user_data)
-    logger.info(f"[{request_id}] User tier: {user_tier}")
-    
-    # Validate request
-    logger.info(f"[{request_id}] Validating dubbing request...")
-    is_valid, error_msg = validate_dubbing_request(data, user_tier)
-    if not is_valid:
-        logger.warning(f"[{request_id}] Validation failed: {error_msg}")
-        return create_response(ResponseBuilder.error(error_msg or "Validation failed", request_id=request_id), 400, cors_headers)
-    
-    # Extract parameters
-    media_base64 = str(data.get("mediaData", ""))
+    # Basic Validation (Skip base64 check)
+    media_path = data.get("mediaPath")
+    if not media_path:
+        return create_response(ResponseBuilder.error("mediaPath is required", request_id=request_id), 400, cors_headers)
+        
     media_type = data.get("mediaType", "audio")
-    file_name = sanitize_filename(data.get("fileName", "media"))
     duration = float(data.get("duration", 0))
     file_size_mb = float(data.get("fileSizeMB", 0))
     detected_language = data.get("detectedLanguage")
+    detected_language_code = data.get("detectedLanguageCode", "en-US")
     other_languages = data.get("otherLanguages", [])
     
-    # Reserve credits AND create job document atomically (FIRST, before GCS upload)
+    # Extract job_id from path: jobs/{job_id}/original.ext
+    try:
+        job_id = media_path.split('/')[1]
+    except:
+        job_id = str(uuid.uuid4())
+
+    # Calculate cost
+    cost = calculate_dubbing_cost(duration, False, media_type == 'video')
+    
+    # Reserve credits
     job_metadata = {
         "mediaType": media_type,
         "duration": duration,
         "fileSize": file_size_mb,
         "detectedLanguage": detected_language,
+        "detectedLanguageCode": detected_language_code,
         "otherLanguages": other_languages,
+        "originalMediaPath": media_path,
         "requestId": request_id,
-        "status": "uploading",
-        "step": "Initializing dubbing request...",
-        "progress": 5,
+        "status": "processing",
+        "step": "Starting transcription...",
+        "progress": 15,
+        "updatedAt": SERVER_TIMESTAMP,
         "expiresAt": datetime.utcnow() + timedelta(days=7),
     }
     
-    logger.info(f"[{request_id}] Reserving credits for job {job_id}...")
     success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")
     if not success:
-        logger.warning(f"[{request_id}] Credit reservation failed: {error_msg}")
         return create_response(ResponseBuilder.error(error_msg or "Insufficient credits", request_id=request_id), 402, cors_headers)
     
-    # Get job reference
-    job_ref = db.collection("dubbingJobs").document(job_id)
-
-    # Upload media to GCS (AFTER reserving credits)
-    logger.info(f"[{request_id}] Uploading media to GCS...")
-    blob_path = ""
-    try:
-        import tempfile
-        
-        media_bytes = base64.b64decode(media_base64)
-        
-        # Determine extension from filename, fall back to type
-        ext = os.path.splitext(file_name)[1].lstrip('.')
-        if not ext:
-            ext = 'mp4' if media_type == 'video' else 'wav'
-            
-        blob_path = f"jobs/{job_id}/original.{ext}"
-        
-        # Update job status
-        job_ref.update({
-            "step": "Uploading media to storage...",
-            "originalMediaPath": blob_path,
-            "progress": 10
-        })
-        
-        # Write to temp file and upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
-            tmp.write(media_bytes)
-            tmp_path = tmp.name
-        
-        content_type = 'video/mp4' if media_type == 'video' else 'audio/wav'
-        if ext in ['mp3', 'm4a', 'flac']:
-            content_type = f'audio/{ext}'
-            
-        success, error = gcs.upload_file(tmp_path, blob_path, content_type)
-        
-        # Cleanup temp file
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        
-        if not success:
-            raise Exception(f"GCS upload failed: {error}")
-        
-        logger.info(f"[{request_id}] Uploaded media to gs://{GCS_DUBBING_BUCKET}/{blob_path}")
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Failed to upload media: {str(e)}")
-        # Release credits
-        release_credits(uid, job_id, cost, collection_name="dubbingJobs")
-        job_ref.update({"status": "failed", "error": f"Upload failed: {str(e)}", "updatedAt": SERVER_TIMESTAMP})
-        return create_response(ResponseBuilder.error("Failed to upload media", request_id=request_id), 500, cors_headers)
-    
-    # Queue Cloud Task for audio extraction & transcription
-    logger.info(f"[{request_id}] Queuing transcription task...")
+    # Queue Cloud Task
     try:
         task_payload = {
             "job_id": job_id,
             "uid": uid,
-            "media_path": blob_path,
+            "media_path": media_path,
             "media_type": media_type,
             "request_id": request_id,
         }
         
-        success, error = create_cloud_task(task_payload, endpoint="/extract-audio")
-        
-        if not success:
-            raise Exception(f"Task creation failed: {error}")
-        
-        logger.info(f"[{request_id}] Queued transcription task for job {job_id}")
+        task_success, task_error = create_cloud_task(task_payload, endpoint="/extract-audio")
+        if not task_success:
+            raise Exception(task_error)
+            
+        logger.info(f"[{request_id}] Queued task for {job_id}")
         
     except Exception as e:
-        logger.error(f"[{request_id}] Failed to queue task: {str(e)}")
-        
-        # Cleanup
-        if blob_path:
-            gcs.delete_file(blob_path)
-        
-        job_ref.update({
+        logger.error(f"[{request_id}] Task failure: {str(e)}")
+        db.collection("dubbingJobs").document(job_id).update({
             "status": "failed",
             "error": "Failed to queue transcription",
             "updatedAt": SERVER_TIMESTAMP
         })
-        
         release_credits(uid, job_id, cost, collection_name="dubbingJobs")
-        
-        return create_response(ResponseBuilder.error("Failed to queue transcription", request_id=request_id), 500, cors_headers)
-    
-    # Return job ID
-    logger.info(f"[{request_id}] Dubbing job {job_id} created successfully")
+        return create_response(ResponseBuilder.error("Queue failure", request_id=request_id), 500, cors_headers)
     
     return create_response(ResponseBuilder.success({
         "jobId": job_id,
-        "status": "uploading",
-        "message": "Dubbing job queued successfully"
+        "job_id": job_id,
+        "status": "processing",
+        "message": "Transcription queued"
     }, request_id=request_id), 202, cors_headers)

@@ -8,6 +8,9 @@ import os
 import tempfile
 from typing import Optional, Dict, Any, List, Tuple
 from google.cloud import storage
+import google.auth
+import google.auth.impersonated_credentials
+import google.auth.transport.requests
 
 # ✅ Configure logging for Cloud Functions immediately
 logging.basicConfig(
@@ -61,6 +64,24 @@ GCS_RETRY_CONFIG = {
     'max_delay': 10.0,
     'multiplier': 2.0
 }
+
+
+
+def get_impersonated_credentials():
+    """Get impersonated credentials for GCS operations."""
+    scopes = ['https://www.googleapis.com/auth/cloud-platform']
+    credentials, project = google.auth.default(scopes=scopes)
+    if not credentials.token:
+        credentials.refresh(google.auth.transport.requests.Request())
+    
+    signing_credentials = google.auth.impersonated_credentials.Credentials(
+        source_credentials=credentials,
+        target_principal=credentials.service_account_email,
+        target_scopes=scopes,
+        lifetime=3600,
+        delegates=[credentials.service_account_email]
+    )
+    return signing_credentials
 
 
 class GCSHelper:
@@ -177,6 +198,47 @@ class GCSHelper:
         except Exception as e:
             logger.error(f"✗ Failed to delete {remote_path}: {str(e)}")
             return False, str(e)
+
+
+
+    def generate_signed_url(
+        self, 
+        remote_path: str, 
+        content_type: str, 
+        expiration_minutes: int = 15,
+        method: str = "PUT"
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Generate a signed URL for direct object upload/download.
+        
+        Args:
+            remote_path: Remote GCS path
+            content_type: Expected MIME type
+            expiration_minutes: URL validity period
+            method: HTTP method (PUT for upload, GET for download)
+            
+        Returns:
+            Tuple of (success, signed_url, error_message)
+        """
+        try:
+            from datetime import timedelta
+            blob = self.bucket.blob(remote_path)
+
+            credentials=get_impersonated_credentials()
+            
+            url = blob.generate_signed_url(
+                version="v4",
+                credentials=credentials,
+                expiration=timedelta(minutes=expiration_minutes),
+                method=method,
+                content_type=content_type if method == "PUT" else None,
+            )
+            
+            logger.info(f"Generated signed URL for {remote_path} (Method: {method})")
+            return True, url, None
+        except Exception as e:
+            logger.error(f"Failed to generate signed URL: {str(e)}")
+            return False, None, str(e)
 
 
 class ResponseBuilder:
@@ -389,4 +451,5 @@ __all__ = [
     'cleanup_temp_files',
     'format_duration',
     'sanitize_filename',
+    'get_impersonated_credentials',
 ]

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { Character } from '@/types/character';
 import { UPLOAD_LIMITS, SUPPORTED_LANGUAGES } from '@/types/dubbing';
 import { saveDubbingMedia } from '@/lib/db/indexdb';
-import { transcribeDubbing } from '@/lib/api/apiClient';
+import { transcribeDubbing, getDubbingUploadUrl } from '@/lib/api/apiClient';
 
 interface DubMediaSelectModalProps {
     character: Character;
@@ -194,12 +194,28 @@ export default function DubMediaSelectModal({
         setError('');
 
         try {
-            // Convert file to base64
-            const base64Data = await fileToBase64(file);
+            // 1. Get Signed URL for direct upload
+            const { uploadUrl, mediaPath } = await getDubbingUploadUrl({
+                fileName: file.name,
+                contentType: file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/wav'),
+            });
 
-            // Call transcribe API
+            // 2. Upload directly to GCS
+            const uploadResponse = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: file,
+                headers: {
+                    'Content-Type': file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/wav'),
+                },
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error('Failed to upload file to storage');
+            }
+
+            // 3. Call transcribe API with the GCS path
             const result = await transcribeDubbing({
-                mediaData: base64Data,
+                mediaPath,
                 mediaType,
                 fileName: file.name,
                 duration,
@@ -230,22 +246,11 @@ export default function DubMediaSelectModal({
             setIsOpen(false);
 
         } catch (err: any) {
+            console.error('[DubMediaSelectModal] Error:', err);
             setError(err.message || 'Upload failed');
         } finally {
             setIsUploading(false);
         }
-    };
-
-    const fileToBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const base64 = (reader.result as string).split(',')[1];
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
     };
 
     if (!isOpen) return null;
