@@ -5,7 +5,7 @@ import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 import MediaHeader from './MediaHeader';
 import { db } from '@/lib/firebase/config';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
 import ResumeJobModal from '@/islands/dub/ResumeJobModal';
 
@@ -53,29 +53,43 @@ export default function MediaList({
                 }
                 setAvailableLocalVoices(local);
 
-                // 2. Load Completed Dubbing Jobs (One-time fetch)
+                // 2. Load All Dubbing Jobs (Real-time)
                 const q = query(
                     collection(db, 'dubbingJobs'),
                     where('uid', '==', userId),
-                    where('status', 'in', ['completed', 'failed']),
                     orderBy('createdAt', 'desc')
                 );
-                const snapshot = await getDocs(q);
-                const jobs = snapshot.docs.map(doc => ({
-                    ...doc.data(),
-                    id: doc.id,
-                    createdAt: doc.data().createdAt?.toDate() || new Date(),
-                })) as DubbingJob[];
-                setDubbingJobs(jobs);
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const jobs = snapshot.docs.map(doc => ({
+                        ...doc.data(),
+                        id: doc.id,
+                        createdAt: doc.data().createdAt?.toDate() || new Date(),
+                    })) as DubbingJob[];
+                    setDubbingJobs(jobs);
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error('[MediaList] Realtime listener error:', error);
+                    setIsLoading(false);
+                });
+
+                return () => unsubscribe();
 
             } catch (err) {
                 console.error('[MediaList] Load error:', err);
-            } finally {
                 setIsLoading(false);
             }
         };
 
-        if (userId) loadData();
+        let cleanup: (() => void) | undefined;
+
+        if (userId) {
+            loadData().then(unsub => { cleanup = unsub; });
+        }
+
+        return () => {
+            if (cleanup) cleanup();
+        };
     }, [userId, localOnlyIds]);
 
     // Check for active job to resume
@@ -122,7 +136,15 @@ export default function MediaList({
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const handlePlayDubbing = (jobId: string) => {
-        window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
+        const job = dubbingJobs.find(j => j.id === jobId);
+        if (!job) return;
+
+        if (job.status === 'transcribing_done') {
+            window.dispatchEvent(new CustomEvent('open-dub-settings', { detail: { jobId } }));
+        } else {
+            // For completed, processing, cloning, etc., use Review Modal which handles progress/result
+            window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
+        }
     };
 
     const handleDeleteDubbing = async (jobId: string) => {

@@ -181,7 +181,7 @@ export default function ResumeJobModal() {
                     }
 
                     .btn-outline {
-                        background: white;
+                        background: var(--mauve-1);
                         border: 1px solid var(--mauve-6);
                         color: var(--mauve-11);
                     }

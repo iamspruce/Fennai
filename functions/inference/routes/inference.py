@@ -4,6 +4,7 @@ Production-ready inference route with comprehensive improvements.
 """
 import logging
 import time
+import datetime
 import torch
 import numpy as np
 import requests
@@ -14,7 +15,7 @@ from contextlib import contextmanager
 import soundfile as sf
 from flask import request, jsonify, g
 from firebase_admin import firestore, storage
-from google.cloud.firestore import SERVER_TIMESTAMP, Timestamp
+from google.cloud.firestore import SERVER_TIMESTAMP
 from pydantic import ValidationError
 
 from config import config
@@ -567,7 +568,7 @@ def _handle_multi_chunk_completion(
             chunks[chunk_id]["status"] = "completed"
             chunks[chunk_id]["audioUrl"] = chunk_url
             chunks[chunk_id]["duration"] = audio_duration
-            chunks[chunk_id]["completedAt"] = Timestamp.now()
+            chunks[chunk_id]["completedAt"] = datetime.datetime.now(datetime.timezone.utc)
         
         completed_chunks = sum(1 for c in chunks if c.get("status") == "completed")
         job_ref.update({
@@ -585,7 +586,7 @@ def _handle_multi_chunk_completion(
                 chunk["status"] = "completed"
                 chunk["audioUrl"] = chunk_url
                 chunk["duration"] = audio_duration
-                chunk["completedAt"] = Timestamp.now()
+                chunk["completedAt"] = datetime.datetime.now(datetime.timezone.utc)
                 break
         
         completed_chunks = sum(1 for c in cloned_chunks if c.get("status") == "completed")

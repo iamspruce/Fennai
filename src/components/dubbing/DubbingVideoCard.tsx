@@ -16,28 +16,52 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onRetry }: Dub
     };
 
     const isFailed = job.status === 'failed';
+    const isProcessing = !['completed', 'failed'].includes(job.status);
+
+    const getStatusLabel = () => {
+        if (isFailed) return 'Failed';
+        if (job.status === 'completed') return 'Dubbed';
+        if (job.status === 'transcribing_done') return 'Ready to Dub';
+        return 'Processing';
+    };
+
+    const handleClick = () => {
+        // Allow clicking processing jobs to view status/progress
+        if (onPlay) onPlay(job.id);
+    };
 
     return (
-        <div className={`dub-card-container ${isFailed ? 'failed' : 'completed'}`} onClick={() => !isFailed && onPlay?.(job.id)}>
+        <div
+            className={`dub-card-container ${isFailed ? 'failed' : ''} ${isProcessing ? 'processing' : 'completed'}`}
+            onClick={handleClick}
+        >
             {/* The Stack effect visual layers */}
             <div className="card-layer-bg second" />
             <div className="card-layer-bg first" />
 
             <div className="card-primary">
                 <div className="card-preview">
-                    <Icon
-                        icon={isFailed ? "lucide:alert-circle" : (job.mediaType === 'video' ? "lucide:video" : "lucide:music")}
-                        width={32}
-                        className={isFailed ? "text-red-9" : ""}
-                    />
-                    <div className={`badge ${isFailed ? 'error' : 'success'}`}>{isFailed ? 'Failed' : 'Dubbed'}</div>
+                    {isProcessing ? (
+                        <div className="processing-indicator">
+                            <Icon icon="lucide:loader-2" width={32} className="spin" />
+                        </div>
+                    ) : (
+                        <Icon
+                            icon={isFailed ? "lucide:alert-circle" : (job.mediaType === 'video' ? "lucide:video" : "lucide:music")}
+                            width={32}
+                            className={isFailed ? "text-red-9" : ""}
+                        />
+                    )}
+                    <div className={`badge ${isFailed ? 'error' : (isProcessing ? 'warning' : 'success')}`}>
+                        {getStatusLabel()}
+                    </div>
                 </div>
 
                 <div className="card-body">
                     <h4 className="card-title" title={job.fileName}>{job.fileName || 'Untitled'}</h4>
                     <div className="card-meta">
                         <span>
-                            {isFailed ? 'Generation failed' : `${Math.floor((job.duration || 0) / 60)}:${((job.duration || 0) % 60).toString().padStart(2, '0')}`} • {formatDate(job.createdAt)}
+                            {isFailed ? 'Generation failed' : (isProcessing ? 'In progress...' : `${Math.floor((job.duration || 0) / 60)}:${((job.duration || 0) % 60).toString().padStart(2, '0')}`)} • {formatDate(job.createdAt)}
                         </span>
                     </div>
                 </div>
@@ -49,6 +73,10 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onRetry }: Dub
                     {isFailed ? (
                         <button className="icon-btn retry" onClick={(e) => { e.stopPropagation(); onRetry?.(job.id); }} title="Retry">
                             <Icon icon="lucide:rotate-ccw" width={18} />
+                        </button>
+                    ) : isProcessing ? (
+                        <button className="icon-btn" title="View Status">
+                            <Icon icon="lucide:eye" width={18} />
                         </button>
                     ) : (
                         <button className="icon-btn play" onClick={(e) => { e.stopPropagation(); onPlay?.(job.id); }} title="Play">
@@ -127,6 +155,20 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onRetry }: Dub
                 }
 
                 .badge.success { background: var(--orange-9); color: white; }
+                .badge.warning { background: var(--mauve-9); color: white; }
+
+                .processing-indicator {
+                    color: var(--orange-9);
+                }
+                
+                .spin {
+                    animation: spin 1s linear infinite;
+                }
+
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
 
                 .card-body {
                     padding: 12px;
