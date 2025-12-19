@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import { db } from '@/lib/firebase/config';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import type { Character } from '@/types/character';
 import type { DubbingJob, VoiceMapEntry } from '@/types/dubbing';
 import { SUPPORTED_LANGUAGES } from '@/types/dubbing';
@@ -147,10 +147,18 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
         jobId: string,
         settings: { targetLanguage: string; translateAll: boolean; voiceMapping: any }
     ) => {
-        // This could be a Firestore update or an API call
-        // For now, assuming you update via Firestore directly:
-        const jobRef = doc(db, 'dubbingJobs', jobId);
-        await updateDoc(jobRef, settings);
+        const response = await fetch(`/api/dubbing/${jobId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(settings),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to update job settings');
+        }
     };
 
 

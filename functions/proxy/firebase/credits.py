@@ -111,8 +111,8 @@ def reserve_credits(
         
         logger.info(f"Available credits: {available_credits}, Required: {cost}")
         
-        # Pro users bypass credit check
-        if not is_pro and available_credits < cost:
+        # Credit check (applies to ALL users now)
+        if available_credits < cost:
             error_msg = f"Insufficient credits. Available: {available_credits}, Required: {cost}"
             logger.warning(f"Credit check failed for user {uid}: {error_msg}")
             raise ValueError(error_msg)
@@ -121,12 +121,10 @@ def reserve_credits(
         
         # Reserve credits by incrementing pendingCredits
         user_updates: Dict[str, Any] = {
-            "updatedAt": SERVER_TIMESTAMP
+            "updatedAt": SERVER_TIMESTAMP,
+            "pendingCredits": Increment(cost)
         }
-        
-        if not is_pro:
-            user_updates["pendingCredits"] = Increment(cost)
-            logger.info(f"Incrementing pendingCredits by {cost}")
+        logger.info(f"Incrementing pendingCredits by {cost}")
         
         transaction.update(user_ref, user_updates)
         logger.info(f"User credits updated for {uid}")
@@ -224,7 +222,7 @@ def confirm_credit_deduction(
             "updatedAt": SERVER_TIMESTAMP
         }
         
-        if not is_pro:
+        if True:  # Always deduct credits
             # Deduct from actual credits and remove from pending
             updates["credits"] = Increment(-cost)
             updates["pendingCredits"] = Increment(-cost)
@@ -313,7 +311,7 @@ def release_credits(
         is_pro = user_data.get("isPro", False)
         
         # Release credits
-        if not is_pro:
+        if True: # Always release credits if reserved
             updates = {
                 "pendingCredits": Increment(-cost),
                 "updatedAt": SERVER_TIMESTAMP

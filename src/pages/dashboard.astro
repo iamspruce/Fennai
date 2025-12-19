@@ -8,7 +8,7 @@ import Logo from "@/components/ui/Logo.astro";
 const user = await getCurrentUser(Astro);
 
 if (!user) {
-    return Astro.redirect("/");
+  return Astro.redirect("/");
 }
 
 const avatarUrl = user.avatarUrl || generateAvatarUrl(user.email, "avataaars");
@@ -16,364 +16,352 @@ const initials = getInitials(user.displayName);
 ---
 
 <BaseLayout title="Dashboard - Fennai">
-    <div class="page-modal">
-        <header class="dashboard-header">
-            <div class="logo">
-                <Logo size={58} />
-            </div>
+  <div class="page-modal">
+    <header class="dashboard-header">
+      <div class="logo">
+        <Logo size={58} />
+      </div>
 
-            <a href="/profile" class="back-link">
+      <a href="/profile" class="back-link">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M19 12H5M12 19l-7-7 7-7"></path>
+        </svg>
+      </a>
+    </header>
+
+    <main class="dashboard-main">
+      <div class="account-section">
+        <div class="avatar-large">
+          {
+            user.avatarUrl ? (
+              <img src={avatarUrl} alt={user.displayName} />
+            ) : (
+              <div class="avatar-initials">{initials}</div>
+            )
+          }
+        </div>
+
+        <h1 class="user-name">{user.displayName}</h1>
+        <p class="user-email">{user.email}</p>
+      </div>
+
+      <div class="info-cards">
+        <div class="info-card">
+          <div class="info-icon">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 6v6l4 2"></path>
+            </svg>
+          </div>
+          <div class="info-content">
+            <p class="info-label">Credits Remaining</p>
+            <p class="info-value">{user.credits}</p>
+          </div>
+        </div>
+
+        <div class="info-card">
+          <div class="info-icon">
+            {
+              user.isPro ? (
                 <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
                 >
-                    <path d="M19 12H5M12 19l-7-7 7-7"></path>
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                 </svg>
-            </a>
-        </header>
+              ) : (
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4M12 16h.01" />
+                </svg>
+              )
+            }
+          </div>
+          <div class="info-content">
+            <p class="info-label">Plan</p>
+            <p class="info-value">
+              {user.isPro ? "Pro" : "Free"}
+            </p>
+          </div>
+        </div>
+      </div>
 
-        <main class="dashboard-main">
-            <div class="account-section">
-                <div class="avatar-large">
-                    {
-                        user.avatarUrl ? (
-                            <img src={avatarUrl} alt={user.displayName} />
-                        ) : (
-                            <div class="avatar-initials">{initials}</div>
-                        )
-                    }
-                </div>
+      <div class="actions-section">
+        <h2>Account Actions</h2>
 
-                <h1 class="user-name">{user.displayName}</h1>
-                <p class="user-email">{user.email}</p>
-            </div>
+        <div class="action-buttons">
+          <Button href="/pricing" variant="primary" class="action-btn">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 8v4M12 16h.01"></path>
+            </svg>
+            Buy More Credits
+          </Button>
 
-            <div class="info-cards">
-                <div class="info-card">
-                    <div class="info-icon">
-                        <svg
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M12 6v6l4 2"></path>
-                        </svg>
-                    </div>
-                    <div class="info-content">
-                        <p class="info-label">Credits Remaining</p>
-                        <p class="info-value">{user.credits}</p>
-                    </div>
-                </div>
+          {
+            !user.isPro && (
+              <Button href="/pricing" variant="secondary" class="action-btn">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                Upgrade to Pro
+              </Button>
+            )
+          }
 
-                <div class="info-card">
-                    <div class="info-icon">
-                        {
-                            user.isPro ? (
-                                <svg
-                                    width="24"
-                                    height="24"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                </svg>
-                            ) : (
-                                <svg
-                                    width="24"
-                                    height="24"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 8v4M12 16h.01" />
-                                </svg>
-                            )
-                        }
-                    </div>
-                    <div class="info-content">
-                        <p class="info-label">Plan</p>
-                        <p class="info-value">
-                            {user.isPro ? "Pro" : "Free"}
-                        </p>
-                    </div>
-                </div>
-            </div>
+          <form method="POST" action="/api/auth/logout">
+            <Button type="submit" variant="primary" class="action-btn">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" x2="9" y1="12" y2="12"></line>
+              </svg>
+              Logout
+            </Button>
+          </form>
 
-            <div class="actions-section">
-                <h2>Account Actions</h2>
-
-                <div class="action-buttons">
-                    <Button href="#" variant="primary" class="action-btn">
-                        <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M12 8v4M12 16h.01"></path>
-                        </svg>
-                        Buy More Credits
-                    </Button>
-
-                    {
-                        !user.isPro && (
-                            <Button
-                                href="#"
-                                variant="primary"
-                                class="action-btn"
-                            >
-                                <svg
-                                    width="20"
-                                    height="20"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="2"
-                                >
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                </svg>
-                                Upgrade to Pro
-                            </Button>
-                        )
-                    }
-
-                    <form method="POST" action="/api/auth/logout">
-                        <Button
-                            type="submit"
-                            variant="primary"
-                            class="action-btn"
-                        >
-                            <svg
-                                width="20"
-                                height="20"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <path
-                                    d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
-                                ></path>
-                                <polyline points="16 17 21 12 16 7"></polyline>
-                                <line x1="21" x2="9" y1="12" y2="12"></line>
-                            </svg>
-                            Logout
-                        </Button>
-                    </form>
-
-                    <Button
-                        variant="danger"
-                        class="action-btn delete-btn"
-                        id="delete-account-btn"
-                    >
-                        <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path d="M3 6h18"></path>
-                            <path
-                                d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                            ></path>
-                        </svg>
-                        Delete Account Permanently
-                    </Button>
-                </div>
-            </div>
-        </main>
-    </div>
+          <Button
+            variant="danger"
+            class="action-btn delete-btn"
+            id="delete-account-btn"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M3 6h18"></path>
+              <path
+                d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+              ></path>
+            </svg>
+            Delete Account Permanently
+          </Button>
+        </div>
+      </div>
+    </main>
+  </div>
 </BaseLayout>
 
 <script>
-    const deleteBtn = document.getElementById("delete-account-btn");
+  const deleteBtn = document.getElementById("delete-account-btn");
 
-    if (deleteBtn) {
-        deleteBtn.addEventListener("click", () => {
-            const confirmed = confirm(
-                "Are you sure you want to delete your account? This action cannot be undone. All your characters and voices will be permanently deleted.",
-            );
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", () => {
+      const confirmed = confirm(
+        "Are you sure you want to delete your account? This action cannot be undone. All your characters and voices will be permanently deleted."
+      );
 
-            if (confirmed) {
-                const doubleConfirm = confirm(
-                    "This is your final warning. Delete account permanently?",
-                );
+      if (confirmed) {
+        const doubleConfirm = confirm(
+          "This is your final warning. Delete account permanently?"
+        );
 
-                if (doubleConfirm) {
-                    fetch("/api/account/delete", {
-                        method: "POST",
-                    })
-                        .then(() => {
-                            window.location.href = "/";
-                        })
-                        .catch((err) => {
-                            alert(
-                                "Failed to delete account. Please try again.",
-                            );
-                            console.error(err);
-                        });
-                }
-            }
-        });
-    }
+        if (doubleConfirm) {
+          fetch("/api/account/delete", {
+            method: "POST",
+          })
+            .then(() => {
+              window.location.href = "/";
+            })
+            .catch((err) => {
+              alert("Failed to delete account. Please try again.");
+              console.error(err);
+            });
+        }
+      }
+    });
+  }
 </script>
 
 <style>
-    .dashboard-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: var(--space-2xl);
-    }
+  .dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-2xl);
+  }
 
-    .back-link {
-        width: 44px;
-        height: 44px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: var(--radius-m);
-        background: var(--mauve-3);
-        border: 1px solid var(--mauve-6);
-        color: var(--mauve-11);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+  .back-link {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-m);
+    background: var(--mauve-3);
+    border: 1px solid var(--mauve-6);
+    color: var(--mauve-11);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
 
-    .back-link:hover {
-        background: var(--mauve-6);
-        color: var(--mauve-12);
-        transform: translateX(-4px);
-    }
+  .back-link:hover {
+    background: var(--mauve-6);
+    color: var(--mauve-12);
+    transform: translateX(-4px);
+  }
 
-    .dashboard-main {
-        max-width: 600px;
-        margin: 0 auto;
-    }
+  .dashboard-main {
+    max-width: 600px;
+    margin: 0 auto;
+  }
 
-    .account-section {
-        text-align: center;
-        margin-bottom: var(--space-2xl);
-    }
+  .account-section {
+    text-align: center;
+    margin-bottom: var(--space-2xl);
+  }
 
-    .avatar-large {
-        width: 120px;
-        height: 120px;
-        margin: 0 auto var(--space-l);
-        border-radius: 50%;
-        overflow: hidden;
-        border: 3px solid var(--mauve-6);
-    }
+  .avatar-large {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto var(--space-l);
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--mauve-6);
+  }
 
-    .avatar-large img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
+  .avatar-large img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 
-    .avatar-initials {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--orange-9);
-        color: var(--orange-1);
-        font-size: var(--step-4);
-        font-weight: 700;
-    }
+  .avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--orange-9);
+    color: var(--orange-1);
+    font-size: var(--step-4);
+    font-weight: 700;
+  }
 
-    .user-name {
-        font-size: var(--step-0);
-        margin-bottom: var(--space-xs);
-        color: var(--mauve-12);
-    }
+  .user-name {
+    font-size: var(--step-0);
+    margin-bottom: var(--space-xs);
+    color: var(--mauve-12);
+  }
 
-    .user-email {
-        font-size: calc(var(--space-0) * 0.9);
-        color: var(--mauve-11);
-        margin: 0;
-    }
+  .user-email {
+    font-size: calc(var(--space-0) * 0.9);
+    color: var(--mauve-11);
+    margin: 0;
+  }
 
-    .info-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: var(--space-2xs);
-        margin-bottom: var(--space-2xl);
-    }
+  .info-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-2xs);
+    margin-bottom: var(--space-2xl);
+  }
 
-    .info-card {
-        display: flex;
-        align-items: center;
-        gap: var(--space-xs);
-        padding: var(--space-2xs);
-        background: var(--mauve-3);
-        border: 1px solid var(--mauve-6);
-        border-radius: var(--radius-s);
-    }
+  .info-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-2xs);
+    background: var(--mauve-3);
+    border: 1px solid var(--mauve-6);
+    border-radius: var(--radius-s);
+  }
 
-    .info-icon {
-        width: 48px;
-        height: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--mauve-12);
-        color: var(--mauve-1);
-        border-radius: var(--radius-full);
-        flex-shrink: 0;
-    }
+  .info-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--mauve-12);
+    color: var(--mauve-1);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+  }
 
-    .info-content {
-        flex: 1;
-    }
+  .info-content {
+    flex: 1;
+  }
 
-    .info-label {
-        font-size: var(--space-0);
-        color: var(--mauve-12);
-    }
+  .info-label {
+    font-size: var(--space-0);
+    color: var(--mauve-12);
+  }
 
-    .info-value {
-        font-size: calc(var(--step-0) * 0.9);
-        font-weight: 700;
-        color: var(--mauve-11);
-        margin: 0;
-    }
+  .info-value {
+    font-size: calc(var(--step-0) * 0.9);
+    font-weight: 700;
+    color: var(--mauve-11);
+    margin: 0;
+  }
 
-    .actions-section h2 {
-        font-size: var(--step-0);
-        margin-bottom: var(--space-xs);
-        color: var(--mauve-12);
-    }
+  .actions-section h2 {
+    font-size: var(--step-0);
+    margin-bottom: var(--space-xs);
+    color: var(--mauve-12);
+  }
 
-    .action-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-s);
-    }
+  .action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+  }
 
-    .action-btn {
-        width: 100%;
-        justify-content: flex-start;
-    }
+  .action-btn {
+    width: 100%;
+    justify-content: flex-start;
+  }
 
-    .delete-btn {
-        margin-top: var(--space-xl);
-    }
+  .delete-btn {
+    margin-top: var(--space-xl);
+  }
 </style>

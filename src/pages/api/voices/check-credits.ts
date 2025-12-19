@@ -27,16 +27,6 @@ export const GET: APIRoute = async ({ request }) => {
         // Check if user is pro
         const isPro = await checkProStatus(uid);
 
-        if (isPro) {
-            return new Response(JSON.stringify({
-                canClone: true,
-                isPro: true,
-            }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }
-
         // Check credits using Admin SDK
         const userDocRef = adminDb.collection('users').doc(uid);
         const userDoc = await userDocRef.get();
@@ -53,10 +43,11 @@ export const GET: APIRoute = async ({ request }) => {
 
         const credits = userDoc.data()?.credits || 0;
 
+        // Simple check: Must have at least 1 credit to start
         if (credits < 1) {
             return new Response(JSON.stringify({
                 canClone: false,
-                reason: 'Insufficient credits. Please buy more credits or upgrade to Pro.'
+                reason: 'Insufficient credits. Please buy more credits.'
             }), {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },

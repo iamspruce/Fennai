@@ -1,0 +1,613 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Button from "../components/ui/Button.astro";
+import { getCurrentUser } from "../lib/firebase/auth";
+
+const user = await getCurrentUser(Astro);
+---
+
+<BaseLayout title="Pricing & Credits - Fennai">
+  <div class="page-modal">
+    <header class="pricing-header">
+      <a href="/dashboard" class="back-link">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="M19 12H5M12 19l-7-7 7-7"></path>
+        </svg>
+        Back to Dashboard
+      </a>
+      <h1>Upgrade Your Experience</h1>
+      <p class="subtitle">Choose a plan or top up credits as you go. simple.</p>
+    </header>
+
+    <main class="pricing-main">
+      <!-- Subscription Section -->
+      <section class="pricing-section">
+        <div class="section-header">
+          <h2>Pro Subscription</h2>
+          <p>Unleash the full power of Fennai</p>
+        </div>
+
+        <div class="subscription-card">
+          <div class="card-content">
+            <div class="plan-info">
+              <h3>Pro Plan</h3>
+              <div class="price">
+                <span class="currency">$</span>
+                <span class="amount">29</span>
+                <span class="period">/ month</span>
+              </div>
+              <p class="description">
+                Perfect for creators who need consistent high-quality voice
+                generation.
+              </p>
+            </div>
+
+            <ul class="features-list">
+              <li>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  class="check-icon"
+                  ><path
+                    d="M20 6L9 17l-5-5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"></path></svg
+                >
+                <span
+                  ><strong>2,000 Credits</strong> per month (~5.5 hours)</span
+                >
+              </li>
+              <li>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  class="check-icon"
+                  ><path
+                    d="M20 6L9 17l-5-5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"></path></svg
+                >
+                <span>Access to <strong>Premium Voices</strong></span>
+              </li>
+              <li>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  class="check-icon"
+                  ><path
+                    d="M20 6L9 17l-5-5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"></path></svg
+                >
+                <span>Priority Processing Queue</span>
+              </li>
+              <li>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  class="check-icon"
+                  ><path
+                    d="M20 6L9 17l-5-5"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"></path></svg
+                >
+                <span>Commercial Rights</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-action">
+            {
+              user?.isPro ? (
+                <div class="current-plan-badge">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <>
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                      <path d="M22 4L12 14.01l-3-3" />
+                    </>
+                  </svg>
+                  Current Plan
+                </div>
+              ) : (
+                <form method="POST" action="/api/paystack/initialize">
+                  <input type="hidden" name="type" value="subscription" />
+                  <input type="hidden" name="plan" value="pro" />
+                  <input type="hidden" name="amount" value="2900" />{" "}
+                  {/* $29.00 */}
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="lg"
+                    class="w-full"
+                  >
+                    Subscribe Now
+                  </Button>
+                </form>
+              )
+            }
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Enterprise Section -->
+    <section class="pricing-section">
+      <div class="subscription-card enterprise-card">
+        <div class="card-content">
+          <div class="plan-info">
+            <h3>Enterprise</h3>
+            <div class="price">
+              <span class="amount">Let's Talk</span>
+            </div>
+            <p class="description">
+              For studios and businesses needing custom volume and API access.
+            </p>
+          </div>
+
+          <ul class="features-list">
+            <li>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                class="check-icon"
+                ><path
+                  d="M20 6L9 17l-5-5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"></path></svg
+              >
+              <span><strong>Unlimited Speakers</strong> per project</span>
+            </li>
+            <li>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                class="check-icon"
+                ><path
+                  d="M20 6L9 17l-5-5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"></path></svg
+              >
+              <span><strong>Unlimited</strong> Upload Duration/Size</span>
+            </li>
+            <li>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                class="check-icon"
+                ><path
+                  d="M20 6L9 17l-5-5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"></path></svg
+              >
+              <span>API Access & Dedicated Support</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-action">
+          <Button
+            href="mailto:sales@fennai.com"
+            variant="ghost"
+            size="lg"
+            class="w-full contact-btn"
+          >
+            Contact Sales
+          </Button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Credits Section -->
+    <section class="pricing-section">
+      <div class="section-header">
+        <h2>Credit Packs</h2>
+        <p>Pay as you go. Credits never expire.</p>
+      </div>
+
+      <div class="credits-grid">
+        <!-- Mini Pack ($5) -->
+        <div class="credit-card">
+          <div class="credit-header">
+            <h3>Mini Pack</h3>
+            <div class="credit-amount">250 Credits</div>
+          </div>
+          <div class="credit-price">$5</div>
+          <p class="credit-desc">~40 mins of audio</p>
+          <form method="POST" action="/api/paystack/initialize">
+            <input type="hidden" name="type" value="credits" />
+            <input type="hidden" name="package" value="mini" />
+            <input type="hidden" name="amount" value="500" />
+            <Button type="submit" variant="secondary" class="w-full"
+              >Buy Now</Button
+            >
+          </form>
+        </div>
+
+        <!-- Starter Pack ($10) -->
+        <div class="credit-card popular">
+          <div class="popular-badge">Popular</div>
+          <div class="credit-header">
+            <h3>Starter Pack</h3>
+            <div class="credit-amount">500 Credits</div>
+          </div>
+          <div class="credit-price">$10</div>
+          <p class="credit-desc">~1.4 hours of audio</p>
+          <form method="POST" action="/api/paystack/initialize">
+            <input type="hidden" name="type" value="credits" />
+            <input type="hidden" name="package" value="starter" />
+            <input type="hidden" name="amount" value="1000" />
+            <Button type="submit" variant="primary" class="w-full"
+              >Buy Now</Button
+            >
+          </form>
+        </div>
+
+        <!-- Creator Pack ($25) -->
+        <div class="credit-card">
+          <div class="save-badge">Save $5</div>
+          <div class="credit-header">
+            <h3>Creator Pack</h3>
+            <div class="credit-amount">1,500 Credits</div>
+          </div>
+          <div class="credit-price">$25</div>
+          <p class="credit-desc">~4 hours of audio</p>
+          <form method="POST" action="/api/paystack/initialize">
+            <input type="hidden" name="type" value="credits" />
+            <input type="hidden" name="package" value="creator" />
+            <input type="hidden" name="amount" value="2500" />
+            <Button type="submit" variant="secondary" class="w-full"
+              >Buy Now</Button
+            >
+          </form>
+        </div>
+
+        <!-- Studio Pack ($80) -->
+        <div class="credit-card">
+          <div class="save-badge">Best Value</div>
+          <div class="credit-header">
+            <h3>Studio Pack</h3>
+            <div class="credit-amount">5,000 Credits</div>
+          </div>
+          <div class="credit-price">$80</div>
+          <p class="credit-desc">~14 hours of audio</p>
+          <form method="POST" action="/api/paystack/initialize">
+            <input type="hidden" name="type" value="credits" />
+            <input type="hidden" name="package" value="studio" />
+            <input type="hidden" name="amount" value="8000" />
+            <Button type="submit" variant="secondary" class="w-full"
+              >Buy Now</Button
+            >
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+</BaseLayout>
+
+<style>
+  .pricing-header {
+    text-align: center;
+    margin-bottom: var(--space-xl);
+    position: relative;
+    padding: var(--space-m);
+  }
+
+  .back-link {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2xs);
+    color: var(--mauve-12);
+    font-size: var(--step--1);
+    transition: color 0.2s;
+  }
+
+  .back-link:hover {
+    color: var(--mauve-12);
+  }
+
+  @media (max-width: 768px) {
+    .back-link {
+      position: static;
+      justify-content: center;
+      margin-bottom: var(--space-m);
+      transform: none;
+    }
+  }
+
+  h1 {
+    font-size: var(--step-4);
+    background: linear-gradient(to right, var(--mauve-12), var(--mauve-10));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: var(--space-2xs);
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    font-size: var(--step-1);
+    color: var(--mauve-11);
+  }
+
+  .pricing-section {
+    margin-bottom: var(--space-xl);
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: var(--space-xl);
+  }
+
+  .section-header h2 {
+    font-size: var(--step-2);
+    color: var(--mauve-12);
+    margin-bottom: var(--space-2xs);
+  }
+
+  .section-header p {
+    color: var(--mauve-11);
+  }
+
+  /* Subscription Card */
+  .subscription-card {
+    background: var(--mauve-2);
+    border: 1px solid var(--mauve-6);
+    border-radius: var(--radius-l);
+    padding: var(--space-xl);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2xl);
+    align-items: center;
+    max-width: 800px;
+    margin: 0 auto;
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.1),
+      0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    background-image: radial-gradient(
+      circle at top right,
+      var(--mauve-4) 0%,
+      transparent 40%
+    );
+  }
+
+  .enterprise-card {
+    background-image: radial-gradient(
+      circle at top right,
+      var(--mauve-5) 0%,
+      transparent 40%
+    );
+    border-color: var(--mauve-7);
+  }
+
+  .contact-btn {
+    border: 1px solid var(--mauve-6);
+  }
+
+  @media (max-width: 768px) {
+    .subscription-card {
+      grid-template-columns: 1fr;
+      text-align: center;
+      gap: var(--space-l);
+    }
+  }
+
+  .plan-info h3 {
+    font-size: var(--step-2);
+    color: var(--mauve-12);
+    margin-bottom: var(--space-s);
+  }
+
+  .price {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: var(--space-s);
+  }
+
+  @media (max-width: 768px) {
+    .price {
+      justify-content: center;
+    }
+  }
+
+  .currency {
+    font-size: var(--step-1);
+    color: var(--mauve-11);
+    font-weight: 500;
+  }
+
+  .amount {
+    font-size: var(--step-4);
+    font-weight: 800;
+    color: var(--mauve-12);
+    line-height: 1;
+  }
+
+  .period {
+    font-size: var(--step-0);
+    color: var(--mauve-11);
+  }
+
+  .description {
+    color: var(--mauve-11);
+    max-width: 400px;
+  }
+
+  .features-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-l) 0 0;
+    display: grid;
+    gap: var(--space-s);
+  }
+
+  .features-list li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    color: var(--mauve-12);
+  }
+
+  @media (max-width: 768px) {
+    .features-list li {
+      justify-content: center;
+      text-align: left;
+    }
+  }
+
+  .check-icon {
+    color: var(--orange-9);
+    flex-shrink: 0;
+  }
+
+  .card-action {
+    min-width: 200px;
+  }
+
+  .current-plan-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--green-11);
+    font-weight: 600;
+    padding: var(--space-m);
+    background: var(--green-3);
+    border-radius: var(--radius-m);
+    border: 1px solid var(--green-6);
+  }
+
+  /* Credits Grid */
+  .credits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-m);
+  }
+
+  .credit-card {
+    background: var(--mauve-2);
+    border: 1px solid var(--mauve-6);
+    border-radius: var(--radius-m);
+    padding: var(--space-l);
+    text-align: center;
+    position: relative;
+    transition:
+      transform 0.2s,
+      border-color 0.2s;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .credit-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--mauve-8);
+  }
+
+  .credit-card.popular {
+    background: var(--mauve-3);
+    border-color: var(--orange-8);
+    box-shadow: 0 0 0 1px var(--orange-8);
+  }
+
+  .popular-badge {
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--orange-9);
+    color: white;
+    font-size: var(--step--2);
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    letter-spacing: 0.05em;
+  }
+
+  .save-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: var(--green-4);
+    color: var(--green-11);
+    font-size: var(--step--2);
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--radius-s);
+  }
+
+  .credit-header h3 {
+    font-size: var(--step-0);
+    color: var(--mauve-11);
+    margin-bottom: var(--space-2xs);
+  }
+
+  .credit-amount {
+    font-size: var(--step-1);
+    font-weight: 700;
+    color: var(--mauve-12);
+  }
+
+  .credit-price {
+    font-size: var(--step-3);
+    font-weight: 800;
+    color: var(--mauve-12);
+    margin: var(--space-m) 0;
+  }
+
+  .credit-desc {
+    color: var(--mauve-10);
+    font-size: var(--step--1);
+    margin-bottom: var(--space-l);
+    flex-grow: 1;
+  }
+
+  .w-full {
+    width: 100%;
+  }
+</style>

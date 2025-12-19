@@ -35,7 +35,36 @@ service cloud.firestore {
     // =========================================================================
     
     match /users/{userId} {
-      allow read, write: if isSignedIn() && isOwner(userId);
+      allow read: if isSignedIn();
+      
+      // RESTRICTED WRITE: Users can only update specific profile fields
+      // Credits, isPro, and subscription status must be handled by backend
+      allow update: if isSignedIn() && isOwner(userId) && 
+                      // 1. Ensure credits and payment info are NOT changing
+                      request.resource.data.credits == resource.data.credits &&
+                      request.resource.data.isPro == resource.data.isPro &&
+                      request.resource.data.pendingCredits == resource.data.pendingCredits &&
+                      
+                      // 2. Allow updating profile fields
+                      (
+                        request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['displayName', 'avatarUrl', 'photoURL', 'updatedAt'])
+                      );
+                      
+      // Create/Delete not allowed from client (handled by backend/auth triggers)
+      allow create, delete: if false;
+    }
+
+    // =========================================================================
+    // TRANSACTIONS (NEW)
+    // =========================================================================
+    
+    match /transactions/{transactionId} {
+      // Users can read their own transactions
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      // Only backend can write transactions
+      allow write: if false;
     }
     
     // =========================================================================

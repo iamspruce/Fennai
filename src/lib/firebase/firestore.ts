@@ -777,5 +777,36 @@ export async function deleteDubbingJob(jobId: string, userId: string): Promise<v
     );
 }
 
+
+// UPDATE (Admin SDK - runs server-side)
+export async function updateDubbingJob(
+    jobId: string,
+    userId: string,
+    data: Partial<any>
+): Promise<void> {
+    return FirestoreMonitor.track(
+        'updateDubbingJob',
+        async () => {
+            const docRef = adminDb.collection('dubbingJobs').doc(jobId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                throw new Error('Dubbing job not found');
+            }
+
+            const existingData = docSnap.data()!;
+            if (existingData.uid !== userId) {
+                throw new Error('Permission denied: Dubbing job does not belong to user');
+            }
+
+            await docRef.update({
+                ...data,
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        },
+        { jobId, userId }
+    );
+}
+
 // Export the error class
 export { FirestoreError };
