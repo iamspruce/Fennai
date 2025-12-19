@@ -281,11 +281,18 @@ def extract_audio_route():
             "uid": uid,
             "audio_path": audio_blob_path,
         }
+
+        cloud_run_url = config.CLOUD_RUN_URL
+        if not cloud_run_url:
+            # Construct URL from service name and region
+            cloud_run_url = f"https://fennai-inference-{config.GCP_PROJECT}.a.run.app"
+            logger.warning(f"CLOUD_RUN_URL not set, using constructed URL: {cloud_run_url}")
+
         
         task = {
             "http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,
-                "url": f"{config.CLOUD_RUN_URL}/cluster-speakers",
+                "url": f"{cloud_run_url}/cluster-speakers",
                 "headers": {
                     "Content-Type": "application/json",
                     "X-Internal-Token": config.INTERNAL_TOKEN,

@@ -2,27 +2,27 @@ name: Deploy to Firebase & Cloud Run
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       deploy_hosting:
-        description: 'Deploy Frontend (Firebase Hosting)'
+        description: "Deploy Frontend (Firebase Hosting)"
         required: false
         type: boolean
         default: false
       deploy_inference:
-        description: 'Deploy Cloud Run Inference'
+        description: "Deploy Cloud Run Inference"
         required: false
         type: boolean
         default: false
       deploy_proxy:
-        description: 'Deploy Proxy Functions'
+        description: "Deploy Proxy Functions"
         required: false
         type: boolean
         default: false
       deploy_all:
-        description: 'Deploy Everything'
+        description: "Deploy Everything"
         required: false
         type: boolean
         default: false
@@ -60,20 +60,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Create .env file
         run: |
           echo "${{ secrets.ENV_FILE }}" > .env
           echo "✅ .env created."
-      
+
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -100,13 +100,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      
+
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
@@ -227,7 +227,7 @@ jobs:
           JOB_NAME="credit-cleanup-hourly"
           LOCATION="us-central1"
           TOPIC="credit-cleanup"
-          
+
           if gcloud scheduler jobs describe $JOB_NAME --location=$LOCATION 2>/dev/null; then
             echo "Updating existing scheduler job..."
             gcloud scheduler jobs update pubsub $JOB_NAME \
@@ -245,7 +245,7 @@ jobs:
               --message-body='{"action":"cleanup"}' \
               --time-zone="America/New_York"
           fi
-          
+
           echo "✅ Scheduler job configured (runs hourly)"
 
       - name: Get Existing URLs and Service Account
@@ -255,17 +255,17 @@ jobs:
           CLOUD_RUN_URL=$(gcloud run services describe fennai-inference \
             --region=us-central1 \
             --format='value(status.url)' 2>/dev/null || echo "")
-          
+
           # Get service account
           SA=$(gcloud run services describe fennai-inference \
             --region=us-central1 \
             --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || echo "")
-          
+
           if [ -z "$SA" ]; then
             PROJECT_NUMBER=$(gcloud projects describe fennai --format='value(projectNumber)')
             SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
           fi
-          
+
           echo "cloud_run_url=$CLOUD_RUN_URL" >> $GITHUB_OUTPUT
           echo "service_account=$SA" >> $GITHUB_OUTPUT
           echo "✅ Current Cloud Run URL: $CLOUD_RUN_URL"
@@ -288,13 +288,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      
+
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
@@ -320,7 +320,7 @@ jobs:
         id: deploy_run
         run: |
           SA="${{ steps.vars.outputs.SERVICE_ACCOUNT }}"
-          
+
           URL=$(gcloud run deploy fennai-inference \
               --image gcr.io/fennai/fennai-inference:latest \
               --platform managed \
@@ -349,28 +349,36 @@ jobs:
               --set-env-vars "SERVICE_ACCOUNT_EMAIL=$SA" \
               --quiet \
               --format='value(status.url)')
-          
+
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_OUTPUT
           echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
           echo "✅ Cloud Run deployed to: $URL"
 
+          echo "Setting CLOUD_RUN_URL environment variable..."
+          gcloud run services update fennai-inference \
+              --region us-central1 \
+              --update-env-vars "CLOUD_RUN_URL=$URL" \
+              --quiet
+
+          echo "✅ CLOUD_RUN_URL configured"
+
       - name: Grant IAM Token Creator Role for Signed URLs
         run: |
           SA="${{ steps.vars.outputs.SERVICE_ACCOUNT }}"
-          
+
           echo "Granting iam.serviceAccountTokenCreator role for signed URL generation..."
           gcloud projects add-iam-policy-binding fennai \
             --member="serviceAccount:${SA}" \
             --role="roles/iam.serviceAccountTokenCreator" \
             --condition=None
-          
+
           echo "✅ IAM signing permissions granted to $SA"
 
       - name: Verify Cloud Run Deployment
         run: |
           echo "Waiting for Cloud Run to be ready..."
           HEALTH_URL="${{ steps.deploy_run.outputs.CLOUD_RUN_URL }}/health"
-          
+
           for i in {1..5}; do
             echo "Health check attempt $i/5..."
             RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL" || echo "000")
@@ -383,7 +391,7 @@ jobs:
               sleep 10
             fi
           done
-          
+
           echo "❌ Health check failed after 5 attempts"
           exit 1
 
@@ -406,23 +414,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-      
+
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: fennai
-      
+
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
@@ -447,14 +455,14 @@ jobs:
               echo "✅ Retrieved Cloud Run URL from GCP"
             fi
           fi
-          
+
           # Exit if still no URL found
           if [ -z "$CLOUD_RUN_URL" ]; then
             echo "❌ No Cloud Run service found. You must deploy inference at least once before deploying proxy."
             echo "Run with [deploy:all] or [deploy:inference] first."
             exit 1
           fi
-          
+
           # Get service account (similar logic)
           if [ -n "${{ needs.deploy-inference.outputs.service_account }}" ]; then
             SA="${{ needs.deploy-inference.outputs.service_account }}"
@@ -470,7 +478,7 @@ jobs:
               SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
             fi
           fi
-          
+
           echo "CLOUD_RUN_URL=$CLOUD_RUN_URL" >> $GITHUB_OUTPUT
           echo "SERVICE_ACCOUNT=$SA" >> $GITHUB_OUTPUT
           echo "✅ Cloud Run URL: $CLOUD_RUN_URL"
@@ -491,8 +499,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
-      
+          python-version: "3.11"
+
       - name: Setup Python virtual environment for proxy function
         run: |
           cd functions/proxy
@@ -533,7 +541,7 @@ jobs:
             echo "🔧 Service Account: ${{ needs.deploy-inference.outputs.service_account }}"
           fi
           echo ""
-          
+
           # Check if any deployment failed
           if [ "${{ needs.deploy-hosting.result }}" = "failure" ] || \
              [ "${{ needs.deploy-inference.result }}" = "failure" ] || \
@@ -541,6 +549,6 @@ jobs:
             echo "❌ Some deployments failed. Check logs above."
             exit 1
           fi
-          
+
           echo "✅ All requested deployments completed successfully"
           echo "================================"

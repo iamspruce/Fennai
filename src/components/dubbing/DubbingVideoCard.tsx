@@ -11,35 +11,20 @@ interface DubbingVideoCardProps {
 }
 
 export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: DubbingVideoCardProps) {
-    const [showOriginal, setShowOriginal] = useState(false);
-
     const isCompleted = job.status === 'completed';
     const isFailed = job.status === 'failed';
     const isTranscribingDone = job.status === 'transcribing_done';
     const isRetrying = job.status === 'retrying';
     const isProcessing = ['uploading', 'processing', 'extracting', 'transcribing', 'clustering', 'translating', 'cloning', 'merging'].includes(job.status || '');
 
-    const handleCardClick = () => {
-        if (!isCompleted) {
-            handleActionClick();
-            return;
-        }
-        // Toggle between original and dubbed only if completed
-        setShowOriginal(!showOriginal);
-    };
-
     const handleActionClick = (e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
 
-        // If transcribing is done or processing, open settings/progress
         if (isTranscribingDone || isProcessing || isRetrying) {
             window.dispatchEvent(new CustomEvent('open-dub-settings', {
                 detail: { jobId: job.id }
             }));
         } else if (isFailed) {
-            // If failed, we might want a specific retry logic, but for now 
-            // reopening settings is a good start if it failed during user flow
-            // or we can add a retry handler
             onAction?.(job.id, 'retry');
         } else if (isCompleted) {
             onPlay?.(job.id);
@@ -57,9 +42,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
 
     const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Delete this dubbing job?')) {
-            onDelete?.(job.id);
-        }
+        onDelete?.(job.id);
     };
 
     const formatDuration = (seconds: number) => {
@@ -82,7 +65,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
 
         switch (job.status) {
             case 'uploading': return 'Uploading...';
-            case 'processing': return 'Initializing...';
+
             case 'extracting': return 'Extracting Audio...';
             case 'transcribing': return 'Transcribing...';
             case 'clustering': return 'Analyzing Speakers...';
@@ -128,45 +111,28 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
     return (
         <div className={`dubbing-video-card-container ${!isCompleted ? 'is-incomplete' : ''}`}>
             <div
-                className={`dubbing-video-card ${isCompleted ? (showOriginal ? 'show-original' : 'show-dubbed') : 'show-processing'}`}
-                onClick={handleCardClick}
+                className="dubbing-video-card"
+                onClick={handleActionClick}
             >
                 {isCompleted ? (
                     <>
-                        {/* Dubbed Version (Top Card) */}
-                        <div className="card-layer dubbed-layer">
+                        {/* Original Version (Bottom Card) */}
+                        <div className="card-layer original-layer">
                             <div className="card-thumbnail">
-                                {job.mediaType === 'video' ? (
-                                    <Icon icon="lucide:video" width={32} />
-                                ) : (
-                                    <Icon icon="lucide:music" width={32} />
-                                )}
-                                <div className="card-badge dubbed-badge">
-                                    <Icon icon="lucide:sparkles" width={12} />
-                                    Dubbed
-                                </div>
-                            </div>
-                            <div className="card-content">
-                                <h4 className="card-title">{job.fileName || 'Untitled'}</h4>
-                                <div className="card-meta">
-                                    <span>{formatDuration(job.duration || 0)}</span>
-                                    <span>•</span>
-                                    <span>{formatDate(job.createdAt)}</span>
+                                <Icon icon={job.mediaType === 'video' ? "lucide:video" : "lucide:music"} width={32} />
+                                <div className="card-badge original-badge">
+                                    Original
                                 </div>
                             </div>
                         </div>
 
-                        {/* Original Version (Bottom Card) */}
-                        <div className="card-layer original-layer">
+                        {/* Dubbed Version (Top Card) */}
+                        <div className="card-layer dubbed-layer">
                             <div className="card-thumbnail">
-                                {job.mediaType === 'video' ? (
-                                    <Icon icon="lucide:video" width={32} />
-                                ) : (
-                                    <Icon icon="lucide:music" width={32} />
-                                )}
-                                <div className="card-badge original-badge">
-                                    <Icon icon="lucide:file-audio" width={12} />
-                                    Original
+                                <Icon icon={job.mediaType === 'video' ? "lucide:video" : "lucide:music"} width={32} />
+                                <div className="card-badge dubbed-badge">
+                                    <Icon icon="lucide:sparkles" width={12} />
+                                    Dubbed
                                 </div>
                             </div>
                             <div className="card-content">
@@ -204,14 +170,13 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                 .dubbing-video-card-container {
                     position: relative;
                     width: 100%;
-                    aspect-ratio: 16 / 9;
-                    min-height: 200px;
+                    padding-bottom: 20px; /* Space for the stack effect */
                 }
 
                 .dubbing-video-card {
                     position: relative;
                     width: 100%;
-                    height: 100%;
+                    aspect-ratio: 16 / 10;
                     cursor: pointer;
                     perspective: 1000px;
                 }
@@ -220,57 +185,47 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                     position: absolute;
                     width: 100%;
                     height: 100%;
-                    background: var(--mauve-2);
+                    background: white;
                     border: 1px solid var(--mauve-6);
                     border-radius: var(--radius-l);
                     overflow: hidden;
-                    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                     display: flex;
                     flex-direction: column;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
                 }
 
-                /* Dubbed Layer (Top) */
+                /* Original Layer (Bottom) - Background */
+                .original-layer {
+                    z-index: 1;
+                    transform: translateY(12px) scale(0.95);
+                    opacity: 0.6;
+                    background: var(--mauve-2);
+                }
+
+                /* Dubbed Layer (Top) - Foreground */
                 .dubbed-layer {
                     z-index: 2;
-                    transform: translateY(-8px) translateX(8px) rotate(2deg);
+                    transform: translateY(0);
                     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
                 }
 
-                .show-dubbed .dubbed-layer {
-                    transform: translateY(0) translateX(0) rotate(0deg);
-                    z-index: 3;
-                    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+                .dubbing-video-card:hover .original-layer {
+                    transform: translateY(16px) scale(0.93);
+                    opacity: 0.4;
                 }
 
-                .show-original .dubbed-layer {
-                    transform: translateY(8px) translateX(-8px) rotate(-2deg);
-                    z-index: 1;
-                    opacity: 0.7;
-                }
-
-                /* Original Layer (Bottom) */
-                .original-layer {
-                    z-index: 1;
-                    transform: translateY(8px) translateX(-8px) rotate(-2deg);
-                    opacity: 0.7;
-                }
-
-                .show-original .original-layer {
-                    transform: translateY(0) translateX(0) rotate(0deg);
-                    z-index: 3;
-                    opacity: 1;
-                    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
-                }
-
-                .show-dubbed .original-layer {
-                    transform: translateY(8px) translateX(-8px) rotate(-2deg);
-                    z-index: 1;
+                .dubbing-video-card:hover .dubbed-layer {
+                    transform: translateY(-4px);
+                    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
                 }
 
                 .processing-layer {
                     z-index: 3;
                     border-style: dashed;
                     border-width: 2px;
+                    background: var(--mauve-2);
+                    box-shadow: none;
                 }
 
                 .card-thumbnail {
@@ -292,10 +247,11 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                     gap: 4px;
                     padding: 4px 8px;
                     border-radius: var(--radius-s);
-                    font-size: 11px;
-                    font-weight: 600;
+                    font-size: 10px;
+                    font-weight: 700;
                     text-transform: uppercase;
                     letter-spacing: 0.5px;
+                    backdrop-filter: blur(4px);
                 }
 
                 .dubbed-badge {
@@ -306,6 +262,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                 .original-badge {
                     background: var(--mauve-12);
                     color: white;
+                    opacity: 0.8;
                 }
 
                 .processing-badge {
@@ -316,7 +273,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                 .card-content {
                     padding: var(--space-s);
                     background: white;
-                    border-top: 1px solid var(--mauve-6);
+                    border-top: 1px solid var(--mauve-4);
                 }
 
                 .card-title {
@@ -329,10 +286,6 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                     text-overflow: ellipsis;
                 }
 
-                .processing-info {
-                    margin-bottom: var(--space-xs);
-                }
-
                 .status-text {
                     font-size: 13px;
                     color: var(--orange-11);
@@ -343,7 +296,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                 .mini-progress-bar {
                     width: 100%;
                     height: 4px;
-                    background: var(--mauve-4);
+                    background: var(--mauve-3);
                     border-radius: 2px;
                     overflow: hidden;
                 }
@@ -374,17 +327,20 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
 
                 .card-actions {
                     position: absolute;
-                    bottom: var(--space-s);
+                    top: var(--space-s);
                     left: var(--space-s);
                     display: flex;
+                    flex-direction: column;
                     gap: var(--space-2xs);
                     z-index: 10;
                     opacity: 0;
-                    transition: opacity 0.2s;
+                    transition: all 0.2s;
+                    transform: translateX(-10px);
                 }
 
                 .dubbing-video-card:hover .card-actions {
                     opacity: 1;
+                    transform: translateX(0);
                 }
 
                 .card-action-btn {
@@ -395,7 +351,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                     justify-content: center;
                     background: white;
                     border: 1px solid var(--mauve-6);
-                    border-radius: var(--radius-m);
+                    border-radius: 50%;
                     color: var(--mauve-12);
                     cursor: pointer;
                     transition: all 0.2s;
@@ -430,6 +386,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete, onAction }: Du
                 @media (max-width: 768px) {
                     .card-actions {
                         opacity: 1;
+                        transform: translateX(0);
                     }
                 }
             `}</style>

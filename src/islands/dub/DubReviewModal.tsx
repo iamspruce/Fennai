@@ -30,7 +30,19 @@ export default function DubReviewModal() {
             doc(db, 'dubbingJobs', jobId),
             (snapshot) => {
                 if (snapshot.exists()) {
-                    setJob(snapshot.data() as DubbingJob);
+                    const data = snapshot.data() as DubbingJob;
+                    setJob(data);
+
+                    // If job is finished or failed, clear activeJob from localStorage
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        const activeJobStr = localStorage.getItem('activeJob');
+                        if (activeJobStr) {
+                            const activeJob = JSON.parse(activeJobStr);
+                            if (activeJob.jobId === jobId) {
+                                localStorage.removeItem('activeJob');
+                            }
+                        }
+                    }
                 }
             }
         );

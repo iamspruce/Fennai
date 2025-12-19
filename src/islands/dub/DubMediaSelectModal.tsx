@@ -5,6 +5,9 @@ import type { Character } from '@/types/character';
 import { UPLOAD_LIMITS, SUPPORTED_LANGUAGES } from '@/types/dubbing';
 import { saveDubbingMedia } from '@/lib/db/indexdb';
 import { transcribeDubbing, getDubbingUploadUrl } from '@/lib/api/apiClient';
+import { db } from '@/lib/firebase/config';
+import { doc, onSnapshot } from 'firebase/firestore';
+import type { DubbingJob } from '@/types/dubbing';
 
 interface DubMediaSelectModalProps {
     character: Character;
@@ -26,6 +29,9 @@ export default function DubMediaSelectModal({
     const [otherLanguages, setOtherLanguages] = useState<string[]>([]);
     const [otherLangInput, setOtherLangInput] = useState('');
     const [isUploading, setIsUploading] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+    const [jobStatus, setJobStatus] = useState<DubbingJob | null>(null);
     const [error, setError] = useState('');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +71,37 @@ export default function DubMediaSelectModal({
         };
     }, []);
 
+    // Listen to job status if we have a currentJobId
+    useEffect(() => {
+        if (!currentJobId || !isOpen) return;
+
+        console.log('[DubMediaSelectModal] Listening to job:', currentJobId);
+        const unsubscribe = onSnapshot(doc(db, 'dubbingJobs', currentJobId), (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data() as DubbingJob;
+                setJobStatus(data);
+                console.log('[DubMediaSelectModal] Job status update:', data.status);
+
+                if (data.status === 'transcribing_done') {
+                    // Success! Move to settings
+                    window.dispatchEvent(
+                        new CustomEvent('open-dub-settings', {
+                            detail: { jobId: currentJobId }
+                        })
+                    );
+                    setIsOpen(false);
+                    resetForm();
+                } else if (data.status === 'failed') {
+                    setError(data.error || 'Transcription failed');
+                    setIsProcessing(false);
+                    localStorage.removeItem('activeJob');
+                }
+            }
+        });
+
+        return () => unsubscribe();
+    }, [currentJobId, isOpen]);
+
     const resetForm = () => {
         setFile(null);
         setDuration(0);
@@ -72,6 +109,10 @@ export default function DubMediaSelectModal({
         setOtherLanguages([]);
         setOtherLangInput('');
         setError('');
+        setIsProcessing(false);
+        setIsUploading(false);
+        setCurrentJobId(null);
+        setJobStatus(null);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -236,20 +277,24 @@ export default function DubMediaSelectModal({
                 createdAt: Date.now(),
             });
 
-            // Open settings modal (will listen to job status)
-            window.dispatchEvent(
-                new CustomEvent('open-dub-settings', {
-                    detail: { jobId: result.jobId }
-                })
-            );
+            // 4. Persistence
+            localStorage.setItem('activeJob', JSON.stringify({
+                jobId: result.jobId,
+                type: 'dubbing',
+                fileName: file.name,
+                status: 'transcribing'
+            }));
 
-            setIsOpen(false);
+            // 5. Start waiting
+            setCurrentJobId(result.jobId);
+            setIsProcessing(true);
 
         } catch (err: any) {
             console.error('[DubMediaSelectModal] Error:', err);
             setError(err.message || 'Upload failed');
-        } finally {
             setIsUploading(false);
+        } finally {
+            // We stay uploading/processing until transcribing_done
         }
     };
 
@@ -275,8 +320,33 @@ export default function DubMediaSelectModal({
                 </div>
 
                 <div className="modal-body">
-                    {/* Upload Section */}
-                    {!file ? (
+                    {/* Processing State */}
+                    {isProcessing ? (
+                        <div className="processing-wait-state">
+                            <div className="processing-icon-container">
+                                <Icon icon="lucide:loader-2" width={48} className="spin primary-color" />
+                            </div>
+                            <h4>Analyzing your media...</h4>
+                            <p>We're transcribing and identifying speakers. This usually takes a minute.</p>
+
+                            {jobStatus?.progress !== undefined && (
+                                <div className="processing-progress">
+                                    <div className="progress-bar">
+                                        <div className="progress-fill" style={{ width: `${jobStatus.progress}%` }} />
+                                    </div>
+                                    <span className="progress-text">{jobStatus.step || 'Processing...'} ({jobStatus.progress}%)</span>
+                                </div>
+                            )}
+
+                            <button
+                                className="btn btn-outline btn-full"
+                                style={{ marginTop: 'var(--space-l)' }}
+                                onClick={() => setIsOpen(false)}
+                            >
+                                Run in background
+                            </button>
+                        </div>
+                    ) : !file ? (
                         <div
                             className={`upload-zone ${isDragging ? 'dragging' : ''}`}
                             onDragOver={handleDragOver}
@@ -318,6 +388,7 @@ export default function DubMediaSelectModal({
                                     className="btn-icon"
                                     onClick={() => setFile(null)}
                                     title="Remove"
+                                    disabled={isUploading}
                                 >
                                     <Icon icon="lucide:x" width={18} />
                                 </button>
@@ -337,6 +408,7 @@ export default function DubMediaSelectModal({
                                         value={mainLanguage}
                                         onChange={(e) => setMainLanguage(e.target.value)}
                                         className="form-select"
+                                        disabled={isUploading}
                                     >
                                         {SUPPORTED_LANGUAGES.map(lang => (
                                             <option key={lang.code} value={lang.code}>
@@ -363,6 +435,7 @@ export default function DubMediaSelectModal({
                                             }}
                                             placeholder="Type language and press Enter"
                                             className="form-input"
+                                            disabled={isUploading}
                                         />
                                     </div>
 
@@ -371,7 +444,7 @@ export default function DubMediaSelectModal({
                                             {otherLanguages.map(lang => (
                                                 <div key={lang} className="tag">
                                                     <span>{lang}</span>
-                                                    <button onClick={() => handleRemoveOtherLanguage(lang)}>
+                                                    <button onClick={() => handleRemoveOtherLanguage(lang)} disabled={isUploading}>
                                                         <Icon icon="lucide:x" width={14} />
                                                     </button>
                                                 </div>
@@ -407,6 +480,76 @@ export default function DubMediaSelectModal({
                 </div>
 
                 <style>{`
+          .processing-wait-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: var(--space-2xl) var(--space-m);
+            min-height: 300px;
+          }
+
+          .processing-icon-container {
+            width: 80px;
+            height: 80px;
+            background: var(--mauve-2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: var(--space-l);
+          }
+
+          .processing-wait-state h4 {
+            font-size: var(--step-1);
+            font-weight: 600;
+            color: var(--mauve-12);
+            margin: 0 0 var(--space-xs) 0;
+          }
+
+          .processing-wait-state p {
+            font-size: 15px;
+            color: var(--mauve-11);
+            max-width: 320px;
+            margin-bottom: var(--space-xl);
+          }
+
+          .processing-progress {
+            width: 100%;
+            max-width: 320px;
+          }
+
+          .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--mauve-3);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: var(--space-xs);
+          }
+
+          .progress-fill {
+            height: 100%;
+            background: var(--orange-9);
+            transition: width 0.3s ease;
+          }
+
+          .progress-text {
+            font-size: 13px;
+            color: var(--mauve-11);
+            font-weight: 500;
+          }
+
+          .btn-outline {
+            background: white;
+            border: 1px solid var(--mauve-6);
+            color: var(--mauve-11);
+          }
+
+          .primary-color {
+            color: var(--orange-9);
+          }
+
           .upload-zone {
             display: flex;
             flex-direction: column;

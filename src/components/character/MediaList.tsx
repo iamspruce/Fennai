@@ -5,9 +5,10 @@ import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 import MediaHeader from './MediaHeader';
 import { db } from '@/lib/firebase/config';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
+import ResumeJobModal from '@/islands/dub/ResumeJobModal';
 
 interface MediaListProps {
     cloudVoices: any[];
@@ -112,6 +113,43 @@ export default function MediaList({
 
         return () => unsubscribe();
     }, [userId]);
+
+    // Check for active job to resume
+    useEffect(() => {
+        const checkResumeJob = async () => {
+            const activeJobStr = localStorage.getItem('activeJob');
+            if (!activeJobStr) return;
+
+            try {
+                const activeJob = JSON.parse(activeJobStr);
+
+                // Verify job still exists and is not completed/failed
+                const collectionName = activeJob.type === 'dubbing' ? 'dubbingJobs' : 'voiceJobs';
+                const jobRef = doc(db, collectionName, activeJob.jobId);
+                const jobSnap = await getDoc(jobRef);
+
+                if (jobSnap.exists()) {
+                    const status = jobSnap.data().status;
+                    if (!['completed', 'failed'].includes(status)) {
+                        // Found an actual active job, ask to resume
+                        window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
+                            detail: activeJob
+                        }));
+                    } else {
+                        // Job is done or failed, clean up
+                        localStorage.removeItem('activeJob');
+                    }
+                } else {
+                    // Job doesn't exist anymore, clean up
+                    localStorage.removeItem('activeJob');
+                }
+            } catch (err) {
+                console.error('[MediaList] Error checking resume job:', err);
+            }
+        };
+
+        checkResumeJob();
+    }, []);
 
     const handleActionDubbing = async (jobId: string, action: string) => {
         if (action === 'retry') {
@@ -291,6 +329,7 @@ export default function MediaList({
                     )
                 ))}
             </div>
+            <ResumeJobModal />
             <style>{`
                 .media-list {
                     display: grid;
