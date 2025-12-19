@@ -1,8 +1,6 @@
 // src/islands/DubEditScriptModal.tsx
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
-import { db } from '@/lib/firebase/config';
-import { doc, updateDoc } from 'firebase/firestore';
 import type { DubbingJob, TranscriptSegment } from '@/types/dubbing';
 
 
@@ -38,12 +36,21 @@ export default function DubEditScriptModal() {
         setIsSaving(true);
 
         try {
-            const jobRef = doc(db, 'dubbingJobs', jobId);
-            await updateDoc(jobRef, {
-                transcript: editedTranscript,
-                scriptEdited: true,
-                updatedAt: new Date()
+            const response = await fetch(`/api/dubbing/${jobId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    transcript: editedTranscript,
+                    scriptEdited: true,
+                }),
             });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update script');
+            }
 
             setIsOpen(false);
 
