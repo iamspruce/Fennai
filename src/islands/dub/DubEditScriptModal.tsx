@@ -77,7 +77,7 @@ export default function DubEditScriptModal() {
         'var(--green-9)',
         'var(--orange-9)',
         'var(--orange-9)',
-        'var(--purple-9)',
+        'var(--orange-9)',
         'var(--cyan-9)',
     ];
 

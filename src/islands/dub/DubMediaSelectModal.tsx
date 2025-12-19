@@ -33,8 +33,10 @@ export default function DubMediaSelectModal({
     const [currentJobId, setCurrentJobId] = useState<string | null>(null);
     const [jobStatus, setJobStatus] = useState<DubbingJob | null>(null);
     const [error, setError] = useState('');
+    const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const otherLangInputRef = useRef<HTMLInputElement>(null);
     const limits = UPLOAD_LIMITS[userTier];
 
     useEffect(() => {
@@ -86,7 +88,10 @@ export default function DubMediaSelectModal({
                     // Success! Move to settings
                     window.dispatchEvent(
                         new CustomEvent('open-dub-settings', {
-                            detail: { jobId: currentJobId }
+                            detail: {
+                                jobId: currentJobId,
+                                defaultCharacterId: character.id
+                            }
                         })
                     );
                     setIsOpen(false);
@@ -405,26 +410,65 @@ export default function DubMediaSelectModal({
                                     <label className="form-label">
                                         What is the main language used in this {mediaType}?
                                     </label>
-                                    <select
-                                        value={mainLanguage}
-                                        onChange={(e) => setMainLanguage(e.target.value)}
-                                        className="form-select"
-                                        disabled={isUploading}
-                                    >
-                                        {SUPPORTED_LANGUAGES.map(lang => (
-                                            <option key={lang.code} value={lang.code}>
-                                                {lang.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="ios-select-wrapper">
+                                        <button
+                                            className="ios-select-button"
+                                            onClick={() => setIsLanguageMenuOpen(!isLanguageMenuOpen)}
+                                            disabled={isUploading}
+                                        >
+                                            <div className="ios-select-content">
+                                                <Icon icon="lucide:globe" width={18} />
+                                                {SUPPORTED_LANGUAGES.find(l => l.code === mainLanguage)?.name || 'Select Language'}
+                                            </div>
+                                            <Icon icon="lucide:chevron-down" width={16} />
+                                        </button>
+
+                                        {isLanguageMenuOpen && !isUploading && (
+                                            <div className="ios-select-menu">
+                                                {SUPPORTED_LANGUAGES.map(lang => (
+                                                    <button
+                                                        key={lang.code}
+                                                        className={`ios-select-item ${mainLanguage === lang.code ? 'selected' : ''}`}
+                                                        onClick={() => {
+                                                            setMainLanguage(lang.code);
+                                                            setIsLanguageMenuOpen(false);
+                                                        }}
+                                                    >
+                                                        <div className="ios-select-item-content">
+                                                            {lang.name}
+                                                        </div>
+                                                        {mainLanguage === lang.code && <Icon icon="lucide:check" width={16} className="check-icon" />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="form-group">
                                     <label className="form-label">
                                         Are there any other languages? (optional)
                                     </label>
-                                    <div className="tag-input-container">
+                                    <div
+                                        className="chip-input-container"
+                                        onClick={() => otherLangInputRef.current?.focus()}
+                                    >
+                                        {otherLanguages.map(lang => (
+                                            <div key={lang} className="input-chip">
+                                                <span>{lang}</span>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleRemoveOtherLanguage(lang);
+                                                    }}
+                                                    disabled={isUploading}
+                                                >
+                                                    <Icon icon="lucide:x" width={14} />
+                                                </button>
+                                            </div>
+                                        ))}
                                         <input
+                                            ref={otherLangInputRef}
                                             type="text"
                                             value={otherLangInput}
                                             onChange={(e) => setOtherLangInput(e.target.value)}
@@ -433,25 +477,15 @@ export default function DubMediaSelectModal({
                                                     e.preventDefault();
                                                     handleAddOtherLanguage();
                                                 }
+                                                if (e.key === 'Backspace' && otherLangInput === '' && otherLanguages.length > 0) {
+                                                    handleRemoveOtherLanguage(otherLanguages[otherLanguages.length - 1]);
+                                                }
                                             }}
-                                            placeholder="Type language and press Enter"
-                                            className="form-input"
+                                            placeholder={otherLanguages.length === 0 ? "Type language..." : ""}
+                                            className="ghost-input"
                                             disabled={isUploading}
                                         />
                                     </div>
-
-                                    {otherLanguages.length > 0 && (
-                                        <div className="tags-list">
-                                            {otherLanguages.map(lang => (
-                                                <div key={lang} className="tag">
-                                                    <span>{lang}</span>
-                                                    <button onClick={() => handleRemoveOtherLanguage(lang)} disabled={isUploading}>
-                                                        <Icon icon="lucide:x" width={14} />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
@@ -646,12 +680,7 @@ export default function DubMediaSelectModal({
             margin-bottom: var(--space-m);
           }
 
-          .section-title {
-            font-size: var(--step-0);
-            font-weight: 600;
-            color: var(--mauve-12);
-            margin: 0 0 var(--space-m) 0;
-          }
+          /* .section-title handled by modal.css */
 
           .form-group {
             margin-bottom: var(--space-m);
@@ -664,53 +693,9 @@ export default function DubMediaSelectModal({
             color: var(--mauve-12);
             margin-bottom: var(--space-2xs);
           }
-
-          .form-select, .form-input {
-            width: 100%;
-            padding: var(--space-xs) var(--space-s);
-            background: var(--mauve-2);
-            border: 1px solid var(--mauve-6);
-            border-radius: var(--radius-m);
-            color: var(--mauve-12);
-            font-size: 14px;
-          }
-
-          .form-select {
-            cursor: pointer;
-          }
-
-          .tags-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: var(--space-2xs);
-            margin-top: var(--space-xs);
-          }
-
-          .tag {
-            display: flex;
-            align-items: center;
-            gap: var(--space-2xs);
-            padding: 4px 8px;
-            background: var(--orange-4);
-            border: 1px solid var(--orange-7);
-            border-radius: var(--radius-s);
-            font-size: 13px;
-            color: var(--orange-11);
-          }
-
-          .tag button {
-            background: none;
-            border: none;
-            padding: 0;
-            color: var(--orange-11);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-          }
-
-          .tag button:hover {
-            color: var(--red-9);
-          }
+          
+          /* .form-select and .form-input removed - using modal.css classes */
+          /* .tags-list, .tag removed - using chip-input-container */
 
           .error-banner {
             display: flex;

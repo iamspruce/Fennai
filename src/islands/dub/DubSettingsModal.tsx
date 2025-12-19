@@ -22,6 +22,8 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
     const [voiceMapping, setVoiceMapping] = useState<Record<string, VoiceMapEntry>>({});
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [defaultCharacterId, setDefaultCharacterId] = useState<string | null>(null);
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
     // Listen to job status
     useEffect(() => {
@@ -65,11 +67,14 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
         );
 
         return () => unsubscribe();
-    }, [jobId, isOpen, voiceMapping, targetLanguage, translateAll]);
+    }, [jobId, isOpen, voiceMapping, targetLanguage, translateAll, defaultCharacterId]);
 
     // Open modal handler
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
+            if (e.detail.defaultCharacterId) {
+                setDefaultCharacterId(e.detail.defaultCharacterId);
+            }
             setJobId(e.detail.jobId);
             setIsOpen(true);
         };
@@ -79,7 +84,21 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
 
     const initializeVoiceMapping = (jobData: DubbingJob) => {
         const mapping: Record<string, VoiceMapEntry> = {};
-        jobData.speakers?.forEach(speaker => {
+        jobData.speakers?.forEach((speaker, idx) => {
+            // Map first speaker to default character if available
+            if (idx === 0 && defaultCharacterId) {
+                const char = allCharacters.find(c => c.id === defaultCharacterId);
+                if (char) {
+                    mapping[speaker.id] = {
+                        type: 'character',
+                        characterId: char.id,
+                        characterName: char.name,
+                        characterAvatar: char.avatarUrl
+                    };
+                    return;
+                }
+            }
+
             mapping[speaker.id] = {
                 type: 'original'
             };
@@ -258,18 +277,66 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
 
                                         <div className="voice-option-or">or</div>
 
-                                        <select
-                                            className="character-select"
-                                            value={voiceMapping[speaker.id]?.characterId || ''}
-                                            onChange={(e) => handleVoiceMappingChange(speaker.id, 'character', e.target.value)}
-                                        >
-                                            <option value="">Select Character...</option>
-                                            {allCharacters.map(char => (
-                                                <option key={char.id} value={char.id}>
-                                                    {char.name}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <div className="ios-select-wrapper" style={{ flex: 1 }}>
+                                            <button
+                                                className={`ios-select-button ${voiceMapping[speaker.id]?.type === 'character' ? 'selected' : ''}`}
+                                                style={{ padding: '8px 12px', minHeight: '42px' }}
+                                                onClick={() => setOpenDropdownId(openDropdownId === speaker.id ? null : speaker.id)}
+                                            >
+                                                <div className="ios-select-content">
+                                                    {voiceMapping[speaker.id]?.characterId ? (
+                                                        <>
+                                                            <div
+                                                                style={{
+                                                                    width: 20,
+                                                                    height: 20,
+                                                                    borderRadius: '50%',
+                                                                    background: 'var(--mauve-5)',
+                                                                    backgroundImage: voiceMapping[speaker.id]?.characterAvatar ? `url(${voiceMapping[speaker.id]?.characterAvatar})` : 'none',
+                                                                    backgroundSize: 'cover'
+                                                                }}
+                                                            />
+                                                            {voiceMapping[speaker.id]?.characterName}
+                                                        </>
+                                                    ) : (
+                                                        <span>Select Character...</span>
+                                                    )}
+                                                </div>
+                                                <Icon icon="lucide:chevron-down" width={16} />
+                                            </button>
+
+                                            {openDropdownId === speaker.id && (
+                                                <div className="ios-select-menu">
+                                                    {allCharacters.map(char => (
+                                                        <button
+                                                            key={char.id}
+                                                            className={`ios-select-item ${voiceMapping[speaker.id]?.characterId === char.id ? 'selected' : ''}`}
+                                                            onClick={() => {
+                                                                handleVoiceMappingChange(speaker.id, 'character', char.id);
+                                                                setOpenDropdownId(null);
+                                                            }}
+                                                        >
+                                                            <div className="ios-select-item-content">
+                                                                <div
+                                                                    style={{
+                                                                        width: 24,
+                                                                        height: 24,
+                                                                        borderRadius: '50%',
+                                                                        background: 'var(--mauve-5)',
+                                                                        backgroundImage: char.avatarUrl ? `url(${char.avatarUrl})` : 'none',
+                                                                        backgroundSize: 'cover'
+                                                                    }}
+                                                                />
+                                                                {char.name}
+                                                            </div>
+                                                            {voiceMapping[speaker.id]?.characterId === char.id && (
+                                                                <Icon icon="lucide:check" width={16} className="check-icon" />
+                                                            )}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             ))}

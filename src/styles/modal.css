@@ -456,7 +456,7 @@
 }
 
 .section-title strong {
-  color: var(--purple-9);
+  color: var(--orange-9);
 }
 
 .language-grid {
@@ -478,14 +478,14 @@
 }
 
 .language-card:hover {
-  border-color: var(--purple-7);
-  background: var(--purple-2);
+  border-color: var(--orange-7);
+  background: var(--orange-2);
 }
 
 .language-card.selected {
-  border-color: var(--purple-9);
-  background: var(--purple-3);
-  color: var(--purple-11);
+  border-color: var(--orange-9);
+  background: var(--orange-3);
+  color: var(--orange-11);
 }
 
 .translation-hint {
@@ -503,7 +503,7 @@
 .btn-text {
   background: none;
   border: none;
-  color: var(--purple-9);
+  color: var(--orange-9);
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
@@ -532,7 +532,7 @@
 
 .speaker-badge {
   padding: 4px 12px;
-  background: var(--purple-9);
+  background: var(--orange-9);
   color: white;
   border-radius: var(--radius-full);
   font-size: 13px;
@@ -566,13 +566,13 @@
 }
 
 .voice-option:hover {
-  border-color: var(--purple-7);
+  border-color: var(--orange-7);
 }
 
 .voice-option.selected {
-  border-color: var(--purple-9);
-  background: var(--purple-3);
-  color: var(--purple-11);
+  border-color: var(--orange-9);
+  background: var(--orange-3);
+  color: var(--orange-11);
 }
 
 .voice-option-or {
@@ -610,7 +610,7 @@
   transform: translate(-50%, -50%);
   font-size: var(--step-2);
   font-weight: 700;
-  color: var(--purple-9);
+  color: var(--orange-9);
 }
 
 .progress-status {
@@ -707,7 +707,8 @@
   padding: 10px 14px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--mauve-3, #f5f5f5);
+  border-bottom: 1px solid var(--mauve-3);
+  color: var(--mauve-12);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
