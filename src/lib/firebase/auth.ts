@@ -74,6 +74,9 @@ export async function getCurrentUser(Astro: AstroGlobal): Promise<User | null> {
             pendingCredits: data.pendingCredits,
             isPro: data.isPro,
             proExpiresAt: data.proExpiresAt?.toDate(),
+            characterCount: data.characterCount || 0,
+            voiceCount: data.voiceCount || 0,
+            dubbedVideoCount: data.dubbedVideoCount || 0,
             createdAt: data.createdAt.toDate(),
             updatedAt: data.updatedAt.toDate(),
         };
@@ -101,6 +104,9 @@ export async function createOrUpdateUserDocument(uid: string, data: {
             credits: 10, // Starting credits
             pendingCredits: 0,
             isPro: false,
+            characterCount: 0,
+            voiceCount: 0,
+            dubbedVideoCount: 0,
             createdAt: new Date(),
             updatedAt: new Date(),
         });

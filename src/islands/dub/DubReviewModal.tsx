@@ -5,6 +5,7 @@ import { db } from '@/lib/firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
 import { getDubbingMedia } from '@/lib/db/indexdb';
+import AudioPlayer from '@/components/ui/AudioPlayer';
 
 export default function DubReviewModal() {
     const [isOpen, setIsOpen] = useState(false);
@@ -188,11 +189,12 @@ export default function DubReviewModal() {
                                             className="media-player"
                                         />
                                     ) : (
-                                        <audio
+                                        <AudioPlayer
                                             key={currentMediaUrl}
-                                            controls
-                                            src={currentMediaUrl || undefined}
+                                            audioUrl={currentMediaUrl || undefined}
                                             className="media-player"
+                                            waveColor="#FFA07A"
+                                            progressColor="#FF4500"
                                         />
                                     )}
                                 </div>

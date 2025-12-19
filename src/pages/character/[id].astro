@@ -46,7 +46,7 @@ const [character, { characters: allCharacters }, { voices: allVoices }] =
   ]);
 
 console.log(
-  `[Performance] Character page loaded in ${Date.now() - startTime}ms`,
+  `[Performance] Character page loaded in ${Date.now() - startTime}ms`
 );
 
 if (!character) return Astro.redirect("/profile");
@@ -80,12 +80,13 @@ const userTier = user.isPro ? "pro" : "free";
   />
 
   <div class="page-modal">
-    <CharacterHeader character={character} voiceCount={character.voiceCount} />
+    <CharacterHeader
+      character={character}
+      voiceCount={character.voiceCount}
+      dubbedCount={character.dubbedVideoCount}
+    />
 
     <main class="character-main">
-      {
-        /* NEW: Use VoicesList component instead of mapping VoiceCard directly */
-      }
       <MediaList
         client:only="react"
         cloudVoices={cloudVoices}
@@ -155,7 +156,7 @@ const userTier = user.isPro ? "pro" : "free";
         view.getUint8(0),
         view.getUint8(1),
         view.getUint8(2),
-        view.getUint8(3),
+        view.getUint8(3)
       );
 
       if (riff !== "RIFF") {
@@ -168,7 +169,7 @@ const userTier = user.isPro ? "pro" : "free";
         view.getUint8(8),
         view.getUint8(9),
         view.getUint8(10),
-        view.getUint8(11),
+        view.getUint8(11)
       );
 
       if (wave !== "WAVE") {
@@ -205,56 +206,106 @@ const userTier = user.isPro ? "pro" : "free";
     }
   });
 
+  // Consolidate Audio reading for Safari Mobile compatibility
+  async function readBlobAsArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+    if (typeof blob.arrayBuffer === "function") {
+      try {
+        return await blob.arrayBuffer();
+      } catch (e) {
+        console.warn(
+          "[Voice] blob.arrayBuffer() failed, falling back to FileReader",
+          e
+        );
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(new Error("Failed to read audio data"));
+      reader.readAsArrayBuffer(blob);
+    });
+  }
+
   // Enhanced Save Logic with Safari validation
   window.addEventListener("voice-edited", async (e: any) => {
+    console.log("[Voice] Received voice-edited event");
+
     if (!pendingVoiceData) {
       console.error("[Voice] No pending voice data");
-      alert("Error: No voice data to save. Please try recording again.");
+      alert(
+        "Error: No voice data to save. This can happen if the page was refreshed or memory was cleared. Please try recording again."
+      );
       return;
     }
 
     const { blob } = e.detail;
 
     if (!blob || !(blob instanceof Blob)) {
-      console.error("[Voice] Invalid audio blob");
-      alert("Failed to save: Invalid audio data");
+      console.error("[Voice] Invalid audio blob", blob);
+      alert(
+        "Failed to save: Invalid audio data received. (Type: " +
+          typeof blob +
+          ")"
+      );
       return;
     }
 
     if (blob.size === 0) {
       console.error("[Voice] Empty audio blob");
-      alert("Failed to save: Audio file is empty");
+      alert(
+        "Failed to save: Audio file is empty. Please try trimming a larger section."
+      );
       return;
     }
 
     try {
       // Validate WAV blob for Safari compatibility
-      console.log("[Voice] Validating audio format...");
+      console.log(
+        "[Voice] Validating audio format (Size: " + blob.size + " bytes)..."
+      );
       const isValid = await validateWAVBlob(blob);
 
       if (!isValid) {
         console.error("[Voice] WAV validation failed");
         alert(
-          "Failed to save: Audio file appears corrupted. Please try trimming again.",
+          "Failed to save: Audio file appears corrupted or is in an unsupported format for your device. Please try a different trim selection."
         );
         return;
       }
 
       // Calculate actual duration from audio buffer if available
-      let duration = blob.size / 16000; // Fallback estimate
+      let duration = e.detail.duration || blob.size / 16000; // Prefer event duration or fallback estimate
+
       try {
-        const arrayBuffer = await blob.arrayBuffer();
-        const audioContext = new (
-          window.AudioContext || (window as any).webkitAudioContext
-        )();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        duration = audioBuffer.duration;
-        audioContext.close();
-        console.log("[Voice] Calculated duration:", duration);
+        console.log(
+          "[Voice] Attempting to decode audio for precise duration..."
+        );
+        const arrayBuffer = await readBlobAsArrayBuffer(blob);
+
+        // Safari Mobile: Use webkitAudioContext if AudioContext is not available
+        const AudioContextClass =
+          window.AudioContext || (window as any).webkitAudioContext;
+        const audioContext = new AudioContextClass();
+
+        try {
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          duration = audioBuffer.duration;
+          console.log("[Voice] Precise duration decoded:", duration);
+        } catch (decodeErr) {
+          console.warn(
+            "[Voice] decodeAudioData failed, using provided/estimated duration:",
+            decodeErr
+          );
+        } finally {
+          if (audioContext.state !== "closed") {
+            await audioContext.close();
+          }
+        }
       } catch (err) {
         console.warn(
-          "[Voice] Could not decode audio for duration, using estimate:",
-          duration,
+          "[Voice] Duration calculation error, using fallback:",
+          err
         );
       }
 
@@ -263,63 +314,95 @@ const userTier = user.isPro ? "pro" : "free";
         blobSize: blob.size,
         blobType: blob.type,
         duration,
+        source: e.detail.source,
       });
 
       const formData = new FormData();
       formData.append("characterId", pendingVoiceData.characterId);
       formData.append("text", pendingVoiceData.text);
-      formData.append("audioBlob", blob, "voice.wav");
+
+      // CRITICAL for Safari: Create a real File object from the blob
+      const audioFile = new File([blob], "voice.wav", { type: "audio/wav" });
+      formData.append("audioBlob", audioFile);
+
       formData.append("duration", String(duration));
       formData.append(
         "isMultiCharacter",
-        String(pendingVoiceData.isMultiCharacter || false),
+        String(pendingVoiceData.isMultiCharacter || false)
       );
 
       if (pendingVoiceData.characterIds) {
         formData.append(
           "characterIds",
-          JSON.stringify(pendingVoiceData.characterIds),
+          JSON.stringify(pendingVoiceData.characterIds)
         );
       }
 
       if (pendingVoiceData.dialogues) {
         formData.append(
           "dialogues",
-          JSON.stringify(pendingVoiceData.dialogues),
+          JSON.stringify(pendingVoiceData.dialogues)
         );
       }
 
       // Save to server
-      console.log("[Voice] Sending to server...");
+      console.log("[Voice] Sending to server /api/voices/save...");
       const response = await fetch("/api/voices/save", {
         method: "POST",
         body: formData,
       });
 
+      const data = await response
+        .json()
+        .catch(() => ({ error: "Invalid server response" }));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("[Voice] Server error:", errorData);
-        throw new Error(errorData.error || "Failed to save voice");
+        console.error("[Voice] Server error:", data);
+        throw new Error(data.error || `Server returned ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log("[Voice] Server response:", data);
+      console.log("[Voice] Server response success:", data);
 
       // Handle storage based on storageType
       if (data.storageType === "cloud") {
         console.log("[Voice] Saved to cloud storage ✓");
 
-        // Optional: Cache locally for offline access
         if (data.audioUrl) {
           try {
             console.log("[Voice] Caching audio locally...");
             const audioResponse = await fetch(data.audioUrl);
             const audioBlob = await audioResponse.blob();
 
-            if (audioBlob.size === 0) {
-              throw new Error("Received empty audio blob from cloud");
+            if (audioBlob.size > 0) {
+              await saveVoiceToIndexedDB({
+                id: data.voiceId,
+                characterId: pendingVoiceData.characterId,
+                text: pendingVoiceData.text,
+                audioBlob,
+                isMultiCharacter: pendingVoiceData.isMultiCharacter || false,
+                characterIds: pendingVoiceData.characterIds,
+                dialogues: pendingVoiceData.dialogues,
+                duration: duration,
+                createdAt: Date.now(),
+                isInCloudStorage: true,
+              });
+              console.log("[Voice] Cached locally ✓");
             }
+          } catch (cacheError) {
+            console.warn(
+              "[Voice] Local cache failed (non-critical):",
+              cacheError
+            );
+          }
+        }
+      } else if (data.storageType === "local-only" && data.audioData) {
+        console.log("[Voice] Saving to local IndexedDB...");
 
+        try {
+          const base64Response = await fetch(data.audioData);
+          const audioBlob = await base64Response.blob();
+
+          if (audioBlob.size > 0) {
             await saveVoiceToIndexedDB({
               id: data.voiceId,
               characterId: pendingVoiceData.characterId,
@@ -330,76 +413,30 @@ const userTier = user.isPro ? "pro" : "free";
               dialogues: pendingVoiceData.dialogues,
               duration: duration,
               createdAt: Date.now(),
-              isInCloudStorage: true,
+              isInCloudStorage: false,
             });
-
-            console.log("[Voice] Cached locally for offline access ✓");
-          } catch (cacheError) {
-            console.warn(
-              "[Voice] Failed to cache locally (non-critical):",
-              cacheError,
-            );
+            console.log("[Voice] Saved to IndexedDB ✓");
           }
-        }
-      } else if (
-        data.storageType === "local-only" &&
-        data.audioData &&
-        data.voiceId
-      ) {
-        console.log("[Voice] Saving to local storage...");
-
-        try {
-          const base64Response = await fetch(data.audioData);
-          const audioBlob = await base64Response.blob();
-
-          if (audioBlob.size === 0) {
-            throw new Error("Received empty audio blob");
-          }
-
-          await saveVoiceToIndexedDB({
-            id: data.voiceId,
-            characterId: pendingVoiceData.characterId,
-            text: pendingVoiceData.text,
-            audioBlob,
-            isMultiCharacter: pendingVoiceData.isMultiCharacter || false,
-            characterIds: pendingVoiceData.characterIds,
-            dialogues: pendingVoiceData.dialogues,
-            duration: duration,
-            createdAt: Date.now(),
-            isInCloudStorage: false,
-          });
-
-          console.log("[Voice] Saved to IndexedDB ✓");
         } catch (idbError) {
-          console.error("[Voice] Failed to save to IndexedDB:", idbError);
+          console.error("[Voice] IDB save failed:", idbError);
           alert(
-            "Voice metadata saved but failed to cache locally. Refresh to see it in the list.",
+            "Metadata saved, but failed to store audio locally. Refresh the page to see if it appears."
           );
         }
       }
 
-      // Clear pending data
+      // Clear pending data and reload
       pendingVoiceData = null;
+      console.log("[Voice] Save complete! Reloading...");
 
-      // Success - show notification and reload
-      console.log("[Voice] Save complete! Reloading page...");
-
-      // Brief delay for user feedback
       setTimeout(() => {
         window.location.reload();
-      }, 300);
-    } catch (error) {
-      console.error("[Voice] Save failed:", error);
-
-      // Show detailed error to user
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to save voice";
-
+      }, 500);
+    } catch (error: any) {
+      console.error("[Voice] CRITICAL SAVE ERROR:", error);
       alert(
-        `Save failed: ${errorMessage}\n\nPlease try again. If the problem persists, try:\n1. Refreshing the page\n2. Using a different browser\n3. Contacting support`,
+        `Save failed: ${error.message || "Unknown error"}\n\nThis can happen on mobile if the connection is slow or the file format is incompatible. If you're on Safari, try refreshing or checking if Private Browsing is disabled.`
       );
-
-      // Don't clear pending data on error - allow retry
     }
   });
 </script>

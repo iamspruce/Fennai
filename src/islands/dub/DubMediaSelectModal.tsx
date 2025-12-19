@@ -95,6 +95,7 @@ export default function DubMediaSelectModal({
                     setError(data.error || 'Transcription failed');
                     setIsProcessing(false);
                     localStorage.removeItem('activeJob');
+                    setCurrentJobId(null); // Stop listening to failed job
                 }
             }
         });

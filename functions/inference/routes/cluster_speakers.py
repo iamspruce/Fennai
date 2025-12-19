@@ -77,15 +77,25 @@ def cluster_speakers_route():
                 audio_chunks.append(chunk_path)
             
             # Cluster speakers
-            speaker_mapping = cluster_speakers_embeddings(audio_chunks)
-            unique_speakers = set(speaker_mapping.values())
-            
-            logger.info(f"Job {job_id}: Found {len(unique_speakers)} unique speakers")
-            
-            # Update transcript with speaker IDs
-            for i, segment in enumerate(transcript):
-                cluster_id = speaker_mapping[i]
-                segment["speakerId"] = f"speaker_{cluster_id + 1}"
+            if len(audio_chunks) < 2:
+                logger.info(f"Job {job_id}: {len(audio_chunks)} segments found. Skipping clustering.")
+                speaker_mapping = {i: 0 for i in range(len(audio_chunks))}
+                unique_speakers = {0}
+            else:
+                try:
+                    speaker_mapping = cluster_speakers_embeddings(audio_chunks)
+                    unique_speakers = set(speaker_mapping.values())
+                    
+                    logger.info(f"Job {job_id}: Found {len(unique_speakers)} unique speakers")
+                    
+                    # Update transcript with speaker IDs
+                    for i, segment in enumerate(transcript):
+                        cluster_id = speaker_mapping[i]
+                        segment["speakerId"] = f"speaker_{cluster_id + 1}"
+                except Exception as e:
+                    logger.warning(f"Job {job_id}: Speaker clustering failed ({str(e)}). Falling back to transcript speaker IDs.")
+                    # Fallback: use existing speaker IDs from transcript (e.g. "speaker_0", "speaker_1" from STT)
+                    unique_speakers = set(s["speakerId"] for s in transcript)
             
             # Group segments by speaker
             speaker_segments = {}

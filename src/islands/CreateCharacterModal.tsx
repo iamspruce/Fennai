@@ -165,10 +165,25 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
         setError(null);
 
         try {
+            console.log('Submitting character creation...', {
+                name: characterName,
+                avatarStyle: selectedAvatar,
+                file: {
+                    name: selectedFile?.name,
+                    size: selectedFile?.size,
+                    type: selectedFile?.type
+                }
+            });
+
             const formData = new FormData();
             formData.append('name', characterName);
             formData.append('avatarStyle', selectedAvatar);
-            formData.append('voiceFile', selectedFile!);
+
+            // Critical for Safari: append blob with filename explicitly
+            if (selectedFile) {
+                formData.append('voiceFile', selectedFile, selectedFile.name || 'voice_sample.wav');
+            }
+
             if (isPro) {
                 formData.append('saveAcrossBrowsers', saveAcrossBrowsers.toString());
             }
@@ -178,17 +193,20 @@ export default function CreateCharacterModal({ isPro = false }: CreateCharacterM
                 body: formData,
             });
 
-            const data = await response.json();
+            const data = await response.json().catch(() => ({ error: 'Invalid response from server' }));
 
             if (response.ok) {
-                // Dispatch event to refresh character list
+                console.log('Character created successfully');
                 window.dispatchEvent(new Event('character-created'));
                 window.location.reload();
             } else {
-                setError(data.error || 'Failed to create character');
+                const errorMsg = data.error || `Server error: ${response.status} ${response.statusText}`;
+                console.error('Submission failed:', errorMsg);
+                setError(errorMsg);
             }
-        } catch (err) {
-            setError('An error occurred. Please try again.');
+        } catch (err: any) {
+            console.error('Submit error caught:', err);
+            setError(`Network or Unexpected Error: ${err.message || 'Please check your connection'}`);
         } finally {
             setIsSubmitting(false);
         }

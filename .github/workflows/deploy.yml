@@ -182,8 +182,8 @@ jobs:
           gsutil lifecycle set lifecycle.json gs://$BUCKET_NAME
           echo '[{
             "origin": ["*"],
-            "method": ["GET", "HEAD"],
-            "responseHeader": ["Content-Type"],
+            "method": ["PUT", "POST", "OPTIONS", "GET"],
+            "responseHeader": ["Content-Type", "x-goog-resumable"],
             "maxAgeSeconds": 3600
           }]' > cors.json
           gsutil cors set cors.json gs://$BUCKET_NAME

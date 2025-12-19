@@ -242,7 +242,19 @@ export default function RecordVoiceModal({ userName = 'Friend' }: RecordVoiceMod
         if (!recordedBlob) return;
 
         // Convert blob to file for consistency
-        const file = new File([recordedBlob], 'recorded_voice.webm', { type: recordedBlob.type });
+        // Use a more descriptive name and ensure type is handled
+        const extension = recordedBlob.type.includes('webm') ? 'webm' :
+            recordedBlob.type.includes('mp4') ? 'm4a' : 'audio';
+
+        const file = new File([recordedBlob], `recorded_voice_${Date.now()}.${extension}`, {
+            type: recordedBlob.type || 'audio/mp4'
+        });
+
+        console.log('Using recording:', {
+            name: file.name,
+            type: file.type,
+            size: file.size
+        });
 
         // Dispatch updated event with source identifying this as a recording
         window.dispatchEvent(new CustomEvent('voice-file-updated', {

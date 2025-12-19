@@ -13,7 +13,7 @@ from middleware import (
     get_retry_info,
     update_job_retry_status
 )
-from google.cloud.firestore import SERVER_TIMESTAMP
+from google.cloud.firestore import SERVER_TIMESTAMP, Increment
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
@@ -109,6 +109,25 @@ def merge_video_route():
             "updatedAt": SERVER_TIMESTAMP,
             "completedAt": SERVER_TIMESTAMP
         })
+
+        # Increment dubbedVideoCount for user
+        try:
+            user_ref = db.collection("users").document(uid)
+            user_ref.update({
+                "dubbedVideoCount": Increment(1),
+                "updatedAt": SERVER_TIMESTAMP
+            })
+            
+            # Increment for character if linked
+            char_id = job_data.get("characterId")
+            if char_id:
+                char_ref = db.collection("characters").document(char_id)
+                char_ref.update({
+                    "dubbedVideoCount": Increment(1),
+                    "updatedAt": SERVER_TIMESTAMP
+                })
+        except Exception as count_err:
+            logger.warning(f"Failed to increment dubbed counts: {count_err}")
         
         logger.info(f"Job {job_id}: Video dubbing complete")
         

@@ -9,6 +9,10 @@ export interface User {
     proExpiresAt?: Date;
     createdAt: Date;
     updatedAt: Date;
+    // Counts for profile display
+    characterCount?: number;
+    voiceCount?: number;
+    dubbedVideoCount?: number;
 }
 
 export interface UserSession {

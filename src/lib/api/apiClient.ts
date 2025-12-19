@@ -150,6 +150,13 @@ function savePendingJob(job: PendingJob): void {
         const pending = getPendingJobs();
         pending[job.jobId] = job;
         localStorage.setItem(PENDING_JOBS_KEY, JSON.stringify(pending));
+
+        // Sync with activeJob for ResumeJobModal
+        localStorage.setItem('activeJob', JSON.stringify({
+            ...job,
+            type: 'cloning',
+            fileName: job.text.substring(0, 30) + (job.text.length > 30 ? '...' : '')
+        }));
     } catch (error) {
         console.warn('Failed to save pending job:', error);
     }
@@ -160,6 +167,15 @@ function removePendingJob(jobId: string): void {
         const pending = getPendingJobs();
         delete pending[jobId];
         localStorage.setItem(PENDING_JOBS_KEY, JSON.stringify(pending));
+
+        // Clean up activeJob if it matches
+        const activeJobStr = localStorage.getItem('activeJob');
+        if (activeJobStr) {
+            const activeJob = JSON.parse(activeJobStr);
+            if (activeJob.jobId === jobId) {
+                localStorage.removeItem('activeJob');
+            }
+        }
     } catch (error) {
         console.warn('Failed to remove pending job:', error);
     }

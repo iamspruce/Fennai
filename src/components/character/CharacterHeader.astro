@@ -1,91 +1,97 @@
 ---
 interface Props {
-    character: any;
-    voiceCount: number;
+  character: any;
+  voiceCount: number;
+  dubbedCount?: number;
 }
-const { character, voiceCount } = Astro.props;
+const { character, voiceCount, dubbedCount = 0 } = Astro.props;
 ---
 
 <header class="character-header" data-character-id={character.id}>
-    <div class="character-info-header">
-        <img
-            src={character.avatarUrl}
-            alt={character.name}
-            class="character-avatar-large"
-        />
-        <div>
-            <h1 class="character-name-large">{character.name}</h1>
-            <p class="character-stats">
-                {voiceCount}
-                {voiceCount === 1 ? "voice" : "voices"} cloned
-            </p>
-        </div>
+  <div class="character-info-header">
+    <img
+      src={character.avatarUrl}
+      alt={character.name}
+      class="character-avatar-large"
+    />
+    <div>
+      <h1 class="character-name-large">{character.name}</h1>
+      <p class="character-stats">
+        {voiceCount}
+        {voiceCount === 1 ? "voice" : "voices"}
+        {
+          dubbedCount > 0 &&
+            ` • ${dubbedCount} ${dubbedCount === 1 ? "video" : "videos"}`
+        }
+        {" "}• {voiceCount + dubbedCount} total
+      </p>
     </div>
-    <a href="/profile" class="back-button">
-        <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-        >
-            <path d="M19 12H5M12 19l-7-7 7-7"></path>
-        </svg>
-    </a>
+  </div>
+  <a href="/profile" class="back-button">
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <path d="M19 12H5M12 19l-7-7 7-7"></path>
+    </svg>
+  </a>
 </header>
 
 <style>
-    .character-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: var(--space-m);
-        padding-bottom: var(--space-m);
-        border-bottom: 1px solid var(--mauve-6);
-        padding-inline: var(--space-2xs);
-    }
-    .character-info-header {
-        display: flex;
-        align-items: center;
-        gap: var(--space-s);
-    }
-    .character-avatar-large {
-        width: 80px;
-        height: 80px;
-        border-radius: var(--radius-full);
-        border: 2px solid var(--mauve-6);
-        transition: transform 0.3s ease;
-    }
-    .character-avatar-large:hover {
-        transform: scale(1.05);
-    }
-    .character-name-large {
-        font-size: var(--step-1);
-        font-weight: 700;
-        color: var(--mauve-12);
-        margin: 0;
-    }
-    .character-stats {
-        font-size: var(--space-0);
-        color: var(--mauve-11);
-        margin: var(--space-3xs) 0 0 0;
-    }
-    .back-button {
-        width: 44px;
-        height: 44px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: var(--radius-m);
-        background: var(--mauve-3);
-        border: 1px solid var(--mauve-6);
-        color: var(--mauve-11);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .back-button:hover {
-        background: var(--mauve-6);
-        color: var(--mauve-12);
-        transform: translateX(-4px);
-    }
+  .character-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-m);
+    padding-bottom: var(--space-m);
+    border-bottom: 1px solid var(--mauve-6);
+    padding-inline: var(--space-2xs);
+  }
+  .character-info-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+  }
+  .character-avatar-large {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--mauve-6);
+    transition: transform 0.3s ease;
+  }
+  .character-avatar-large:hover {
+    transform: scale(1.05);
+  }
+  .character-name-large {
+    font-size: var(--step-1);
+    font-weight: 700;
+    color: var(--mauve-12);
+    margin: 0;
+  }
+  .character-stats {
+    font-size: var(--space-0);
+    color: var(--mauve-11);
+    margin: var(--space-3xs) 0 0 0;
+  }
+  .back-button {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-m);
+    background: var(--mauve-3);
+    border: 1px solid var(--mauve-6);
+    color: var(--mauve-11);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .back-button:hover {
+    background: var(--mauve-6);
+    color: var(--mauve-12);
+    transform: translateX(-4px);
+  }
 </style>

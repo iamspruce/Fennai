@@ -69,68 +69,83 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 export async function initDB(): Promise<IDBPDatabase> {
     if (dbPromise) return dbPromise;
 
-    dbPromise = openDB(DB_NAME, DB_VERSION, {
-        async upgrade(db, oldVersion, newVersion, transaction) {
-            // Create voice store
-            if (!db.objectStoreNames.contains(VOICE_STORE)) {
-                const store = db.createObjectStore(VOICE_STORE, { keyPath: 'id' });
-                store.createIndex('characterId', 'characterId', { unique: false });
-                store.createIndex('createdAt', 'createdAt', { unique: false });
-                store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-                store.createIndex('size', 'size', { unique: false });
-                store.createIndex('isInCloudStorage', 'isInCloudStorage', { unique: false });
-            }
+    try {
+        dbPromise = openDB(DB_NAME, DB_VERSION, {
+            async upgrade(db, oldVersion, newVersion, transaction) {
+                // Create voice store
+                if (!db.objectStoreNames.contains(VOICE_STORE)) {
+                    const store = db.createObjectStore(VOICE_STORE, { keyPath: 'id' });
+                    store.createIndex('characterId', 'characterId', { unique: false });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                    store.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+                    store.createIndex('size', 'size', { unique: false });
+                    store.createIndex('isInCloudStorage', 'isInCloudStorage', { unique: false });
+                }
 
-            const store = transaction.objectStore(VOICE_STORE);
+                const store = transaction.objectStore(VOICE_STORE);
 
-            // Migration v3 → v4: Convert Blob → ArrayBuffer
-            if (oldVersion < 4) {
-                const allKeys = await store.getAllKeys();
-                for (const key of allKeys) {
-                    const old: any = await store.get(key);
-                    if (old.audioBlob instanceof Blob && !old.audioData) {
-                        try {
-                            const arrayBuffer = await old.audioBlob.arrayBuffer();
-                            const migrated: any = {
-                                ...old,
-                                audioData: arrayBuffer,
-                                audioType: old.audioBlob.type || 'audio/wav',
-                            };
-                            delete migrated.audioBlob;
-                            await store.put(migrated);
-                        } catch (err) {
-                            console.error(`Failed to migrate ${old.id}:`, err);
+                // Migration v3 → v4: Convert Blob → ArrayBuffer
+                if (oldVersion < 4) {
+                    const allKeys = await store.getAllKeys();
+                    for (const key of allKeys) {
+                        const old: any = await store.get(key);
+                        if (old.audioBlob instanceof Blob && !old.audioData) {
+                            try {
+                                const arrayBuffer = await old.audioBlob.arrayBuffer();
+                                const migrated: any = {
+                                    ...old,
+                                    audioData: arrayBuffer,
+                                    audioType: old.audioBlob.type || 'audio/wav',
+                                };
+                                delete migrated.audioBlob;
+                                await store.put(migrated);
+                            } catch (err) {
+                                console.error(`Failed to migrate ${old.id}:`, err);
+                            }
                         }
                     }
                 }
-            }
 
-            // Ensure indexes exist
-            ['lastAccessed', 'size', 'isInCloudStorage'].forEach(name => {
-                if (!store.indexNames.contains(name)) {
-                    store.createIndex(name, name, { unique: false });
+                // Ensure indexes exist
+                ['lastAccessed', 'size', 'isInCloudStorage'].forEach(name => {
+                    if (!store.indexNames.contains(name)) {
+                        store.createIndex(name, name, { unique: false });
+                    }
+                });
+
+                // Create metadata store
+                if (!db.objectStoreNames.contains(METADATA_STORE)) {
+                    db.createObjectStore(METADATA_STORE, { keyPath: 'key' });
                 }
-            });
 
-            // Create metadata store
-            if (!db.objectStoreNames.contains(METADATA_STORE)) {
-                db.createObjectStore(METADATA_STORE, { keyPath: 'key' });
-            }
+                // NEW: Create dubbing media store
+                if (!db.objectStoreNames.contains(DUBBING_STORE)) {
+                    const dubbingStore = db.createObjectStore(DUBBING_STORE, { keyPath: 'id' });
+                    dubbingStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    dubbingStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+                }
+            },
+            blocked() {
+                console.warn('IndexedDB blocked – close other tabs');
+                alert('IndexedDB is blocked. Please close other tabs of this site and refresh.');
+            },
+            blocking() {
+                console.warn('Newer DB version available – refreshing...');
+                window.location.reload();
+            },
+        });
+    } catch (e) {
+        console.error('Failed to open IndexedDB:', e);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (isSafari) {
+            alert('Could not initialize local storage. This often happens in Safari Private Browsing mode. Please try using a regular tab.');
+        } else {
+            alert('Local storage initialization failed. Some features may not work.');
+        }
+        throw e;
+    }
 
-            // NEW: Create dubbing media store
-            if (!db.objectStoreNames.contains(DUBBING_STORE)) {
-                const dubbingStore = db.createObjectStore(DUBBING_STORE, { keyPath: 'id' });
-                dubbingStore.createIndex('createdAt', 'createdAt', { unique: false });
-                dubbingStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
-            }
-        },
-        blocked() {
-            console.warn('IndexedDB blocked – close other tabs');
-        },
-        blocking() {
-            console.warn('Newer DB version available – refreshing...');
-        },
-    });
+    return dbPromise;
 
     return dbPromise;
 }

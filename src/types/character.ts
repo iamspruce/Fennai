@@ -6,6 +6,7 @@ export interface Character {
     sampleAudioUrl: string;
     sampleAudioStoragePath: string;
     voiceCount: number;
+    dubbedVideoCount?: number;
     createdAt: Date;
     updatedAt: Date;
     saveAcrossBrowsers?: boolean;

@@ -406,9 +406,9 @@ export default function PreviewEditModal() {
       }
 
       handleClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('[PreviewModal] Save failed:', error);
-      alert(`Failed to save ${mediaType}. Please try again.`);
+      alert(`Failed to save ${mediaType}: ${error.message || 'Unknown error'}. If you are on a mobile device, this might be due to memory limits. Try a shorter trim.`);
     } finally {
       setIsSaving(false);
     }

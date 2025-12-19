@@ -5,8 +5,7 @@ import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
 import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
 import MediaHeader from './MediaHeader';
 import { db } from '@/lib/firebase/config';
-import { collection, query, where, orderBy, limit, onSnapshot, doc, getDoc } from 'firebase/firestore';
-import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
 import ResumeJobModal from '@/islands/dub/ResumeJobModal';
 
@@ -15,7 +14,7 @@ interface MediaListProps {
     localOnlyIds: string[];
     mainCharacter: any;
     allCharacters: any[];
-    userId: string; // User's UID for filtering dubbing jobs
+    userId: string;
 }
 
 type MediaItem = {
@@ -34,85 +33,50 @@ export default function MediaList({
 }: MediaListProps) {
     const [availableLocalVoices, setAvailableLocalVoices] = useState<any[]>([]);
     const [dubbingJobs, setDubbingJobs] = useState<DubbingJob[]>([]);
-    const [isCheckingLocal, setIsCheckingLocal] = useState(true);
-    const [isLoadingDubbing, setIsLoadingDubbing] = useState(true);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const checkLocalVoices = async () => {
-            if (localOnlyIds.length === 0) {
-                setIsCheckingLocal(false);
-                return;
-            }
-
+        const loadData = async () => {
+            setIsLoading(true);
             try {
-                // Check which local-only voices actually exist in IndexedDB
-                const available = [];
-
-                for (const voiceId of localOnlyIds) {
-                    try {
-                        const record = await getVoiceFromIndexedDB(voiceId);
-
-                        if (record?.audioBlob) {
-                            available.push({
-                                id: record.id,
-                                characterId: record.characterId,
-                                text: record.text,
-                                storageType: 'local-only',
-                                isMultiCharacter: record.isMultiCharacter,
-                                characterIds: record.characterIds,
-                                dialogues: record.dialogues,
-                                duration: record.duration,
-                                createdAt: new Date(record.createdAt),
-                            });
-                        }
-                    } catch (err) {
-                        // Voice doesn't exist locally, skip it
+                // 1. Load Local Voices
+                const local = [];
+                for (const id of localOnlyIds) {
+                    const record = await getVoiceFromIndexedDB(id);
+                    if (record?.audioBlob) {
+                        local.push({
+                            ...record,
+                            storageType: 'local-only',
+                            createdAt: new Date(record.createdAt),
+                        });
                     }
                 }
+                setAvailableLocalVoices(local);
 
-                setAvailableLocalVoices(available);
+                // 2. Load Completed Dubbing Jobs (One-time fetch)
+                const q = query(
+                    collection(db, 'dubbingJobs'),
+                    where('uid', '==', userId),
+                    where('status', '==', 'completed'),
+                    orderBy('createdAt', 'desc')
+                );
+                const snapshot = await getDocs(q);
+                const jobs = snapshot.docs.map(doc => ({
+                    ...doc.data(),
+                    id: doc.id,
+                    createdAt: doc.data().createdAt?.toDate() || new Date(),
+                })) as DubbingJob[];
+                setDubbingJobs(jobs);
+
             } catch (err) {
-                console.error('[MediaList] Error checking local voices:', err);
+                console.error('[MediaList] Load error:', err);
             } finally {
-                setIsCheckingLocal(false);
+                setIsLoading(false);
             }
         };
 
-        checkLocalVoices();
-    }, [localOnlyIds]);
-
-    // Listen to dubbing jobs for this user in real-time
-    useEffect(() => {
-        const dubbingQuery = query(
-            collection(db, 'dubbingJobs'),
-            where('uid', '==', userId),
-            orderBy('createdAt', 'desc'),
-            limit(50)
-        );
-
-        const unsubscribe = onSnapshot(dubbingQuery,
-            (snapshot: QuerySnapshot<DocumentData>) => {
-                const jobs: DubbingJob[] = [];
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    jobs.push({
-                        ...data,
-                        id: doc.id,
-                        createdAt: data.createdAt?.toDate() || new Date(),
-                        updatedAt: data.updatedAt?.toDate() || new Date(),
-                    } as DubbingJob);
-                });
-                setDubbingJobs(jobs);
-                setIsLoadingDubbing(false);
-            },
-            (err: Error) => {
-                console.error('[MediaList] Error listening to dubbing jobs:', err);
-                setIsLoadingDubbing(false);
-            }
-        );
-
-        return () => unsubscribe();
-    }, [userId]);
+        if (userId) loadData();
+    }, [userId, localOnlyIds]);
 
     // Check for active job to resume
     useEffect(() => {
@@ -151,61 +115,14 @@ export default function MediaList({
         checkResumeJob();
     }, []);
 
-    const handleActionDubbing = async (jobId: string, action: string) => {
-        if (action === 'retry') {
-            const job = dubbingJobs.find(j => j.id === jobId);
-            if (!job) return;
-
-            try {
-                // Determine which step to retry based on status/error
-                // For now, let's just trigger the proxy again if it was a start failure
-                // or open the settings modal if it's awaiting user input
-                window.dispatchEvent(new CustomEvent('open-dub-settings', {
-                    detail: { jobId }
-                }));
-            } catch (err) {
-                console.error('Failed to retry dubbing:', err);
-            }
-        }
-    };
-
-    // Combine voices and dubbing jobs, sorted by creation date
     const allMediaItems: MediaItem[] = [
-        ...cloudVoices.map(voice => {
-            const date = voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt);
-            return {
-                id: voice.id,
-                type: 'voice' as const,
-                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
-                data: voice
-            };
-        }),
-        ...availableLocalVoices.map(voice => {
-            const date = voice.createdAt instanceof Date ? voice.createdAt : new Date(voice.createdAt);
-            return {
-                id: voice.id,
-                type: 'voice' as const,
-                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
-                data: voice
-            };
-        }),
-        ...dubbingJobs.map(job => {
-            const date = job.createdAt instanceof Date ? job.createdAt : new Date(job.createdAt);
-            return {
-                id: job.id,
-                type: 'dubbing' as const,
-                createdAt: isNaN(date.getTime()) ? new Date(0) : date,
-                data: job
-            };
-        })
+        ...cloudVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: new Date(v.createdAt), data: v })),
+        ...availableLocalVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: v.createdAt, data: v })),
+        ...dubbingJobs.map(j => ({ id: j.id, type: 'dubbing' as const, createdAt: j.createdAt, data: j }))
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const handlePlayDubbing = (jobId: string) => {
-        window.dispatchEvent(
-            new CustomEvent('open-dub-review', {
-                detail: { jobId }
-            })
-        );
+        window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
     };
 
     const handleDeleteDubbing = async (jobId: string) => {
@@ -216,95 +133,37 @@ export default function MediaList({
             detail: {
                 id: jobId,
                 title: 'Delete Dubbed Media',
-                description: 'This will permanently remove the dubbed media and its associated files.',
-                itemLabel: 'Delete Media',
-                itemText: job.fileName || 'Untitled Dubbing',
+                description: 'This will permanently remove the dubbed media.',
+                itemLabel: 'Delete',
+                itemText: job.fileName || 'Untitled',
                 onConfirm: async () => {
-                    try {
-                        const response = await fetch(`/api/dubbing/${jobId}`, {
-                            method: 'DELETE'
-                        });
-
-                        if (!response.ok) {
-                            const error = await response.json();
-                            throw new Error(error.error || 'Failed to delete');
-                        }
-
-                        // Remove from local state
-                        setDubbingJobs(prev => prev.filter(j => j.id !== jobId));
-                    } catch (err) {
-                        console.error('[MediaList] Error deleting dubbing job:', err);
-                        alert('Failed to delete dubbed media');
-                        throw err; // Re-throw for modal to handle
-                    }
+                    await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+                    setDubbingJobs(prev => prev.filter(j => j.id !== jobId));
                 }
             }
         }));
     };
 
-    if (isCheckingLocal || isLoadingDubbing) {
+    if (isLoading) {
         return (
             <div className="media-loading">
                 <div className="spinner" />
-                <p>Loading your media...</p>
+                <p>Loading media...</p>
                 <style>{`
-                    .media-loading {
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        gap: var(--space-m);
-                        padding: var(--space-xl) var(--space-m);
-                        color: var(--mauve-11);
-                    }
-                    .media-loading .spinner {
-                        width: 40px;
-                        height: 40px;
-                        border: 4px solid var(--mauve-6);
-                        border-top: 4px solid var(--orange-9);
-                        border-radius: 50%;
-                        animation: spinMedia 1s linear infinite;
-                    }
-                    @keyframes spinMedia {
-                        to { transform: rotate(360deg); }
-                    }
-                    .media-loading p {
-                        margin: 0;
-                        font-size: 0.95rem;
-                    }
+                    .media-loading { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 3rem; color: var(--mauve-11); }
+                    .media-loading .spinner { width: 32px; height: 32px; border: 3px solid var(--mauve-6); border-top-color: var(--orange-9); border-radius: 50%; animation: spin 1s linear infinite; }
+                    @keyframes spin { to { transform: rotate(360deg); } }
                 `}</style>
             </div>
         );
     }
 
     if (allMediaItems.length === 0) {
-        return (
-            <div className="no-media">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.3, marginBottom: '16px' }}>
-                    <path d="M9 18V5l12-2v13" />
-                    <circle cx="6" cy="18" r="3" />
-                    <circle cx="18" cy="16" r="3" />
-                </svg>
-                <p>No voices or dubbed media yet. Generate your first one below!</p>
-                <style>{`
-                    .no-media {
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        text-align: center;
-                        padding: var(--space-xl) var(--space-m);
-                        color: var(--mauve-11);
-                    }
-                    .no-media p {
-                        margin: 0;
-                        font-size: 0.95rem;
-                    }
-                `}</style>
-            </div>
-        );
+        return <div className="no-media"><p>No media yet.</p></div>;
     }
 
     return (
-        <>
+        <div className="media-container">
             <MediaHeader
                 totalVoices={cloudVoices.length + availableLocalVoices.length}
                 totalDubbing={dubbingJobs.length}
@@ -312,37 +171,17 @@ export default function MediaList({
             <div className="media-list">
                 {allMediaItems.map((item) => (
                     item.type === 'voice' ? (
-                        <VoiceCard
-                            key={item.id}
-                            voice={item.data}
-                            mainCharacter={mainCharacter}
-                            allCharacters={allCharacters}
-                        />
+                        <VoiceCard key={item.id} voice={item.data} mainCharacter={mainCharacter} allCharacters={allCharacters} />
                     ) : (
-                        <DubbingVideoCard
-                            key={item.id}
-                            job={item.data}
-                            onPlay={handlePlayDubbing}
-                            onDelete={handleDeleteDubbing}
-                            onAction={handleActionDubbing}
-                        />
+                        <DubbingVideoCard key={item.id} job={item.data} onPlay={handlePlayDubbing} onDelete={handleDeleteDubbing} />
                     )
                 ))}
             </div>
             <ResumeJobModal />
             <style>{`
-                .media-list {
-                    display: grid;
-                    gap: var(--space-m);
-                }
-                @media (max-width: 768px) {
-                    .media-header {
-                        flex-direction: column;
-                        align-items: flex-start;
-                        gap: var(--space-xs);
-                    }
-                }
+                .media-list { display: grid; gap: var(--space-m); }
+                .no-media { padding: 3rem; text-align: center; color: var(--mauve-11); }
             `}</style>
-        </>
+        </div>
     );
 }

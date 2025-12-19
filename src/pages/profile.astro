@@ -13,7 +13,7 @@ import { generateAvatarUrl } from "@/lib/utils/avatar";
 const user = await getCurrentUser(Astro);
 
 if (!user) {
-    return Astro.redirect("/");
+  return Astro.redirect("/");
 }
 
 let characters: string | any[] = [];
@@ -21,48 +21,48 @@ let fetchError = null;
 const CHARACTER_LIMIT = 20;
 
 try {
-    const result = await getCharacters(user.uid, { limit: CHARACTER_LIMIT });
-    characters = result?.characters || [];
+  const result = await getCharacters(user.uid, { limit: CHARACTER_LIMIT });
+  characters = result?.characters || [];
 } catch (error) {
-    console.error("Error fetching characters:", error);
-    fetchError = "Failed to load your characters. Please try again.";
+  console.error("Error fetching characters:", error);
+  fetchError = "Failed to load your characters. Please try again.";
 }
 
 const greeting = getTimeBasedGreeting(user.displayName);
 const userAvatarUrl =
-    user.avatarUrl || generateAvatarUrl(user.email, "avataaars");
+  user.avatarUrl || generateAvatarUrl(user.email, "avataaars");
 ---
 
 <BaseLayout title="Profile - Fennai">
-    <div class="page-modal">
-        <ProfileHeader
-            userAvatarUrl={userAvatarUrl}
-            userName={user.displayName}
-            credits={user.credits}
-        />
+  <div class="page-modal">
+    <ProfileHeader
+      userAvatarUrl={userAvatarUrl}
+      userName={user.displayName}
+      credits={user.credits}
+    />
 
-        <main class="profile-main">
-            <ProfileGreeting greeting={greeting} />
+    <main class="profile-main">
+      <ProfileGreeting greeting={greeting} />
 
-            {
-                fetchError ? (
-                    <ErrorState message={fetchError} />
-                ) : characters.length === 0 ? (
-                    <EmptyState />
-                ) : (
-                    <CharactersSection
-                        characters={characters}
-                        characterLimit={CHARACTER_LIMIT}
-                    />
-                )
-            }
-        </main>
-    </div>
+      {
+        fetchError ? (
+          <ErrorState message={fetchError} />
+        ) : characters.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <CharactersSection
+            characters={characters}
+            characterLimit={CHARACTER_LIMIT}
+          />
+        )
+      }
+    </main>
+  </div>
 </BaseLayout>
 
 <style>
-    .profile-main {
-        max-width: 1000px;
-        margin: 0 auto;
-    }
+  .profile-main {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
 </style>

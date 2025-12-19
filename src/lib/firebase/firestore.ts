@@ -106,10 +106,15 @@ export async function createCharacter(
                 sampleAudioUrl: data.sampleAudioUrl,
                 sampleAudioStoragePath: data.sampleAudioStoragePath,
                 saveAcrossBrowsers: data.saveAcrossBrowsers,
+                characterCount: 0,
                 voiceCount: 0,
+                dubbedVideoCount: 0,
                 createdAt: now,
                 updatedAt: now,
             });
+
+            // Increment characterCount for user
+            await incrementUserCount(userId, 'characterCount', 1);
 
             return docRef.id;
         },
@@ -144,6 +149,7 @@ export async function getCharacter(characterId: string, userId: string): Promise
                 sampleAudioUrl: data.sampleAudioUrl,
                 sampleAudioStoragePath: data.sampleAudioStoragePath,
                 voiceCount: data.voiceCount || 0,
+                dubbedVideoCount: data.dubbedVideoCount || 0,
                 saveAcrossBrowsers: data.saveAcrossBrowsers || false,
                 createdAt: data.createdAt?.toDate() || new Date(),
                 updatedAt: data.updatedAt?.toDate() || new Date(),
@@ -184,6 +190,7 @@ export async function getCharacters(
                     sampleAudioUrl: data.sampleAudioUrl,
                     sampleAudioStoragePath: data.sampleAudioStoragePath,
                     voiceCount: data.voiceCount || 0,
+                    dubbedVideoCount: data.dubbedVideoCount || 0,
                     createdAt: data.createdAt?.toDate() || new Date(),
                     updatedAt: data.updatedAt?.toDate() || new Date(),
                 };
@@ -252,6 +259,9 @@ export async function deleteCharacter(characterId: string, userId: string): Prom
             }
 
             await docRef.delete();
+
+            // Decrement characterCount for user
+            await incrementUserCount(userId, 'characterCount', -1);
         },
         { characterId, userId }
     );
@@ -269,25 +279,80 @@ export async function incrementVoiceCount(
     return FirestoreMonitor.track(
         'incrementVoiceCount',
         async () => {
-            const docRef = adminDb.collection('characters').doc(characterId);
-            const docSnap = await docRef.get();
+            const charRef = adminDb.collection('characters').doc(characterId);
+            const userRef = adminDb.collection('users').doc(userId);
 
-            if (!docSnap.exists) {
-                throw new Error('Character not found');
-            }
+            const batch = adminDb.batch();
 
-            const data = docSnap.data()!;
-            if (data.userId !== userId) {
-                throw new Error('Permission denied: Character does not belong to user');
-            }
-
-            // Use FieldValue.increment() for atomic increment/decrement
-            await docRef.update({
+            // Increment in character
+            batch.update(charRef, {
                 voiceCount: FieldValue.increment(amount),
                 updatedAt: FieldValue.serverTimestamp(),
             });
+
+            // Increment in user
+            batch.update(userRef, {
+                voiceCount: FieldValue.increment(amount),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            await batch.commit();
         },
         { characterId, userId, amount }
+    );
+}
+
+/**
+ * INCREMENT/DECREMENT dubbed video count for user and character
+ */
+export async function incrementDubbedCount(
+    userId: string,
+    characterId?: string,
+    amount: number = 1
+): Promise<void> {
+    return FirestoreMonitor.track(
+        'incrementDubbedCount',
+        async () => {
+            const userRef = adminDb.collection('users').doc(userId);
+            const batch = adminDb.batch();
+
+            batch.update(userRef, {
+                dubbedVideoCount: FieldValue.increment(amount),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+
+            if (characterId) {
+                const charRef = adminDb.collection('characters').doc(characterId);
+                batch.update(charRef, {
+                    dubbedVideoCount: FieldValue.increment(amount),
+                    updatedAt: FieldValue.serverTimestamp(),
+                });
+            }
+
+            await batch.commit();
+        },
+        { userId, characterId, amount }
+    );
+}
+
+/**
+ * INCREMENT/DECREMENT general user counts (characterCount, etc)
+ */
+export async function incrementUserCount(
+    userId: string,
+    field: 'characterCount' | 'voiceCount' | 'dubbedVideoCount',
+    amount: number = 1
+): Promise<void> {
+    return FirestoreMonitor.track(
+        'incrementUserCount',
+        async () => {
+            const userRef = adminDb.collection('users').doc(userId);
+            await userRef.update({
+                [field]: FieldValue.increment(amount),
+                updatedAt: FieldValue.serverTimestamp(),
+            });
+        },
+        { userId, field, amount }
     );
 }
 
@@ -704,6 +769,9 @@ export async function deleteDubbingJob(jobId: string, userId: string): Promise<v
             }
 
             await docRef.delete();
+
+            // Decrement dubbed video count
+            await incrementDubbedCount(userId, data.characterId, -1);
         },
         { jobId, userId }
     );

@@ -7,6 +7,7 @@ import type { Character } from '@/types/character';
 import type { DubbingJob, VoiceMapEntry } from '@/types/dubbing';
 import { SUPPORTED_LANGUAGES } from '@/types/dubbing';
 import { cloneDubbing, transcribeDubbing } from '@/lib/api/apiClient';
+import AudioPlayer from '@/components/ui/AudioPlayer';
 
 interface DubSettingsModalProps {
     allCharacters: Character[];
@@ -177,7 +178,12 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
                 <div className="modal-body">
                     {/* Audio/Video Preview */}
                     <div className="preview-section">
-                        <audio controls src={job.audioUrl} style={{ width: '100%' }} />
+                        <AudioPlayer
+                            audioUrl={job.audioUrl}
+                            className="w-full"
+                            waveColor="#FFA07A"
+                            progressColor="#FF4500"
+                        />
                     </div>
 
                     {/* Translation Settings */}
