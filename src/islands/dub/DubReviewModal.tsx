@@ -108,9 +108,52 @@ export default function DubReviewModal() {
         setIsOpen(false);
     };
 
+    const getFriendlyStatusMessage = (job: DubbingJob) => {
+        const step = job.step || '';
+
+        // If explicitly cloning, give more detail
+        if (job.status === 'cloning' && job.totalChunks && job.totalChunks > 0) {
+            const current = job.completedChunks || 0;
+            const progress = Math.round((current / job.totalChunks) * 100);
+            return `Creating your custom voices... (${progress}%)`;
+        }
+
+        if (step.includes('Cloning voices')) {
+            return 'Creating your custom voices...';
+        }
+
+        if (step.includes('Translating')) {
+            return 'Translating your script...';
+        }
+
+        if (step.includes('Merging')) {
+            return 'Finalizing your video...';
+        }
+
+        return step || 'Processing...';
+    };
+
+    const getFriendlyErrorMessage = (error: string) => {
+        if (!error) return 'An unexpected error occurred.';
+
+        if (error.includes('GPU out of memory')) {
+            return 'Our servers are a bit busy. Please try again in a few moments.';
+        }
+        if (error.includes('credits')) {
+            return 'You do not have enough credits to complete this action.';
+        }
+        if (error.includes('Unauthorized')) {
+            return 'You do not have permission to perform this action.';
+        }
+
+        // Return generic message for other technical errors to avoid confusing users
+        return 'Something went wrong while processing your request. Please try again.';
+    };
+
     if (!isOpen || !job) return null;
 
     const isComplete = job.status === 'completed';
+    const isFailed = job.status === 'failed';
     const progress = job.progress || 0;
     const currentMediaUrl = showOriginal ? originalMediaUrl : job.finalMediaUrl;
 
@@ -119,9 +162,9 @@ export default function DubReviewModal() {
             <div className="modal-content modal-wide">
                 <div className="modal-header">
                     <h3 className="modal-title">
-                        {isComplete ? 'Dubbing Complete!' : 'Processing...'}
+                        {isComplete ? 'Dubbing Complete!' : isFailed ? 'Dubbing Failed' : 'Processing...'}
                     </h3>
-                    {isComplete && (
+                    {(isComplete || isFailed) && (
                         <button className="modal-close" onClick={() => setIsOpen(false)}>
                             <Icon icon="lucide:x" width={20} />
                         </button>
@@ -129,7 +172,20 @@ export default function DubReviewModal() {
                 </div>
 
                 <div className="modal-body">
-                    {!isComplete ? (
+                    {isFailed ? (
+                        <div className="error-section">
+                            <div className="error-icon">
+                                <Icon icon="lucide:alert-triangle" width={48} height={48} />
+                            </div>
+                            <h4 className="error-title">Oops! Something went wrong</h4>
+                            <p className="error-message">
+                                {getFriendlyErrorMessage(job.error || '')}
+                            </p>
+                            <button className="btn btn-secondary btn-full" onClick={() => setIsOpen(false)}>
+                                Close
+                            </button>
+                        </div>
+                    ) : !isComplete ? (
                         <div className="progress-section">
                             <div className="circular-progress">
                                 <svg width="120" height="120" viewBox="0 0 120 120">
@@ -156,7 +212,7 @@ export default function DubReviewModal() {
                                 </svg>
                                 <div className="progress-text">{progress}%</div>
                             </div>
-                            <p className="progress-status">{job.step}</p>
+                            <p className="progress-status">{getFriendlyStatusMessage(job)}</p>
                         </div>
                     ) : (
                         <>
@@ -322,6 +378,11 @@ export default function DubReviewModal() {
                 .btn-secondary:hover {
                     background: var(--mauve-4);
                 }
+                
+                .btn-full {
+                    width: 100%;
+                    flex: none;
+                }
 
                 .progress-section {
                     display: flex;
@@ -349,6 +410,43 @@ export default function DubReviewModal() {
                     font-size: 14px;
                     color: var(--mauve-11);
                     text-align: center;
+                    font-weight: 500;
+                }
+                
+                .error-section {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    padding: var(--space-l) 0;
+                    text-align: center;
+                }
+                
+                .error-icon {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 50%;
+                    background: var(--red-3);
+                    color: var(--red-9);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: var(--space-m);
+                }
+                
+                .error-title {
+                    font-size: var(--step-1);
+                    font-weight: 700;
+                    color: var(--red-11);
+                    margin-bottom: var(--space-xs);
+                }
+                
+                .error-message {
+                    font-size: 15px;
+                    color: var(--mauve-11);
+                    margin-bottom: var(--space-l);
+                    max-width: 300px;
+                    line-height: 1.5;
                 }
             `}</style>
         </div>

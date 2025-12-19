@@ -173,7 +173,7 @@ def dub_clone(req: Request):
         # Update job with chunks
         job_ref.update({
             "status": "cloning",
-            "step": f"Cloning voices (0/{len(chunks)} chunks)...",
+            "step": "Creating your custom voices...",
             "progress": 75,
             "totalChunks": len(chunks),
             "completedChunks": 0,

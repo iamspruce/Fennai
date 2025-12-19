@@ -12,7 +12,7 @@ import json
 
 from config import config
 from utils.cleanup import temp_file
-from utils.gcs_utils import download_to_file, upload_file_to_gcs
+from utils.gcs_utils import download_to_file, upload_file_to_gcs, generate_signed_url
 from utils.audio_processor import extract_audio_from_video
 from utils.validators import validate_request, ExtractAudioRequest
 from middleware import (
@@ -127,10 +127,23 @@ def extract_audio_route():
                     content_type="audio/wav"
                 )
         
+        # Generate signed URL
+        try:
+            signed_audio_url = generate_signed_url(
+                config.GCS_DUBBING_BUCKET,
+                audio_blob_path,
+                expiration_hours=168,  # 7 days
+                service_account_email=config.SERVICE_ACCOUNT_EMAIL
+            )
+        except Exception as e:
+            logger.warning(f"Failed to generate signed URL: {e}")
+            signed_audio_url = f"gs://{config.GCS_DUBBING_BUCKET}/{audio_blob_path}"
+
         # Update job with audio path
         job_ref.update({
             "audioPath": audio_blob_path,
-            "audioUrl": f"gs://{config.GCS_DUBBING_BUCKET}/{audio_blob_path}",
+            "audioUrl": signed_audio_url,
+            "gsUri": f"gs://{config.GCS_DUBBING_BUCKET}/{audio_blob_path}",
             "updatedAt": SERVER_TIMESTAMP
         })
         

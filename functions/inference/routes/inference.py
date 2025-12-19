@@ -14,7 +14,7 @@ from contextlib import contextmanager
 import soundfile as sf
 from flask import request, jsonify, g
 from firebase_admin import firestore, storage
-from google.cloud.firestore import SERVER_TIMESTAMP
+from google.cloud.firestore import SERVER_TIMESTAMP, Timestamp
 from pydantic import ValidationError
 
 from config import config
@@ -602,7 +602,7 @@ def _handle_multi_chunk_completion(
             chunks[chunk_id]["status"] = "completed"
             chunks[chunk_id]["audioUrl"] = chunk_url
             chunks[chunk_id]["duration"] = audio_duration
-            chunks[chunk_id]["completedAt"] = SERVER_TIMESTAMP
+            chunks[chunk_id]["completedAt"] = Timestamp.now()
         
         completed_chunks = sum(1 for c in chunks if c.get("status") == "completed")
         job_ref.update({
@@ -620,7 +620,7 @@ def _handle_multi_chunk_completion(
                 chunk["status"] = "completed"
                 chunk["audioUrl"] = chunk_url
                 chunk["duration"] = audio_duration
-                chunk["completedAt"] = SERVER_TIMESTAMP
+                chunk["completedAt"] = Timestamp.now()
                 break
         
         completed_chunks = sum(1 for c in cloned_chunks if c.get("status") == "completed")
