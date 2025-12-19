@@ -30,13 +30,12 @@ from firebase.credits import (
     confirm_credit_deduction,
     release_credits
 )
-from middleware import update_job_status
+from middleware import update_job_status, get_retry_info, update_job_retry_status
 
 logger = logging.getLogger(__name__)
 db = firestore.client()
 
 # Retry configuration
-MAX_RETRY_ATTEMPTS = 2
 DOWNLOAD_TIMEOUT = 30
 MAX_TEXT_LENGTH = 10000
 MAX_AUDIO_DURATION = 300  # 5 minutes
@@ -52,18 +51,7 @@ def gpu_memory_cleanup():
             torch.cuda.empty_cache()
 
 
-def get_retry_info_from_headers(headers) -> tuple[int, bool, bool]:
-    """
-    Extract retry information from Cloud Tasks headers.
-    
-    Returns:
-        (retry_count, is_retry, is_final_attempt)
-    """
-    retry_count = int(headers.get('X-CloudTasks-TaskRetryCount', '0'))
-    is_retry = retry_count > 0
-    is_final_attempt = retry_count >= MAX_RETRY_ATTEMPTS
-    
-    return retry_count, is_retry, is_final_attempt
+
 
 
 def validate_text_length(text: str) -> None:
@@ -228,31 +216,7 @@ def fetch_voice_samples_from_character_ids(
     return voice_samples
 
 
-def update_job_retry_status(
-    job_ref,
-    retry_count: int,
-    error_message: str,
-    is_final: bool
-):
-    """Update job document with retry information."""
-    if is_final:
-        job_ref.update({
-            "status": "failed",
-            "error": error_message,
-            "retryCount": retry_count,
-            "retriesExhausted": True,
-            "failedAt": SERVER_TIMESTAMP,
-            "updatedAt": SERVER_TIMESTAMP
-        })
-    else:
-        job_ref.update({
-            "status": "retrying",
-            "lastError": error_message,
-            "retryCount": retry_count,
-            "maxRetries": MAX_RETRY_ATTEMPTS,
-            "nextRetryAttempt": retry_count + 1,
-            "updatedAt": SERVER_TIMESTAMP
-        })
+
 
 
 def validate_audio_duration(audio_np: np.ndarray, sample_rate: int) -> None:
@@ -271,10 +235,10 @@ def inference_route(processor, model):
     Production-ready inference endpoint with comprehensive improvements.
     """
     # Get retry information
-    retry_count, is_retry, is_final_attempt = get_retry_info_from_headers(request.headers)
+    retry_count, is_retry, is_final_attempt = get_retry_info()
     
     if is_retry:
-        logger.info(f"🔄 Retry attempt {retry_count}/{MAX_RETRY_ATTEMPTS}")
+        logger.info(f"🔄 Retry attempt {retry_count}/{config.MAX_RETRY_ATTEMPTS}")
     
     # Validate request
     try:
@@ -298,6 +262,7 @@ def inference_route(processor, model):
     start_time = time.time()
     reserved_cost = 0
     job_ref = None
+    job_type = "voice"  # Default to voice for error handling context
     
     try:
         # Get job document
@@ -380,7 +345,7 @@ def inference_route(processor, model):
             if is_final_attempt:
                 update_job_status(job_id, "failed", error=error_msg, collection=f"{job_type}Jobs")
                 release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
-                return jsonify({"error": error_msg}), 500
+                return jsonify({"error": error_msg}), 200  # Return 200 to stop retry
             else:
                 update_job_retry_status(job_ref, retry_count, error_msg, False)
                 return jsonify({"error": "Retrying", "retry": retry_count}), 500
@@ -546,7 +511,7 @@ def inference_route(processor, model):
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, True)
             release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
-            return jsonify({"error": "GPU OOM after retries"}), 503
+            return jsonify({"error": "GPU OOM after retries"}), 200  # Stop retries loops
         else:
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, False)
@@ -559,7 +524,7 @@ def inference_route(processor, model):
         if job_ref:
             update_job_status(job_id, "failed", error=error_msg, collection=f"{job_type}Jobs")
         release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
-        return jsonify({"error": error_msg}), 400
+        return jsonify({"error": error_msg}), 200  # Validation error is fatal
     
     except Exception as e:
         error_msg = str(e)
@@ -569,7 +534,7 @@ def inference_route(processor, model):
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, True)
             release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
-            return jsonify({"error": "Internal error after retries"}), 500
+            return jsonify({"error": "Internal error after retries"}), 200  # Stop retry loop
         else:
             if job_ref:
                 update_job_retry_status(job_ref, retry_count, error_msg, False)

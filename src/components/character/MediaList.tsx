@@ -57,7 +57,7 @@ export default function MediaList({
                 const q = query(
                     collection(db, 'dubbingJobs'),
                     where('uid', '==', userId),
-                    where('status', '==', 'completed'),
+                    where('status', 'in', ['completed', 'failed']),
                     orderBy('createdAt', 'desc')
                 );
                 const snapshot = await getDocs(q);
@@ -144,6 +144,10 @@ export default function MediaList({
         }));
     };
 
+    const handleRetryDubbing = (jobId: string) => {
+        window.dispatchEvent(new CustomEvent('open-dub-settings', { detail: { jobId } }));
+    };
+
     if (isLoading) {
         return (
             <div className="media-loading">
@@ -173,7 +177,13 @@ export default function MediaList({
                     item.type === 'voice' ? (
                         <VoiceCard key={item.id} voice={item.data} mainCharacter={mainCharacter} allCharacters={allCharacters} />
                     ) : (
-                        <DubbingVideoCard key={item.id} job={item.data} onPlay={handlePlayDubbing} onDelete={handleDeleteDubbing} />
+                        <DubbingVideoCard
+                            key={item.id}
+                            job={item.data}
+                            onPlay={handlePlayDubbing}
+                            onDelete={handleDeleteDubbing}
+                            onRetry={handleRetryDubbing}
+                        />
                     )
                 ))}
             </div>

@@ -163,7 +163,8 @@ def handle_job_errors(collection: str = "voiceJobs", release_credits: bool = Tru
                         logger.error(f"Failed to release credits: {credit_error}")
                 
                 # Return error response
-                return jsonify({"error": "Internal error", "details": str(e)}), 500
+                # Return 200 to prevent Cloud Tasks from retrying since we handled the error
+                return jsonify({"error": "Job failed", "details": str(e)}), 200
         
         return wrapper
     return decorator

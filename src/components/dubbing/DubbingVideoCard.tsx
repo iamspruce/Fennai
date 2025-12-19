@@ -6,16 +6,19 @@ interface DubbingVideoCardProps {
     job: DubbingJob;
     onPlay?: (jobId: string) => void;
     onDelete?: (jobId: string) => void;
+    onRetry?: (jobId: string) => void;
 }
 
-export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideoCardProps) {
+export default function DubbingVideoCard({ job, onPlay, onDelete, onRetry }: DubbingVideoCardProps) {
     const formatDate = (ts: any) => {
         const d = ts?.toDate ? ts.toDate() : new Date(ts);
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     };
 
+    const isFailed = job.status === 'failed';
+
     return (
-        <div className="dub-card-container completed" onClick={() => onPlay?.(job.id)}>
+        <div className={`dub-card-container ${isFailed ? 'failed' : 'completed'}`} onClick={() => !isFailed && onPlay?.(job.id)}>
             {/* The Stack effect visual layers */}
             <div className="card-layer-bg second" />
             <div className="card-layer-bg first" />
@@ -23,17 +26,18 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
             <div className="card-primary">
                 <div className="card-preview">
                     <Icon
-                        icon={job.mediaType === 'video' ? "lucide:video" : "lucide:music"}
+                        icon={isFailed ? "lucide:alert-circle" : (job.mediaType === 'video' ? "lucide:video" : "lucide:music")}
                         width={32}
+                        className={isFailed ? "text-red-9" : ""}
                     />
-                    <div className="badge success">Dubbed</div>
+                    <div className={`badge ${isFailed ? 'error' : 'success'}`}>{isFailed ? 'Failed' : 'Dubbed'}</div>
                 </div>
 
                 <div className="card-body">
                     <h4 className="card-title" title={job.fileName}>{job.fileName || 'Untitled'}</h4>
                     <div className="card-meta">
                         <span>
-                            {Math.floor((job.duration || 0) / 60)}:{((job.duration || 0) % 60).toString().padStart(2, '0')} • {formatDate(job.createdAt)}
+                            {isFailed ? 'Generation failed' : `${Math.floor((job.duration || 0) / 60)}:${((job.duration || 0) % 60).toString().padStart(2, '0')}`} • {formatDate(job.createdAt)}
                         </span>
                     </div>
                 </div>
@@ -42,13 +46,23 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                     <button className="icon-btn delete" onClick={(e) => { e.stopPropagation(); onDelete?.(job.id); }} title="Delete">
                         <Icon icon="lucide:trash-2" width={16} />
                     </button>
-                    <button className="icon-btn play" onClick={(e) => { e.stopPropagation(); onPlay?.(job.id); }} title="Play">
-                        <Icon icon="lucide:play" width={18} />
-                    </button>
+                    {isFailed ? (
+                        <button className="icon-btn retry" onClick={(e) => { e.stopPropagation(); onRetry?.(job.id); }} title="Retry">
+                            <Icon icon="lucide:rotate-ccw" width={18} />
+                        </button>
+                    ) : (
+                        <button className="icon-btn play" onClick={(e) => { e.stopPropagation(); onPlay?.(job.id); }} title="Play">
+                            <Icon icon="lucide:play" width={18} />
+                        </button>
+                    )}
                 </div>
             </div>
 
             <style>{`
+                /* ... (keep existing styles) ... */
+                .badge.error { background: var(--red-9); color: white; }
+                .text-red-9 { color: var(--red-9); }
+                .icon-btn.retry:hover { background: var(--blue-9); color: white; border-color: var(--blue-9); box-shadow: 0 4px 12px var(--blue-4); }
                 .dub-card-container {
                     position: relative;
                     width: 100%;
