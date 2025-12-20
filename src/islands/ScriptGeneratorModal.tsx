@@ -585,13 +585,7 @@ export default function ScriptGeneratorModal({
                             }
 
 
-                            .action-buttons { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; margin-top: auto; }
-                            .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 15px; cursor: pointer; transition: all 0.2s; border: none; }
-                            .btn-primary { background: linear-gradient(135deg, var(--orange-9, #ff6b35) 0%, var(--orange-10, #ff5722) 100%); color: white; box-shadow: 0 4px 12px rgba(255, 107, 53, 0.25); }
-                            .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(255, 107, 53, 0.35); }
-                            .btn-secondary { background: var(--mauve-3, #f5f5f5); color: var(--mauve-12, #000); border: 1px solid var(--mauve-6, #ddd); }
-                            .btn-secondary:hover { background: var(--mauve-4, #f0f0f0); border-color: var(--mauve-8, #bbb); }
-                            .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
                             .btn-badge { padding: 2px 6px; background: rgba(255,255,255,0.2); border-radius: 4px; font-size: 11px; }
                             .btn-full { width: 100%; }
                             

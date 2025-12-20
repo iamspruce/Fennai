@@ -340,45 +340,7 @@ export default function DubReviewModal() {
                     border-radius: var(--radius-m);
                 }
 
-                .action-buttons {
-                    display: flex;
-                    gap: var(--space-s);
-                    margin-top: var(--space-m);
-                }
-
-                .btn {
-                    flex: 1;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: var(--space-xs);
-                    padding: var(--space-s);
-                    border-radius: var(--radius-m);
-                    font-weight: 600;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    border: none;
-                }
-
-                .btn-primary {
-                    background: var(--orange-9);
-                    color: white;
-                }
-
-                .btn-primary:hover {
-                    background: var(--orange-10);
-                }
-
-                .btn-secondary {
-                    background: var(--mauve-3);
-                    color: var(--mauve-12);
-                    border: 1px solid var(--mauve-6);
-                }
-
-                .btn-secondary:hover {
-                    background: var(--mauve-4);
-                }
-                
+               
                 .btn-full {
                     width: 100%;
                     flex: none;

@@ -1,4 +1,3 @@
-# functions/inference/routes/inference.py
 """
 Production-ready inference route with comprehensive improvements.
 """
@@ -8,10 +7,13 @@ import datetime
 import torch
 import numpy as np
 import requests
+import json
+import base64
 from io import BytesIO
 from typing import Optional
 from contextlib import contextmanager
 
+from google.cloud import tasks_v2
 import soundfile as sf
 from flask import request, jsonify, g
 from firebase_admin import firestore, storage
@@ -611,6 +613,67 @@ def _handle_multi_chunk_completion(
             
             signed_url = generate_signed_url(gcs_bucket, merged_blob_name, 24, service_account_email=config.SERVICE_ACCOUNT_EMAIL)
             
+            if job_type == "dubbing":
+                media_type = job_data.get("mediaType", "audio")
+                
+                # Update cloned audio references with SIGNED URL to prevent frontend CORS errors
+                job_ref.update({
+                    "clonedAudioPath": merged_blob_name,
+                    "clonedAudioUrl": signed_url,
+                    "updatedAt": SERVER_TIMESTAMP
+                })
+                
+                if media_type == "video":
+                    logger.info(f"🎥 Job {job_id}: Queuing video merge")
+                    
+                    try:
+                        tasks_client = tasks_v2.CloudTasksClient()
+                        queue_path = tasks_client.queue_path(
+                            config.GCP_PROJECT,
+                            config.QUEUE_LOCATION,
+                            config.QUEUE_NAME
+                        )
+                        
+                        task = {
+                            "http_request": {
+                                "http_method": tasks_v2.HttpMethod.POST,
+                                "url": f"{config.CLOUD_RUN_URL}/merge-video",
+                                "headers": {
+                                    "Content-Type": "application/json",
+                                    "X-Internal-Token": config.INTERNAL_TOKEN,
+                                    "Authorization": f"Bearer {config.INTERNAL_TOKEN}" # Add redundancy
+                                },
+                                "body": base64.b64encode(
+                                    json.dumps({"job_id": job_id, "uid": uid}).encode()
+                                ).decode(),
+                            },
+                            "dispatch_deadline": {"seconds": config.TASK_DEADLINE},
+                        }
+                        
+                        if config.SERVICE_ACCOUNT_EMAIL:
+                            task["http_request"]["oidc_token"] = {
+                                "service_account_email": config.SERVICE_ACCOUNT_EMAIL
+                            }
+                        
+                        tasks_client.create_task(request={"parent": queue_path, "task": task})
+                        
+                        job_ref.update({
+                            "status": "merging_video",
+                            "step": "Merging video...",
+                            "progress": 95,
+                            "updatedAt": SERVER_TIMESTAMP
+                        })
+                        
+                        return jsonify({"status": "merging_video"}), 200
+                        
+                    except Exception as task_err:
+                        logger.error(f"Failed to queue video merge: {task_err}")
+                        # Fall through to complete as audio-only? Or fail?
+                        # Let's fail it so we know something went wrong, or log robustly.
+                        # For now, if task queue fails, we probably want to report error or fallback.
+                        # Since user expects video, failing is safer than silent fallback.
+                        raise task_err
+
             if job_type == "voice":
                 total_duration = sum(c.get("duration", 0) for c in chunks)
             else:
@@ -636,7 +699,7 @@ def _handle_multi_chunk_completion(
             logger.error(f"❌ Failed to merge chunks for job {job_id}: {str(e)}")
             job_ref.update({
                 "status": "failed",
-                "error": f"Failed to merge audio chunks: {str(e)}",
+                "error": f"Failed to merge chunks: {str(e)}",
                 "updatedAt": SERVER_TIMESTAMP
             })
             release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")

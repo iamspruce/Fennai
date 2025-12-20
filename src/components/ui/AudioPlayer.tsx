@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Icon } from '@iconify/react';
-import "../../styles/AudioPlayer.css"
+import "@/styles/AudioPlayer.css"
 
 interface AudioPlayerProps {
   audioUrl?: string;

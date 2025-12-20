@@ -270,14 +270,18 @@ export default function DubMediaSelectModal({
                 detectedLanguage: SUPPORTED_LANGUAGES.find(l => l.code === mainLanguage)?.name || 'English',
                 detectedLanguageCode: mainLanguage,
                 otherLanguages,
+                characterId: character.id,
             });
 
             // Save media to IndexedDB for preview
+            const fileBuffer = await file.arrayBuffer();
             await saveDubbingMedia({
                 id: result.jobId,
                 mediaType,
-                audioData: await file.arrayBuffer(),
-                audioType: file.type,
+                audioData: mediaType === 'audio' ? fileBuffer : new ArrayBuffer(0),
+                audioType: mediaType === 'audio' ? file.type : '',
+                videoData: mediaType === 'video' ? fileBuffer : undefined,
+                videoType: mediaType === 'video' ? file.type : undefined,
                 duration,
                 fileSize: file.size,
                 createdAt: Date.now(),

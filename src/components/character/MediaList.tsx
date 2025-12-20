@@ -107,14 +107,20 @@ export default function MediaList({
                 const jobSnap = await getDoc(jobRef);
 
                 if (jobSnap.exists()) {
-                    const status = jobSnap.data().status;
-                    if (!['completed', 'failed'].includes(status)) {
-                        // Found an actual active job, ask to resume
+                    const jobData = jobSnap.data();
+                    const status = jobData.status;
+
+                    if (status !== 'completed') {
+                        // Found an active OR failed job, ask to resume/retry
                         window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
-                            detail: activeJob
+                            detail: {
+                                ...activeJob,
+                                status: status,
+                                fileName: jobData.fileName || activeJob.fileName
+                            }
                         }));
                     } else {
-                        // Job is done or failed, clean up
+                        // Job is done, clean up active job tracker
                         localStorage.removeItem('activeJob');
                     }
                 } else {
@@ -129,21 +135,42 @@ export default function MediaList({
         checkResumeJob();
     }, []);
 
+    // Filter dubbing jobs for the current character
+    const filteredDubbingJobs = dubbingJobs.filter(job => {
+        if (!mainCharacter) return true;
+        // Check explicit character assignment (primary)
+        if (job.characterId === mainCharacter.id) return true;
+
+        // Check voice mapping (secondary)
+        if (job.voiceMapping) {
+            return Object.values(job.voiceMapping).some((vm: any) => vm.characterId === mainCharacter.id);
+        }
+        return false;
+    });
+
     const allMediaItems: MediaItem[] = [
         ...cloudVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: new Date(v.createdAt), data: v })),
         ...availableLocalVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: v.createdAt, data: v })),
-        ...dubbingJobs.map(j => ({ id: j.id, type: 'dubbing' as const, createdAt: j.createdAt, data: j }))
+        ...filteredDubbingJobs.map(j => ({ id: j.id, type: 'dubbing' as const, createdAt: j.createdAt, data: j }))
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const handlePlayDubbing = (jobId: string) => {
         const job = dubbingJobs.find(j => j.id === jobId);
         if (!job) return;
 
-        if (job.status === 'transcribing_done') {
-            window.dispatchEvent(new CustomEvent('open-dub-settings', { detail: { jobId } }));
-        } else {
-            // For completed, processing, cloning, etc., use Review Modal which handles progress/result
+        if (job.status === 'completed') {
+            // Only completed jobs go to review
             window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
+        } else {
+            // All other states (failed, processing, transcribing, etc.) handled by ResumeJobModal
+            window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
+                detail: {
+                    jobId,
+                    type: 'dubbing',
+                    fileName: job.fileName,
+                    status: job.status
+                }
+            }));
         }
     };
 
@@ -164,10 +191,6 @@ export default function MediaList({
                 }
             }
         }));
-    };
-
-    const handleRetryDubbing = (jobId: string) => {
-        window.dispatchEvent(new CustomEvent('open-dub-settings', { detail: { jobId } }));
     };
 
     if (isLoading) {
@@ -192,7 +215,7 @@ export default function MediaList({
         <div className="media-container">
             <MediaHeader
                 totalVoices={cloudVoices.length + availableLocalVoices.length}
-                totalDubbing={dubbingJobs.length}
+                totalDubbing={filteredDubbingJobs.length}
             />
             <div className="media-list">
                 {allMediaItems.map((item) => (
@@ -204,7 +227,6 @@ export default function MediaList({
                             job={item.data}
                             onPlay={handlePlayDubbing}
                             onDelete={handleDeleteDubbing}
-                            onRetry={handleRetryDubbing}
                         />
                     )
                 ))}

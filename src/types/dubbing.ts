@@ -39,6 +39,7 @@ export interface DubbingJob {
     translateAll?: boolean; // true = translate entire audio
     segmentFilters?: SegmentFilter[]; // for selective translation
     voiceMapping?: Record<string, VoiceMapEntry>; // speaker_id -> character or 'original'
+    characterId?: string;
     scriptEdited?: boolean;
 
     // Voice cloning progress

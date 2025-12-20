@@ -78,6 +78,7 @@ export interface TranscribeDubbingParams {
     detectedLanguage: string;
     detectedLanguageCode: string;
     otherLanguages?: string[];
+    characterId?: string;
 }
 
 export interface GetUploadUrlParams {

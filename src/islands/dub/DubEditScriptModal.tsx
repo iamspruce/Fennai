@@ -242,11 +242,6 @@ export default function DubEditScriptModal() {
             color: var(--blue-11);
           }
 
-          .action-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--space-s);
-          }
         `}</style>
             </div>
         </div>

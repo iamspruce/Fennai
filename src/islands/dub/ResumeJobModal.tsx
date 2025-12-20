@@ -8,6 +8,7 @@ interface ResumeJobData {
     jobId: string;
     type: 'dubbing' | 'cloning';
     fileName?: string;
+    status?: string;
 }
 
 export default function ResumeJobModal() {
@@ -71,6 +72,8 @@ export default function ResumeJobModal() {
 
     if (!isOpen || !jobData) return null;
 
+    const isFailed = jobData.status === 'failed';
+
     return (
         <div className="modal-overlay">
             <div className="modal-content">
@@ -80,8 +83,8 @@ export default function ResumeJobModal() {
 
                 <div className="modal-header">
                     <div className="modal-title-group">
-                        <Icon icon="lucide:rotate-cw" width={20} className="primary-color" />
-                        <h3 className="modal-title">Resume Active Job?</h3>
+                        <Icon icon={isFailed ? "lucide:alert-octagon" : "lucide:rotate-cw"} width={20} className={isFailed ? "text-red-9" : "primary-color"} />
+                        <h3 className="modal-title">{isFailed ? 'Job Failed' : 'Resume Active Job?'}</h3>
                     </div>
                     <button className="modal-close" onClick={() => setIsOpen(false)} disabled={isProcessing}>
                         <Icon icon="lucide:x" width={20} />
@@ -90,19 +93,20 @@ export default function ResumeJobModal() {
 
                 <div className="modal-body">
                     <div className="resume-content">
-                        <div className="resume-icon">
+                        <div className={`resume-icon ${isFailed ? 'failed' : ''}`}>
                             <Icon
-                                icon={jobData.type === 'dubbing' ? "lucide:video" : "lucide:mic"}
+                                icon={isFailed ? "lucide:alert-circle" : (jobData.type === 'dubbing' ? "lucide:video" : "lucide:mic")}
                                 width={48}
                                 height={48}
                             />
                         </div>
 
-                        <h4>Found an active {jobData.type} job</h4>
+                        <h4>{isFailed ? "Generation Failed" : `Found an active ${jobData.type} job`}</h4>
                         <p>
-                            It looks like you have a <strong>{jobData.type}</strong> job for
-                            "<em>{jobData.fileName || 'Untitled'}</em>" still in progress.
-                            Would you like to continue where you left off?
+                            {isFailed
+                                ? `The ${jobData.type} job for "${jobData.fileName || 'Untitled'}" encountered an error and could not complete.`
+                                : `It looks like you have a ${jobData.type} job for "${jobData.fileName || 'Untitled'}" still in progress. Would you like to continue where you left off?`
+                            }
                         </p>
 
                         <div className="resume-actions">
@@ -111,8 +115,8 @@ export default function ResumeJobModal() {
                                 onClick={handleContinue}
                                 disabled={isProcessing}
                             >
-                                <Icon icon="lucide:play" width={18} />
-                                Continue {jobData.type === 'dubbing' ? 'Dubbing' : 'Cloning'}
+                                <Icon icon={isFailed ? "lucide:rotate-ccw" : "lucide:play"} width={18} />
+                                {isFailed ? 'Retry Job' : `Continue ${jobData.type === 'dubbing' ? 'Dubbing' : 'Cloning'}`}
                             </button>
 
                             <button
@@ -125,7 +129,7 @@ export default function ResumeJobModal() {
                                 ) : (
                                     <Icon icon="lucide:trash-2" width={18} />
                                 )}
-                                Stop and Delete
+                                {isFailed ? 'Delete Job' : 'Stop and Delete'}
                             </button>
                         </div>
                     </div>
@@ -151,6 +155,13 @@ export default function ResumeJobModal() {
                         color: var(--orange-9);
                         margin-bottom: var(--space-m);
                     }
+                    
+                    .resume-icon.failed {
+                        background: var(--red-3);
+                        color: var(--red-9);
+                    }
+                    
+                    .text-red-9 { color: var(--red-9); }
 
                     .resume-content h4 {
                         font-size: var(--step-1);
