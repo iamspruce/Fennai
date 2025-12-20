@@ -206,7 +206,7 @@ def dub_transcribe(req: Request):
         "step": "Starting transcription...",
         "progress": 15,
         "updatedAt": SERVER_TIMESTAMP,
-        "expiresAt": datetime.utcnow() + timedelta(days=7),
+        "expiresAt": datetime.utcnow() + timedelta(days=1),
     }
     
     success, error_msg = reserve_credits(uid, job_id, cost, job_metadata, collection_name="dubbingJobs")

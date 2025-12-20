@@ -75,7 +75,7 @@ const AlertModal: React.FC = () => {
                         {data?.message}
                     </p>
 
-                    {data?.details && SHOW_DETAILED_ERRORS && (
+                    {data?.details && (
                         <div style={{ marginTop: "var(--space-m)", textAlign: "left" }}>
                             <button
                                 onClick={() => setShowDetails(!showDetails)}

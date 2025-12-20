@@ -366,26 +366,62 @@ const userTier = user.isPro ? "pro" : "free";
       }
 
       // Save to server
-      const response = await fetch("/api/voices/save", {
-        method: "POST",
-        body: formData,
-      });
+      let response;
+      try {
+        response = await fetch("/api/voices/save", {
+          method: "POST",
+          body: formData,
+        });
+      } catch (fetchErr: any) {
+        console.error("[Voice] Fetch failed:", fetchErr);
+        window.dispatchEvent(
+          new CustomEvent("show-alert", {
+            detail: {
+              title: "Network Error",
+              message:
+                "Failed to connect to the server. Please check your internet connection.",
+              type: "error",
+              details: fetchErr.message || String(fetchErr),
+            },
+          })
+        );
+        throw fetchErr;
+      }
 
-      const data = await response
-        .json()
-        .catch(() => ({ error: "Invalid server response" }));
+      let data;
+      let textResponse = "";
+      try {
+        textResponse = await response.text();
+        data = JSON.parse(textResponse);
+      } catch (e) {
+        console.error(
+          "[Voice] Failed to parse server response:",
+          e,
+          textResponse
+        );
+        data = {
+          error: "Invalid server response",
+          details: textResponse.substring(0, 500), // Capture some of the raw response
+        };
+      }
 
       if (!response.ok) {
+        const errorMsg =
+          data.error ||
+          `Server returned ${response.status}: ${response.statusText}`;
         window.dispatchEvent(
           new CustomEvent("show-alert", {
             detail: {
               title: "Server Error",
-              message: data.error || `Server returned ${response.status}`,
+              message: errorMsg,
               type: "error",
+              details:
+                data.details ||
+                `Status: ${response.status} ${response.statusText}\nResponse: ${textResponse.substring(0, 200)}`,
             },
           })
         );
-        throw new Error(data.error || `Server returned ${response.status}`);
+        throw new Error(errorMsg);
       }
 
       // Handle storage based on storageType

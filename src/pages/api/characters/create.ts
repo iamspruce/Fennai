@@ -18,7 +18,10 @@ export const POST: APIRoute = async ({ request }) => {
     const decodedClaims = await verifySessionCookie(sessionCookie);
 
     if (!decodedClaims) {
-        return new Response('Invalid session', { status: 401 });
+        return new Response(JSON.stringify({ error: 'Invalid session' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+        });
     }
 
     const uid = decodedClaims.uid;

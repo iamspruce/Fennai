@@ -1,8 +1,8 @@
 // src/components/character/MediaList.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import VoiceCard from '@/components/character/VoiceCard';
 import DubbingVideoCard from '@/components/dubbing/DubbingVideoCard';
-import { getVoiceFromIndexedDB } from '@/lib/db/indexdb';
+import { getVoiceFromIndexedDB, getAllDubbingMedia, deleteDubbingMedia } from '@/lib/db/indexdb';
 import MediaHeader from './MediaHeader';
 import { db } from '@/lib/firebase/config';
 import { collection, query, where, orderBy, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -33,6 +33,7 @@ export default function MediaList({
 }: MediaListProps) {
     const [availableLocalVoices, setAvailableLocalVoices] = useState<any[]>([]);
     const [dubbingJobs, setDubbingJobs] = useState<DubbingJob[]>([]);
+    const [localDubbingJobs, setLocalDubbingJobs] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -73,6 +74,10 @@ export default function MediaList({
                     setIsLoading(false);
                 });
 
+                // 3. Load Local Dubbing Jobs for sync filtering and offline persistence
+                const localDubRecords = await getAllDubbingMedia();
+                setLocalDubbingJobs(localDubRecords);
+
                 return () => unsubscribe();
 
             } catch (err) {
@@ -82,13 +87,20 @@ export default function MediaList({
         };
 
         let cleanup: (() => void) | undefined;
+        const handleLocalUpdate = async () => {
+            const localDubRecords = await getAllDubbingMedia();
+            setLocalDubbingJobs(localDubRecords);
+        };
 
         if (userId) {
             loadData().then(unsub => { cleanup = unsub; });
         }
 
+        window.addEventListener('local-media-updated', handleLocalUpdate);
+
         return () => {
             if (cleanup) cleanup();
+            window.removeEventListener('local-media-updated', handleLocalUpdate);
         };
     }, [userId, localOnlyIds]);
 
@@ -135,31 +147,70 @@ export default function MediaList({
         checkResumeJob();
     }, []);
 
-    // Filter dubbing jobs for the current character
-    const filteredDubbingJobs = dubbingJobs.filter(job => {
-        // Only show completed or failed jobs in the media list
-        // Processing jobs are handled by the ResumeJobModal/DubReviewModal flow
-        if (!['completed', 'failed'].includes(job.status)) return false;
+    // Filter and merge dubbing jobs
+    const combinedDubbingJobs = useMemo(() => {
+        const cloudJobs = dubbingJobs.filter(job => {
+            if (!['completed', 'failed'].includes(job.status)) return false;
+            if (!mainCharacter) return true;
 
-        if (!mainCharacter) return true;
-        // Check explicit character assignment (primary)
-        if (job.characterId === mainCharacter.id) return true;
+            // Strict character ownership
+            if (job.characterId !== mainCharacter.id) return false;
 
-        // Check voice mapping (secondary)
-        if (job.voiceMapping) {
-            return Object.values(job.voiceMapping).some((vm: any) => vm.characterId === mainCharacter.id);
-        }
-        return false;
-    });
+            // Sync filtering
+            const isSyncEnabled = mainCharacter.saveAcrossBrowsers === true;
+            const isLocal = localDubbingJobs.some(lj => lj.id === job.id);
+            if (!isSyncEnabled && !isLocal) return false;
+
+            return true;
+        });
+
+        // Find local jobs that are NOT in cloud (either deleted or local-only)
+        const localOnlyJobs = localDubbingJobs
+            .filter(lj => {
+                // Only if for this character
+                // If it has a characterId, it must match. 
+                // If it doesn't, we show it as a fallback (legacy data)
+                if (mainCharacter && lj.characterId && lj.characterId !== mainCharacter.id) return false;
+
+                // Only if not already in cloudJobs
+                return !dubbingJobs.some(cj => cj.id === lj.id);
+            })
+            .map(lj => {
+                const date = new Date(lj.createdAt);
+                const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+                // Determine status based on actual data presence if status field is missing
+                let status = lj.status;
+                if (!status) {
+                    const hasResult = lj.resultVideoData || lj.resultAudioData;
+                    status = hasResult ? 'completed' : 'failed';
+                }
+
+                return {
+                    id: lj.id,
+                    uid: userId,
+                    status: status,
+                    mediaType: lj.mediaType,
+                    fileName: lj.fileName || `Local ${lj.mediaType === 'video' ? 'Video' : 'Audio'} (${dateStr})`,
+                    createdAt: date,
+                    characterId: lj.characterId,
+                    // These will be played from IndexedDB by the card
+                    originalMediaUrl: '',
+                    finalMediaUrl: '',
+                } as any;
+            });
+
+        return [...cloudJobs, ...localOnlyJobs].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    }, [dubbingJobs, localDubbingJobs, mainCharacter, userId]);
 
     const allMediaItems: MediaItem[] = [
         ...cloudVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: new Date(v.createdAt), data: v })),
         ...availableLocalVoices.map(v => ({ id: v.id, type: 'voice' as const, createdAt: v.createdAt, data: v })),
-        ...filteredDubbingJobs.map(j => ({ id: j.id, type: 'dubbing' as const, createdAt: j.createdAt, data: j }))
+        ...combinedDubbingJobs.map(j => ({ id: j.id, type: 'dubbing' as const, createdAt: j.createdAt, data: j }))
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     const handlePlayDubbing = (jobId: string) => {
-        const job = dubbingJobs.find(j => j.id === jobId);
+        const job = combinedDubbingJobs.find(j => j.id === jobId);
         if (!job) return;
 
         if (job.status === 'completed' || job.status === 'failed') {
@@ -186,7 +237,7 @@ export default function MediaList({
     };
 
     const handleDeleteDubbing = async (jobId: string) => {
-        const job = dubbingJobs.find(j => j.id === jobId);
+        const job = combinedDubbingJobs.find(j => j.id === jobId);
         if (!job) return;
 
         window.dispatchEvent(new CustomEvent('open-delete-modal', {
@@ -197,8 +248,19 @@ export default function MediaList({
                 itemLabel: 'Delete',
                 itemText: job.fileName || 'Untitled',
                 onConfirm: async () => {
-                    await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+                    try {
+                        // 1. Attempt Cloud Delete
+                        await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+                    } catch (e) {
+                        console.log('[MediaList] Cloud delete skipped/failed (likely already gone)');
+                    }
+
+                    // 2. Always Local Delete
+                    await deleteDubbingMedia(jobId);
+
+                    // 3. Update State
                     setDubbingJobs(prev => prev.filter(j => j.id !== jobId));
+                    setLocalDubbingJobs(prev => prev.filter(j => j.id !== jobId));
                 }
             }
         }));
@@ -226,7 +288,7 @@ export default function MediaList({
         <div className="media-container">
             <MediaHeader
                 totalVoices={cloudVoices.length + availableLocalVoices.length}
-                totalDubbing={filteredDubbingJobs.length}
+                totalDubbing={combinedDubbingJobs.length}
             />
             <div className="media-list">
                 {allMediaItems.map((item) => (

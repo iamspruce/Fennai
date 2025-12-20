@@ -47,6 +47,11 @@ export interface DubbingMediaRecord {
     fileSize: number;
     createdAt: number;
     lastAccessed?: number;
+
+    // Metadata for offline persistence
+    fileName?: string;
+    characterId?: string;
+    status?: string;
 }
 
 interface StorageMetadata {
@@ -405,6 +410,9 @@ export async function saveDubbingMedia(media: {
         fileSize: media.fileSize,
         createdAt: media.createdAt,
         lastAccessed: Date.now(),
+        fileName: (media as any).fileName,
+        characterId: (media as any).characterId,
+        status: (media as any).status,
     };
 
     await db.put(DUBBING_STORE, record);
@@ -416,6 +424,7 @@ export async function saveDubbingResult(result: {
     resultAudioType?: string;
     resultVideoData?: ArrayBuffer;
     resultVideoType?: string;
+    status?: string;
 }): Promise<void> {
     const db = await initDB();
     const record = await db.get(DUBBING_STORE, result.id);
@@ -431,6 +440,7 @@ export async function saveDubbingResult(result: {
         resultAudioType: result.resultAudioType || record.resultAudioType,
         resultVideoData: result.resultVideoData || record.resultVideoData,
         resultVideoType: result.resultVideoType || record.resultVideoType,
+        status: result.status || record.status || 'completed',
         lastAccessed: Date.now(),
     };
 

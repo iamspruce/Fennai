@@ -295,7 +295,11 @@ export default function DubMediaSelectModal({
                 duration,
                 fileSize: file.size,
                 createdAt: Date.now(),
-            });
+                fileName: file.name,
+                characterId: character.id,
+                status: 'transcribing'
+            } as any);
+            window.dispatchEvent(new CustomEvent('local-media-updated'));
 
             // 4. Persistence
             localStorage.setItem('activeJob', JSON.stringify({

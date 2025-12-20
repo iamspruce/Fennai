@@ -132,10 +132,18 @@ export default function DubReviewModal() {
                         resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
                         resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
                         resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
+                        status: 'completed'
                     });
                     console.log('[DubReviewModal] Auto-save complete ✓');
+                    window.dispatchEvent(new CustomEvent('local-media-updated'));
+
+                    // PRIVACY: Once saved locally, delete from cloud if sync is disabled
+                    console.log('[DubReviewModal] Purging cloud files for privacy...');
+                    await fetch(`/api/dubbing/${jobId}`, { method: 'DELETE' });
+
+                    // Note: MediaList will now show it from local storage
                 } catch (err) {
-                    console.warn('[DubReviewModal] Auto-save failed:', err);
+                    console.warn('[DubReviewModal] Auto-save or Purge failed:', err);
                 }
             }
         };
@@ -170,7 +178,6 @@ export default function DubReviewModal() {
             const blob = await response.blob();
             const arrayBuffer = await blob.arrayBuffer();
 
-            const { saveDubbingResult } = await import('@/lib/db/indexdb');
             await saveDubbingResult({
                 id: jobId,
                 resultAudioData: job.mediaType === 'audio' ? arrayBuffer : undefined,
@@ -180,6 +187,7 @@ export default function DubReviewModal() {
             });
 
             console.log('[DubReviewModal] Result saved to IndexedDB ✓');
+            window.dispatchEvent(new CustomEvent('local-media-updated'));
             setIsOpen(false);
 
             // Optional: Reload to show in MediaList if needed, 
