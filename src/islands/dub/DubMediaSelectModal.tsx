@@ -301,6 +301,23 @@ export default function DubMediaSelectModal({
 
         } catch (err: any) {
             console.error('[DubMediaSelectModal] Error:', err);
+
+            // Detailed error logging for mobile debugging
+            const errorDetails = {
+                name: err.name || 'UnknownError',
+                message: err.message || 'No error message',
+                status: err.status || 'N/A',
+                stack: err.stack || 'No stack trace'
+            };
+
+            alert(
+                `Upload Failed!\n\n` +
+                `Error: ${errorDetails.name}\n` +
+                `Message: ${errorDetails.message}\n` +
+                `Status: ${errorDetails.status}\n\n` +
+                `This helps us fix the issue. Please take a screenshot.`
+            );
+
             setError(err.message || 'Upload failed');
             setIsUploading(false);
         } finally {

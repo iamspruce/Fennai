@@ -10,7 +10,7 @@ interface MediaHeaderProps {
 
 export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHeaderProps) {
   const [showFilter, setShowFilter] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'single' | 'multi'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'voice' | 'single' | 'multi' | 'dubbed'>('all');
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Close filter dropdown when clicking outside
@@ -87,20 +87,42 @@ export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHead
     setIsDownloading(false);
   };
 
-  const applyFilter = (filter: 'all' | 'single' | 'multi') => {
+  const applyFilter = (filter: 'all' | 'voice' | 'single' | 'multi' | 'dubbed') => {
     setSelectedFilter(filter);
-    const cards = document.querySelectorAll('.voice-card');
+    const items = document.querySelectorAll('.media-item');
 
-    cards.forEach((card) => {
-      const isMulti = card.getAttribute('data-is-multi') === 'true';
-      const shouldShow =
-        filter === 'all' ||
-        (filter === 'single' && !isMulti) ||
-        (filter === 'multi' && isMulti);
+    items.forEach((item) => {
+      const type = item.getAttribute('data-type');
+      const isMulti = item.getAttribute('data-is-multi') === 'true';
 
-      (card as HTMLElement).style.display = shouldShow ? 'flex' : 'none';
+      let shouldShow = false;
+
+      switch (filter) {
+        case 'all':
+          shouldShow = true;
+          break;
+        case 'voice':
+          shouldShow = type === 'voice';
+          break;
+        case 'single':
+          shouldShow = type === 'voice' && !isMulti;
+          break;
+        case 'multi':
+          shouldShow = type === 'voice' && isMulti;
+          break;
+        case 'dubbed':
+          shouldShow = type === 'dubbing';
+          break;
+      }
+
+      (item as HTMLElement).style.display = shouldShow ? 'block' : 'none';
+
       // Update visibility class for download logic
-      card.classList.toggle('visible', shouldShow);
+      // We need to propagate this to the child card for the 'visible' check in download
+      const voiceCard = item.querySelector('.voice-card');
+      if (voiceCard) {
+        voiceCard.classList.toggle('visible', shouldShow);
+      }
     });
 
     setShowFilter(false);
@@ -178,7 +200,7 @@ export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHead
                 transition={{ duration: 0.2 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {(['all', 'single', 'multi'] as const).map((filter) => (
+                {(['all', 'voice', 'single', 'multi', 'dubbed'] as const).map((filter) => (
                   <motion.button
                     key={filter}
                     className={`filter-option ${selectedFilter === filter ? 'selected' : ''}`}
@@ -186,7 +208,10 @@ export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHead
                     whileHover={{ backgroundColor: 'var(--mauve-5)' }}
                   >
                     <span>
-                      {filter === 'all' ? 'All Media' : filter === 'single' ? 'Single Character' : 'Multi-Character'}
+                      {filter === 'all' ? 'All Media' :
+                        filter === 'voice' ? 'All Voices' :
+                          filter === 'single' ? 'Single Voices' :
+                            filter === 'multi' ? 'Multi-Voice' : 'Dubbed Videos'}
                     </span>
                     {selectedFilter === filter && (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">

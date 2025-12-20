@@ -182,9 +182,6 @@ def generate_signed_url(
 ) -> str:
     """Generate signed URL using IAM-based signing (no private key needed)."""
     
-    if not service_account_email:
-        raise ValueError("service_account_email is required for signing")
-    
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_path)
     

@@ -269,7 +269,7 @@ const userTier = user.isPro ? "pro" : "free";
       if (!isValid) {
         console.error("[Voice] WAV validation failed");
         alert(
-          "Failed to save: Audio file appears corrupted or is in an unsupported format for your device. Please try a different trim selection."
+          "Validation Failed: The audio file is empty or corrupted. This often happens on Safari/iOS if the microphone permission was interrupted. Please reload and try again."
         );
         return;
       }
@@ -309,14 +309,6 @@ const userTier = user.isPro ? "pro" : "free";
         );
       }
 
-      console.log("[Voice] Preparing to save:", {
-        characterId: pendingVoiceData.characterId,
-        blobSize: blob.size,
-        blobType: blob.type,
-        duration,
-        source: e.detail.source,
-      });
-
       const formData = new FormData();
       formData.append("characterId", pendingVoiceData.characterId);
       formData.append("text", pendingVoiceData.text);
@@ -346,7 +338,6 @@ const userTier = user.isPro ? "pro" : "free";
       }
 
       // Save to server
-      console.log("[Voice] Sending to server /api/voices/save...");
       const response = await fetch("/api/voices/save", {
         method: "POST",
         body: formData,
@@ -357,16 +348,12 @@ const userTier = user.isPro ? "pro" : "free";
         .catch(() => ({ error: "Invalid server response" }));
 
       if (!response.ok) {
-        console.error("[Voice] Server error:", data);
+        alert(data.error || `Server returned ${response.status}`);
         throw new Error(data.error || `Server returned ${response.status}`);
       }
 
-      console.log("[Voice] Server response success:", data);
-
       // Handle storage based on storageType
       if (data.storageType === "cloud") {
-        console.log("[Voice] Saved to cloud storage ✓");
-
         if (data.audioUrl) {
           try {
             console.log("[Voice] Caching audio locally...");
@@ -434,8 +421,20 @@ const userTier = user.isPro ? "pro" : "free";
       }, 500);
     } catch (error: any) {
       console.error("[Voice] CRITICAL SAVE ERROR:", error);
+
+      // Detailed error logging for mobile debugging
+      const errorDetails = {
+        name: error.name || "UnknownError",
+        message: error.message || "No error message",
+        stack: error.stack || "No stack trace",
+        cause: error.cause ? JSON.stringify(error.cause) : undefined,
+      };
+
       alert(
-        `Save failed: ${error.message || "Unknown error"}\n\nThis can happen on mobile if the connection is slow or the file format is incompatible. If you're on Safari, try refreshing or checking if Private Browsing is disabled.`
+        `Save Failed!\n\n` +
+          `Error: ${errorDetails.name}\n` +
+          `Message: ${errorDetails.message}\n\n` +
+          `This helps us fix the issue. Please take a screenshot.`
       );
     }
   });

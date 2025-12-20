@@ -160,7 +160,12 @@ export default function MediaList({
 
         if (job.status === 'completed') {
             // Only completed jobs go to review
-            window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
+            window.dispatchEvent(new CustomEvent('open-dub-review', {
+                detail: {
+                    jobId,
+                    mainCharacter: mainCharacter
+                }
+            }));
         } else {
             // All other states (failed, processing, transcribing, etc.) handled by ResumeJobModal
             window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
@@ -219,16 +224,23 @@ export default function MediaList({
             />
             <div className="media-list">
                 {allMediaItems.map((item) => (
-                    item.type === 'voice' ? (
-                        <VoiceCard key={item.id} voice={item.data} mainCharacter={mainCharacter} allCharacters={allCharacters} />
-                    ) : (
-                        <DubbingVideoCard
-                            key={item.id}
-                            job={item.data}
-                            onPlay={handlePlayDubbing}
-                            onDelete={handleDeleteDubbing}
-                        />
-                    )
+                    <div
+                        key={item.id}
+                        className="media-item"
+                        data-type={item.type}
+                        data-is-multi={item.type === 'voice' ? item.data.isMultiCharacter : undefined}
+                    >
+                        {item.type === 'voice' ? (
+                            <VoiceCard voice={item.data} mainCharacter={mainCharacter} allCharacters={allCharacters} />
+                        ) : (
+                            <DubbingVideoCard
+                                job={item.data}
+                                mainCharacter={mainCharacter}
+                                onPlay={handlePlayDubbing}
+                                onDelete={handleDeleteDubbing}
+                            />
+                        )}
+                    </div>
                 ))}
             </div>
             <ResumeJobModal />

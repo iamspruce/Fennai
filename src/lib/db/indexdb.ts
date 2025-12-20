@@ -30,10 +30,19 @@ export interface VoiceRecord {
 export interface DubbingMediaRecord {
     id: string; // Job ID
     mediaType: 'audio' | 'video';
+
+    // Original Media
     audioData: ArrayBuffer;
     audioType: string;
     videoData?: ArrayBuffer;
     videoType?: string;
+
+    // Result Media (the dubbed version)
+    resultAudioData?: ArrayBuffer;
+    resultAudioType?: string;
+    resultVideoData?: ArrayBuffer;
+    resultVideoType?: string;
+
     duration: number;
     fileSize: number;
     createdAt: number;
@@ -145,8 +154,9 @@ export async function initDB(): Promise<IDBPDatabase> {
         throw e;
     }
 
-    return dbPromise;
-
+    if (!dbPromise) {
+        throw new Error('Database initialization failed');
+    }
     return dbPromise;
 }
 
@@ -398,6 +408,33 @@ export async function saveDubbingMedia(media: {
     };
 
     await db.put(DUBBING_STORE, record);
+}
+
+export async function saveDubbingResult(result: {
+    id: string;
+    resultAudioData?: ArrayBuffer;
+    resultAudioType?: string;
+    resultVideoData?: ArrayBuffer;
+    resultVideoType?: string;
+}): Promise<void> {
+    const db = await initDB();
+    const record = await db.get(DUBBING_STORE, result.id);
+
+    if (!record) {
+        console.warn(`[IndexDB] Cannot save result: Record ${result.id} not found`);
+        return;
+    }
+
+    const updated: DubbingMediaRecord = {
+        ...record,
+        resultAudioData: result.resultAudioData || record.resultAudioData,
+        resultAudioType: result.resultAudioType || record.resultAudioType,
+        resultVideoData: result.resultVideoData || record.resultVideoData,
+        resultVideoType: result.resultVideoType || record.resultVideoType,
+        lastAccessed: Date.now(),
+    };
+
+    await db.put(DUBBING_STORE, updated);
 }
 
 export async function getDubbingMedia(id: string): Promise<DubbingMediaRecord | undefined> {

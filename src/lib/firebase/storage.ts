@@ -94,6 +94,38 @@ export async function uploadVoiceAudio(
     return { url, path };
 }
 
+export async function uploadDubbingMedia(
+    userId: string,
+    characterId: string,
+    file: Blob,
+    filename: string, // 'video.mp4' or 'audio.wav'
+    mediaType: 'video' | 'audio'
+): Promise<{ url: string; path: string }> {
+    const sanitized = sanitizeFilename(filename);
+    const path = `users/${userId}/dubbing/${characterId}/dub_${Date.now()}_${sanitized}`;
+
+    // Convert Blob to Buffer for Admin SDK
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const fileRef = bucket.file(path);
+
+    // Upload file
+    await fileRef.save(buffer, {
+        metadata: {
+            contentType: mediaType === 'video' ? 'video/mp4' : 'audio/wav', // Ensure correct mime
+        },
+    });
+
+    // Make file publicly readable for production (no-op in emulator)
+    if (!USE_EMULATORS) {
+        await fileRef.makePublic();
+    }
+
+    // Get the correct URL based on environment
+    const url = await getAdminFileUrl(fileRef, path);
+
+    return { url, path };
+}
+
 export async function deleteFileFromStorage(path: string): Promise<void> {
     const fileRef = bucket.file(path);
     await fileRef.delete();

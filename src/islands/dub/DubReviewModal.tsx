@@ -10,6 +10,7 @@ import AudioPlayer from '@/components/ui/AudioPlayer';
 export default function DubReviewModal() {
     const [isOpen, setIsOpen] = useState(false);
     const [jobId, setJobId] = useState('');
+    const [mainCharacter, setMainCharacter] = useState<any>(null);
     const [job, setJob] = useState<DubbingJob | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
     const [originalMediaUrl, setOriginalMediaUrl] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export default function DubReviewModal() {
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
             setJobId(e.detail.jobId);
+            setMainCharacter(e.detail.mainCharacter);
             setIsOpen(true);
         };
         window.addEventListener('open-dub-review', handleOpen as EventListener);
@@ -78,6 +80,43 @@ export default function DubReviewModal() {
 
         loadOriginalMedia();
 
+        const hasAutoSavedRef = useRef(false);
+
+        // Auto-save logic (Same logic as voices)
+        useEffect(() => {
+            if (!job || job.status !== 'completed' || !job.finalMediaUrl || !mainCharacter || hasAutoSavedRef.current) return;
+
+            const performAutoSave = async () => {
+                // Only auto-save if saveAcrossBrowsers is false (Local-only logic)
+                if (mainCharacter.saveAcrossBrowsers === false) {
+                    console.log('[DubReviewModal] Auto-saving local-only dubbed video...');
+                    hasAutoSavedRef.current = true;
+
+                    try {
+                        const response = await fetch(job.finalMediaUrl!);
+                        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
+                        const blob = await response.blob();
+                        const arrayBuffer = await blob.arrayBuffer();
+
+                        const { saveDubbingResult } = await import('@/lib/db/indexdb');
+                        await saveDubbingResult({
+                            id: jobId,
+                            resultAudioData: job.mediaType === 'audio' ? arrayBuffer : undefined,
+                            resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
+                            resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
+                            resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
+                        });
+                        console.log('[DubReviewModal] Auto-save complete ✓');
+                    } catch (err) {
+                        console.warn('[DubReviewModal] Auto-save failed:', err);
+                    }
+                }
+            };
+
+            performAutoSave();
+        }, [job, mainCharacter, jobId]);
+
         return () => {
             // Cleanup on unmount
             if (originalUrlRef.current) {
@@ -102,10 +141,51 @@ export default function DubReviewModal() {
     const handleDownloadAndSave = async () => {
         if (!job?.finalMediaUrl) return;
 
-        // Download
-        window.open(job.finalMediaUrl, '_blank');
+        try {
+            // 1. Trigger Download
+            window.open(job.finalMediaUrl, '_blank');
 
-        setIsOpen(false);
+            // 2. Save to IndexedDB (Mirroring voice logic)
+            console.log('[DubReviewModal] Saving result to local storage...');
+            const response = await fetch(job.finalMediaUrl);
+            if (!response.ok) throw new Error(`Failed to fetch media result: ${response.status}`);
+
+            const blob = await response.blob();
+            const arrayBuffer = await blob.arrayBuffer();
+
+            const { saveDubbingResult } = await import('@/lib/db/indexdb');
+            await saveDubbingResult({
+                id: jobId,
+                resultAudioData: job.mediaType === 'audio' ? arrayBuffer : undefined,
+                resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
+                resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
+                resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
+            });
+
+            console.log('[DubReviewModal] Result saved to IndexedDB ✓');
+            setIsOpen(false);
+
+            // Optional: Reload to show in MediaList if needed, 
+            // but MediaList listens to Firestore so it might already be there.
+            // voices logic reloads so let's be safe
+            window.location.reload();
+
+        } catch (error: any) {
+            console.error('[DubReviewModal] Save error:', error);
+
+            const errorDetails = {
+                name: error.name || 'UnknownError',
+                message: error.message || 'No error message',
+                stack: error.stack || 'No stack trace'
+            };
+
+            alert(
+                `Save to Local Failed!\n\n` +
+                `Error: ${errorDetails.name}\n` +
+                `Message: ${errorDetails.message}\n\n` +
+                `The file was still opened for download. Please take a screenshot of this error.`
+            );
+        }
     };
 
     const getFriendlyStatusMessage = (job: DubbingJob) => {

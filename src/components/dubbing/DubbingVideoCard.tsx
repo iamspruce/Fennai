@@ -9,41 +9,61 @@ const DeleteIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="n
 
 interface DubbingVideoCardProps {
     job: DubbingJob;
+    mainCharacter?: any;
     onPlay?: (jobId: string) => void;
     onDelete?: (jobId: string) => void;
 }
 
-export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideoCardProps) {
+export default function DubbingVideoCard({ job, mainCharacter, onPlay, onDelete }: DubbingVideoCardProps) {
     const isFailed = job.status === 'failed';
     const isCompleted = job.status === 'completed';
     const isProcessing = !isFailed && !isCompleted;
 
     const [activeLayer, setActiveLayer] = useState<'original' | 'dubbed'>(isProcessing ? 'original' : 'dubbed');
     const [localOriginalUrl, setLocalOriginalUrl] = useState<string | null>(null);
+    const [localResultUrl, setLocalResultUrl] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
 
-    // Load local original video from IndexedDB
+    // Load local media from IndexedDB
     useEffect(() => {
-        let objectUrl: string | null = null;
+        let originalObjectUrl: string | null = null;
+        let resultObjectUrl: string | null = null;
+
         const loadLocal = async () => {
             try {
                 const record = await getDubbingMedia(job.id);
-                // Prefer video data, but check
-                if (record?.videoData) {
-                    const blob = new Blob([record.videoData], { type: record.videoType || 'video/mp4' });
-                    objectUrl = URL.createObjectURL(blob);
-                    setLocalOriginalUrl(objectUrl);
-                } else if (record?.audioData && (record.mediaType === 'video' || record.audioType?.startsWith('video/'))) {
-                    // Fallback: data stored in audioData but is actually video
-                    const blob = new Blob([record.audioData], { type: record.audioType || 'video/mp4' });
-                    objectUrl = URL.createObjectURL(blob);
-                    setLocalOriginalUrl(objectUrl);
+                if (!record) return;
+
+                // 1. Load Original Media
+                if (record.videoData) {
+                    originalObjectUrl = URL.createObjectURL(new Blob([record.videoData], { type: record.videoType || 'video/mp4' }));
+                    setLocalOriginalUrl(originalObjectUrl);
+                } else if (record.audioData) {
+                    const type = record.audioType || (record.mediaType === 'video' ? 'video/mp4' : 'audio/wav');
+                    originalObjectUrl = URL.createObjectURL(new Blob([record.audioData], { type }));
+                    setLocalOriginalUrl(originalObjectUrl);
                 }
-            } catch (e) { console.error('Error loading local media:', e); }
+
+                // 2. Load Dubbed Result Media
+                if (record.resultVideoData) {
+                    resultObjectUrl = URL.createObjectURL(new Blob([record.resultVideoData], { type: record.resultVideoType || 'video/mp4' }));
+                    setLocalResultUrl(resultObjectUrl);
+                } else if (record.resultAudioData) {
+                    const type = record.resultAudioType || (record.mediaType === 'video' ? 'video/mp4' : 'audio/wav');
+                    resultObjectUrl = URL.createObjectURL(new Blob([record.resultAudioData], { type }));
+                    setLocalResultUrl(resultObjectUrl);
+                }
+
+            } catch (e) {
+                console.error('Error loading local media:', e);
+            }
         };
+
         loadLocal();
+
         return () => {
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
+            if (originalObjectUrl) URL.revokeObjectURL(originalObjectUrl);
+            if (resultObjectUrl) URL.revokeObjectURL(resultObjectUrl);
         };
     }, [job.id]);
 
@@ -168,7 +188,7 @@ export default function DubbingVideoCard({ job, onPlay, onDelete }: DubbingVideo
                             ) : (
                                 <div className="video-wrapper">
                                     <video
-                                        src={job.finalMediaUrl || job.clonedAudioUrl}
+                                        src={localResultUrl || job.finalMediaUrl || job.clonedAudioUrl}
                                         controls={activeLayer === 'dubbed'}
                                         className="media-element"
                                         preload="metadata"
