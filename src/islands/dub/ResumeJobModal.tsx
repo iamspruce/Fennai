@@ -31,11 +31,18 @@ export default function ResumeJobModal() {
 
         // Depending on the job type, open the appropriate modal
         if (jobData.type === 'dubbing') {
-            // For dubbing, we usually go to settings or review depending on status
-            // But for now, let's just trigger 'open-dub-settings' which handles status check
-            window.dispatchEvent(new CustomEvent('open-dub-settings', {
-                detail: { jobId: jobData.jobId }
-            }));
+            // If the job is already in a processing state beyond transcription, go straight to review
+            const processingStatuses = ['cloning', 'translating', 'merging', 'completed'];
+            if (processingStatuses.includes(jobData.status || '')) {
+                window.dispatchEvent(new CustomEvent('open-dub-review', {
+                    detail: { jobId: jobData.jobId }
+                }));
+            } else {
+                // Otherwise go to settings (which handles transcribing_done etc.)
+                window.dispatchEvent(new CustomEvent('open-dub-settings', {
+                    detail: { jobId: jobData.jobId }
+                }));
+            }
         } else if (jobData.type === 'cloning') {
             // For voice cloning, we might have a different modal
             window.dispatchEvent(new CustomEvent('open-cloning-modal', {

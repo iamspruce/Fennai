@@ -4,7 +4,7 @@ import { db } from "../firebase/config";
 import { doc, onSnapshot, getDoc, type Unsubscribe } from "firebase/firestore";
 
 const USE_MOCK_API = import.meta.env.PUBLIC_USE_MOCK_VOICE_API === 'true';
-const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_VOICE_CLONE_API_URL;
+const API_BASE_URL = USE_MOCK_API ? '/api' : import.meta.env.PUBLIC_BASE_API_URL;
 
 // ==================== SHARED TYPES ====================
 

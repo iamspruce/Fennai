@@ -190,11 +190,37 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
 
             await updateJobSettings(jobId, { targetLanguage: finalTargetLanguage, translateAll, voiceMapping });
             await cloneDubbing({ jobId });
+
+            // Update local storage status so ResumeJobModal knows we're beyond transcribing
+            const activeJobStr = localStorage.getItem('activeJob');
+            if (activeJobStr) {
+                const activeJob = JSON.parse(activeJobStr);
+                if (activeJob.jobId === jobId) {
+                    localStorage.setItem('activeJob', JSON.stringify({
+                        ...activeJob,
+                        status: 'cloning'
+                    }));
+                }
+            }
+
+            // Immediately trigger the review modal to avoid waiting for onSnapshot
+            // This ensures a snappy transition as soon as the API call succeeds
+            setIsOpen(false);
+            window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
         } catch (err: any) {
             console.error('Failed to start cloning:', err);
-            setError(err.message || 'Failed to start voice cloning');
-        } finally {
+            const msg = err.message || 'Failed to start voice cloning';
+            setError(msg);
             setIsProcessing(false);
+
+            window.dispatchEvent(new CustomEvent('show-alert', {
+                detail: {
+                    title: 'Cloning Failed',
+                    message: msg,
+                    type: 'error',
+                    details: `Error: ${err.name || 'Unknown'}\nMessage: ${err.message || 'No message'}\nStack: ${err.stack || 'No stack'}`
+                }
+            }));
         }
     };
 

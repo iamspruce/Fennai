@@ -97,10 +97,20 @@ export default function DubMediaSelectModal({
                     setIsOpen(false);
                     resetForm();
                 } else if (data.status === 'failed') {
-                    setError(data.error || 'Transcription failed');
+                    const errorMsg = data.error || 'Transcription failed';
+                    setError(errorMsg);
                     setIsProcessing(false);
                     localStorage.removeItem('activeJob');
                     setCurrentJobId(null); // Stop listening to failed job
+
+                    window.dispatchEvent(new CustomEvent('show-alert', {
+                        detail: {
+                            title: 'Transcription Failed',
+                            message: 'Something went wrong while analyzing your media.',
+                            type: 'error',
+                            details: `Job Error: ${errorMsg}`
+                        }
+                    }));
                 }
             }
         });
@@ -310,13 +320,14 @@ export default function DubMediaSelectModal({
                 stack: err.stack || 'No stack trace'
             };
 
-            alert(
-                `Upload Failed!\n\n` +
-                `Error: ${errorDetails.name}\n` +
-                `Message: ${errorDetails.message}\n` +
-                `Status: ${errorDetails.status}\n\n` +
-                `This helps us fix the issue. Please take a screenshot.`
-            );
+            window.dispatchEvent(new CustomEvent('show-alert', {
+                detail: {
+                    title: 'Upload Failed',
+                    message: err.message || 'We encountered an error while uploading your media. Please try again.',
+                    type: 'error',
+                    details: `Error: ${errorDetails.name}\nMessage: ${errorDetails.message}\nStatus: ${errorDetails.status}\nStack: ${errorDetails.stack}`
+                }
+            }));
 
             setError(err.message || 'Upload failed');
             setIsUploading(false);

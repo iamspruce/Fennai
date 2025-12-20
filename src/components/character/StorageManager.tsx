@@ -4,10 +4,14 @@ import {
     getStorageStats,
     getStorageQuota,
     getVoicesForCleanup,
+    getDubbingMediaForCleanup,
     autoCleanupOldVoices,
+    autoCleanupDubbingMedia,
     deleteVoicesBatch,
+    deleteDubbingBatch,
     formatBytes,
     type VoiceRecord,
+    type DubbingMediaRecord,
 } from '@/lib/db/indexdb';
 import { Icon } from '@iconify/react';
 import '@/styles/modal.css';
@@ -16,7 +20,8 @@ export default function StorageManager() {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<Awaited<ReturnType<typeof getStorageStats>> | null>(null);
-    const [candidates, setCandidates] = useState<Awaited<ReturnType<typeof getVoicesForCleanup>> | null>(null);
+    const [voiceCandidates, setVoiceCandidates] = useState<Awaited<ReturnType<typeof getVoicesForCleanup>> | null>(null);
+    const [dubbingCandidates, setDubbingCandidates] = useState<Awaited<ReturnType<typeof getDubbingMediaForCleanup>> | null>(null);
     const [selectedTab, setSelectedTab] = useState<'overview' | 'cleanup'>('overview');
     const [cleaning, setCleaning] = useState(false);
 
@@ -32,12 +37,14 @@ export default function StorageManager() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [storageStats, cleanupData] = await Promise.all([
+            const [storageStats, voices, dubs] = await Promise.all([
                 getStorageStats(),
                 getVoicesForCleanup(),
+                getDubbingMediaForCleanup(),
             ]);
             setStats(storageStats);
-            setCandidates(cleanupData);
+            setVoiceCandidates(voices);
+            setDubbingCandidates(dubs);
         } catch (err) {
             console.error('Failed to load storage data:', err);
         } finally {
@@ -46,13 +53,18 @@ export default function StorageManager() {
     };
 
     const handleAutoCleanup = async () => {
-        if (!confirm('Run automatic cleanup?\n\nOld voices will be removed, keeping your 10 most recent ones.')) return;
+        if (!confirm('Run automatic cleanup?\n\nThis will remove old voices and dubbed videos to free up space, keeping your most recent items.')) return;
         setCleaning(true);
         try {
-            const result = await autoCleanupOldVoices();
-            alert(`Cleaned up ${result.deletedCount} voices → freed ${formatBytes(result.freedSpace)}`);
+            const [voiceResult, dubResult] = await Promise.all([
+                autoCleanupOldVoices(),
+                autoCleanupDubbingMedia()
+            ]);
+            const totalFreed = voiceResult.freedSpace + dubResult.freedSpace;
+            alert(`Cleanup complete!\n- Voices: ${voiceResult.deletedCount} removed\n- Videos: ${dubResult.deletedCount} removed\n- Total Freed: ${formatBytes(totalFreed)}`);
             await loadData();
-        } catch {
+        } catch (err) {
+            console.error('Cleanup failed:', err);
             alert('Cleanup failed');
         } finally {
             setCleaning(false);
@@ -66,6 +78,21 @@ export default function StorageManager() {
         try {
             const deleted = await deleteVoicesBatch(voices.map(v => v.id));
             alert(`Deleted ${deleted} ${label} voices`);
+            await loadData();
+        } catch {
+            alert('Failed to delete');
+        } finally {
+            setCleaning(false);
+        }
+    };
+
+    const handleDubbingCleanup = async (media: DubbingMediaRecord[], label: string) => {
+        if (media.length === 0) return;
+        if (!confirm(`Delete ${media.length} ${label} dubbed videos?\n\nThis cannot be undone.`)) return;
+        setCleaning(true);
+        try {
+            const deleted = await deleteDubbingBatch(media.map(m => m.id));
+            alert(`Deleted ${deleted} ${label} dubbed videos`);
             await loadData();
         } catch {
             alert('Failed to delete');
@@ -173,8 +200,10 @@ export default function StorageManager() {
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-s)' }}>
                                 {[
                                     { label: 'Voices', value: stats!.voiceCount, icon: 'lucide:mic' },
-                                    { label: 'Total Size', value: formatBytes(stats!.totalSize), icon: 'lucide:hard-drive' },
-                                    { label: 'Avg Size', value: formatBytes(stats!.averageSize), icon: 'lucide:bar-chart-2' },
+                                    { label: 'Voices Size', value: formatBytes(stats!.voicesSize), icon: 'lucide:file-audio' },
+                                    { label: 'Dubbed', value: stats!.dubbingMediaCount, icon: 'lucide:video' },
+                                    { label: 'Dubbing Size', value: formatBytes(stats!.dubbingSize), icon: 'lucide:file-video' },
+                                    { label: 'Total Local', value: formatBytes(stats!.totalSize), icon: 'lucide:hard-drive' },
                                     { label: 'Synced', value: stats!.cloudStorageCount, icon: 'lucide:cloud' },
                                 ].map(item => (
                                     <div key={item.label} style={{
@@ -187,7 +216,7 @@ export default function StorageManager() {
                                         alignItems: 'center',
                                         gap: '4px'
                                     }}>
-                                        <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--mauve-12)' }}>
+                                        <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--mauve-12)' }}>
                                             {item.value}
                                         </div>
                                         <div style={{ fontSize: '12px', color: 'var(--mauve-11)', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -235,51 +264,117 @@ export default function StorageManager() {
                                 </button>
                             </div>
 
-                            {/* Manual Cleanup Cards */}
-                            {candidates && (
+                            <div style={{ background: 'var(--mauve-3)', height: '1px', margin: 'var(--space-s) 0' }} />
+
+                            {/* Manual Cleanup - Voices */}
+                            <h4 style={{ margin: 'var(--space-s) 0 0', fontSize: '14px', fontWeight: 600, color: 'var(--mauve-11)' }}>Voices</h4>
+                            {voiceCandidates && (
                                 <>
-                                    {candidates.old.length > 0 && (
+                                    {voiceCandidates.old.length > 0 && (
                                         <CleanupRow
                                             title="Old Voices"
                                             meta="> 30 days"
-                                            count={candidates.old.length}
+                                            count={voiceCandidates.old.length}
                                             icon="lucide:calendar-clock"
                                             color="var(--yellow-9)"
-                                            onClick={() => handleCleanup(candidates.old, 'old')}
+                                            onClick={() => handleCleanup(voiceCandidates.old, 'old')}
                                             disabled={cleaning}
                                         />
                                     )}
-                                    {candidates.unused.length > 0 && (
+                                    {voiceCandidates.unused.length > 0 && (
                                         <CleanupRow
                                             title="Unused"
                                             meta="Not played > 7 days"
-                                            count={candidates.unused.length}
+                                            count={voiceCandidates.unused.length}
                                             icon="lucide:ghost"
                                             color="var(--orange-9)"
-                                            onClick={() => handleCleanup(candidates.unused, 'unused')}
+                                            onClick={() => handleCleanup(voiceCandidates.unused, 'unused')}
                                             disabled={cleaning}
                                         />
                                     )}
-                                    {candidates.large.length > 0 && (
+                                    {voiceCandidates.large.length > 0 && (
                                         <CleanupRow
-                                            title="Large Files"
+                                            title="Large Voices"
                                             meta="Heavy audio files"
-                                            count={candidates.large.length}
+                                            count={voiceCandidates.large.length}
                                             icon="lucide:weight"
                                             color="var(--red-9)"
-                                            onClick={() => handleCleanup(candidates.large, 'large')}
+                                            onClick={() => handleCleanup(voiceCandidates.large, 'large')}
+                                            disabled={cleaning}
+                                        />
+                                    )}
+                                    {voiceCandidates.remaining.length > 0 && (
+                                        <CleanupRow
+                                            title="Other Voices"
+                                            meta="Recently added / small"
+                                            count={voiceCandidates.remaining.length}
+                                            icon="lucide:mic"
+                                            color="var(--mauve-9)"
+                                            onClick={() => handleCleanup(voiceCandidates.remaining, 'other')}
                                             disabled={cleaning}
                                         />
                                     )}
                                 </>
                             )}
 
-                            {candidates && candidates.old.length === 0 && candidates.unused.length === 0 && candidates.large.length === 0 && (
-                                <div style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--mauve-10)' }}>
-                                    <Icon icon="lucide:check-circle-2" width={48} style={{ margin: '0 auto var(--space-s)', opacity: 0.5 }} />
-                                    <p>Your storage is optimized!</p>
-                                </div>
+                            {/* Manual Cleanup - Dubbing */}
+                            <h4 style={{ margin: 'var(--space-m) 0 0', fontSize: '14px', fontWeight: 600, color: 'var(--mauve-11)' }}>Dubbed Videos</h4>
+                            {dubbingCandidates && (
+                                <>
+                                    {dubbingCandidates.old.length > 0 && (
+                                        <CleanupRow
+                                            title="Old Videos"
+                                            meta="> 3 days"
+                                            count={dubbingCandidates.old.length}
+                                            icon="lucide:history"
+                                            color="var(--blue-9)"
+                                            onClick={() => handleDubbingCleanup(dubbingCandidates.old, 'old')}
+                                            disabled={cleaning}
+                                        />
+                                    )}
+                                    {dubbingCandidates.unused.length > 0 && (
+                                        <CleanupRow
+                                            title="Unused"
+                                            meta="Not viewed > 1 day"
+                                            count={dubbingCandidates.unused.length}
+                                            icon="lucide:clock-9"
+                                            color="var(--indigo-9)"
+                                            onClick={() => handleDubbingCleanup(dubbingCandidates.unused, 'unused')}
+                                            disabled={cleaning}
+                                        />
+                                    )}
+                                    {dubbingCandidates.large.length > 0 && (
+                                        <CleanupRow
+                                            title="Large Media"
+                                            meta="> 2MB or heavy"
+                                            count={dubbingCandidates.large.length}
+                                            icon="lucide:file-video"
+                                            color="var(--pink-9)"
+                                            onClick={() => handleDubbingCleanup(dubbingCandidates.large, 'large')}
+                                            disabled={cleaning}
+                                        />
+                                    )}
+                                    {dubbingCandidates.remaining.length > 0 && (
+                                        <CleanupRow
+                                            title="Recently Added"
+                                            meta="Current session media"
+                                            count={dubbingCandidates.remaining.length}
+                                            icon="lucide:video"
+                                            color="var(--mauve-9)"
+                                            onClick={() => handleDubbingCleanup(dubbingCandidates.remaining, 'recent')}
+                                            disabled={cleaning}
+                                        />
+                                    )}
+                                </>
                             )}
+
+                            {((!voiceCandidates || (voiceCandidates.old.length === 0 && voiceCandidates.unused.length === 0 && voiceCandidates.large.length === 0 && voiceCandidates.remaining.length === 0)) &&
+                                (!dubbingCandidates || (dubbingCandidates.old.length === 0 && dubbingCandidates.unused.length === 0 && dubbingCandidates.large.length === 0 && dubbingCandidates.remaining.length === 0))) && (
+                                    <div style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--mauve-10)' }}>
+                                        <Icon icon="lucide:check-circle-2" width={48} style={{ margin: '0 auto var(--space-s)', opacity: 0.5 }} />
+                                        <p>Your storage is optimized!</p>
+                                    </div>
+                                )}
                         </div>
                     )}
                 </div>

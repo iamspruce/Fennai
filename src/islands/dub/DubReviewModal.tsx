@@ -12,14 +12,22 @@ export default function DubReviewModal() {
     const [jobId, setJobId] = useState('');
     const [mainCharacter, setMainCharacter] = useState<any>(null);
     const [job, setJob] = useState<DubbingJob | null>(null);
+    const [initialFileName, setInitialFileName] = useState('');
     const [showOriginal, setShowOriginal] = useState(false);
     const [originalMediaUrl, setOriginalMediaUrl] = useState<string | null>(null);
     const originalUrlRef = useRef<string | null>(null);
+    const hasAutoSavedRef = useRef(false);
+
+    // Reset auto-save flag when jobId changes
+    useEffect(() => {
+        hasAutoSavedRef.current = false;
+    }, [jobId]);
 
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
             setJobId(e.detail.jobId);
             setMainCharacter(e.detail.mainCharacter);
+            if (e.detail.fileName) setInitialFileName(e.detail.fileName);
             setIsOpen(true);
         };
         window.addEventListener('open-dub-review', handleOpen as EventListener);
@@ -44,6 +52,17 @@ export default function DubReviewModal() {
                             if (activeJob.jobId === jobId) {
                                 localStorage.removeItem('activeJob');
                             }
+                        }
+
+                        if (data.status === 'failed') {
+                            window.dispatchEvent(new CustomEvent('show-alert', {
+                                detail: {
+                                    title: 'Dubbing Failed',
+                                    message: 'The dubbing process encountered an error.',
+                                    type: 'error',
+                                    details: `Job Error: ${data.error || 'Unknown error'}`
+                                }
+                            }));
                         }
                     }
                 }
@@ -80,43 +99,6 @@ export default function DubReviewModal() {
 
         loadOriginalMedia();
 
-        const hasAutoSavedRef = useRef(false);
-
-        // Auto-save logic (Same logic as voices)
-        useEffect(() => {
-            if (!job || job.status !== 'completed' || !job.finalMediaUrl || !mainCharacter || hasAutoSavedRef.current) return;
-
-            const performAutoSave = async () => {
-                // Only auto-save if saveAcrossBrowsers is false (Local-only logic)
-                if (mainCharacter.saveAcrossBrowsers === false) {
-                    console.log('[DubReviewModal] Auto-saving local-only dubbed video...');
-                    hasAutoSavedRef.current = true;
-
-                    try {
-                        const response = await fetch(job.finalMediaUrl!);
-                        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-
-                        const blob = await response.blob();
-                        const arrayBuffer = await blob.arrayBuffer();
-
-                        const { saveDubbingResult } = await import('@/lib/db/indexdb');
-                        await saveDubbingResult({
-                            id: jobId,
-                            resultAudioData: job.mediaType === 'audio' ? arrayBuffer : undefined,
-                            resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
-                            resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
-                            resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
-                        });
-                        console.log('[DubReviewModal] Auto-save complete ✓');
-                    } catch (err) {
-                        console.warn('[DubReviewModal] Auto-save failed:', err);
-                    }
-                }
-            };
-
-            performAutoSave();
-        }, [job, mainCharacter, jobId]);
-
         return () => {
             // Cleanup on unmount
             if (originalUrlRef.current) {
@@ -125,6 +107,41 @@ export default function DubReviewModal() {
             }
         };
     }, [jobId, isOpen]);
+
+    // Auto-save logic (Same logic as voices)
+    useEffect(() => {
+        if (!job || job.status !== 'completed' || !job.finalMediaUrl || !mainCharacter || hasAutoSavedRef.current) return;
+
+        const performAutoSave = async () => {
+            // Only auto-save if saveAcrossBrowsers is false (Local-only logic)
+            if (mainCharacter.saveAcrossBrowsers === false) {
+                console.log('[DubReviewModal] Auto-saving local-only dubbed video...');
+                hasAutoSavedRef.current = true;
+
+                try {
+                    const response = await fetch(job.finalMediaUrl!);
+                    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+
+                    const blob = await response.blob();
+                    const arrayBuffer = await blob.arrayBuffer();
+
+                    const { saveDubbingResult } = await import('@/lib/db/indexdb');
+                    await saveDubbingResult({
+                        id: jobId,
+                        resultAudioData: job.mediaType === 'audio' ? arrayBuffer : undefined,
+                        resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
+                        resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
+                        resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
+                    });
+                    console.log('[DubReviewModal] Auto-save complete ✓');
+                } catch (err) {
+                    console.warn('[DubReviewModal] Auto-save failed:', err);
+                }
+            }
+        };
+
+        performAutoSave();
+    }, [job, mainCharacter, jobId]);
 
     const handleDownloadAndDelete = async () => {
         if (!job?.finalMediaUrl) return;
@@ -179,12 +196,14 @@ export default function DubReviewModal() {
                 stack: error.stack || 'No stack trace'
             };
 
-            alert(
-                `Save to Local Failed!\n\n` +
-                `Error: ${errorDetails.name}\n` +
-                `Message: ${errorDetails.message}\n\n` +
-                `The file was still opened for download. Please take a screenshot of this error.`
-            );
+            window.dispatchEvent(new CustomEvent('show-alert', {
+                detail: {
+                    title: 'Save to Local Failed',
+                    message: 'The file was opened for download, but we couldn\'t save it to your local browser storage.',
+                    type: 'error',
+                    details: `Error: ${error.name || 'Unknown'}\nMessage: ${error.message || 'No message'}\nStack: ${error.stack || 'No stack'}`
+                }
+            }));
         }
     };
 
@@ -241,9 +260,14 @@ export default function DubReviewModal() {
         <div className="modal-overlay">
             <div className="modal-content modal-wide">
                 <div className="modal-header">
-                    <h3 className="modal-title">
-                        {isComplete ? 'Dubbing Complete!' : isFailed ? 'Dubbing Failed' : 'Processing...'}
-                    </h3>
+                    <div className="modal-title-group">
+                        <h3 className="modal-title">
+                            {isComplete ? 'Dubbing Complete!' : isFailed ? 'Dubbing Failed' : 'Processing...'}
+                        </h3>
+                        {(job?.fileName || initialFileName) && (
+                            <span className="modal-subtitle">{job?.fileName || initialFileName}</span>
+                        )}
+                    </div>
                     {(isComplete || isFailed) && (
                         <button className="modal-close" onClick={() => setIsOpen(false)}>
                             <Icon icon="lucide:x" width={20} />
@@ -261,9 +285,18 @@ export default function DubReviewModal() {
                             <p className="error-message">
                                 {getFriendlyErrorMessage(job.error || '')}
                             </p>
-                            <button className="btn btn-secondary btn-full" onClick={() => setIsOpen(false)}>
-                                Close
-                            </button>
+                            <div className="error-actions" style={{ display: 'flex', gap: 'var(--space-s)', width: '100%' }}>
+                                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => {
+                                    window.dispatchEvent(new CustomEvent('open-dub-settings', { detail: { jobId } }));
+                                    setIsOpen(false);
+                                }}>
+                                    <Icon icon="lucide:rotate-ccw" width={18} />
+                                    Retry
+                                </button>
+                                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setIsOpen(false)}>
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     ) : !isComplete ? (
                         <div className="progress-section">
@@ -489,6 +522,19 @@ export default function DubReviewModal() {
                     margin-bottom: var(--space-l);
                     max-width: 300px;
                     line-height: 1.5;
+                }
+
+                .modal-title-group {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .modal-subtitle {
+                    font-size: 13px;
+                    color: var(--mauve-11);
+                    font-weight: 500;
+                    margin-top: -2px;
                 }
             `}</style>
         </div>

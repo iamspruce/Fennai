@@ -61,9 +61,16 @@ export default function DubEditScriptModal() {
                 })
             );
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to save script:', err);
-            alert('Failed to save changes');
+            window.dispatchEvent(new CustomEvent('show-alert', {
+                detail: {
+                    title: 'Save Failed',
+                    message: 'Failed to save changes to the script.',
+                    type: 'error',
+                    details: `Error: ${err.name || 'Unknown'}\nMessage: ${err.message || 'No message'}\nStack: ${err.stack || 'No stack'}`
+                }
+            }));
         } finally {
             setIsSaving(false);
         }

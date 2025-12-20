@@ -464,9 +464,17 @@ export async function autoCleanupDubbingMedia(): Promise<CleanupResult> {
     const db = await initDB();
     const all = await db.getAll(DUBBING_STORE);
 
-    // Delete dubbing media older than 7 days
+    if (all.length <= 5) {
+        return { deletedCount: 0, freedSpace: 0, remainingVoices: all.length };
+    }
+
+    // Delete dubbing media older than 7 days, but keep at least 5
     const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const toDelete = all.filter(m => m.createdAt < threshold);
+    const oldOnes = all
+        .filter(m => m.createdAt < threshold)
+        .sort((a, b) => a.createdAt - b.createdAt);
+
+    const toDelete = oldOnes.slice(0, all.length - 5);
 
     if (toDelete.length === 0) {
         return { deletedCount: 0, freedSpace: 0, remainingVoices: all.length };
@@ -487,6 +495,51 @@ export async function autoCleanupDubbingMedia(): Promise<CleanupResult> {
         freedSpace: freed,
         remainingVoices: all.length - toDelete.length
     };
+}
+
+export async function getDubbingMediaForCleanup(): Promise<{
+    old: DubbingMediaRecord[];
+    unused: DubbingMediaRecord[];
+    large: DubbingMediaRecord[];
+    remaining: DubbingMediaRecord[];
+}> {
+    const all = await getAllDubbingMedia();
+    const now = Date.now();
+    const ageThreshold = now - (3 * 24 * 60 * 60 * 1000); // 3 days for videos
+    const unusedThreshold = now - (1 * 24 * 60 * 60 * 1000); // 1 day unused
+
+    const sizes = all.map(m => m.fileSize || 0).sort((a, b) => a - b);
+    const medianSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] || 0 : 0;
+    const largeSizeThreshold = Math.max(medianSize * 1.5, 2 * 1024 * 1024); // 1.5x median or 2MB
+
+    const old = all.filter(m => m.createdAt < ageThreshold);
+    const unused = all.filter(m => !old.includes(m) && (m.lastAccessed || m.createdAt) < unusedThreshold);
+    const large = all.filter(m => !old.includes(m) && !unused.includes(m) && (m.fileSize || 0) > largeSizeThreshold);
+
+    const usedIds = new Set([...old, ...unused, ...large].map(m => m.id));
+    const remaining = all.filter(m => !usedIds.has(m.id));
+
+    return { old, unused, large, remaining };
+}
+
+export async function deleteDubbingBatch(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+
+    const db = await initDB();
+    const tx = db.transaction(DUBBING_STORE, 'readwrite');
+    let deletedCount = 0;
+
+    for (const id of ids) {
+        try {
+            await tx.store.delete(id);
+            deletedCount++;
+        } catch (err) {
+            console.warn(`Failed to delete dubbing media ${id}:`, err);
+        }
+    }
+
+    await tx.done;
+    return deletedCount;
 }
 
 // ==================== STORAGE UTILITIES ====================
@@ -556,6 +609,7 @@ export async function getVoicesForCleanup(): Promise<{
     old: VoiceRecord[];
     unused: VoiceRecord[];
     large: VoiceRecord[];
+    remaining: VoiceRecord[];
 }> {
     const allVoices = await getAllVoices();
     const now = Date.now();
@@ -566,11 +620,14 @@ export async function getVoicesForCleanup(): Promise<{
     const medianSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] || 0 : 0;
     const largeSizeThreshold = medianSize * 2;
 
-    return {
-        old: allVoices.filter(v => v.createdAt < ageThreshold),
-        unused: allVoices.filter(v => (v.lastAccessed || v.createdAt) < unusedThreshold),
-        large: allVoices.filter(v => (v.size || 0) > largeSizeThreshold),
-    };
+    const old = allVoices.filter(v => v.createdAt < ageThreshold);
+    const unused = allVoices.filter(v => !old.includes(v) && (v.lastAccessed || v.createdAt) < unusedThreshold);
+    const large = allVoices.filter(v => !old.includes(v) && !unused.includes(v) && (v.size || 0) > largeSizeThreshold);
+
+    const usedIds = new Set([...old, ...unused, ...large].map(v => v.id));
+    const remaining = allVoices.filter(v => !usedIds.has(v.id));
+
+    return { old, unused, large, remaining };
 }
 
 export async function exportVoicesMetadata(): Promise<string> {

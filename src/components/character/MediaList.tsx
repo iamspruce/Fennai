@@ -110,8 +110,8 @@ export default function MediaList({
                     const jobData = jobSnap.data();
                     const status = jobData.status;
 
-                    if (status !== 'completed') {
-                        // Found an active OR failed job, ask to resume/retry
+                    if (status !== 'completed' && status !== 'failed') {
+                        // Found an active job, ask to resume
                         window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
                             detail: {
                                 ...activeJob,
@@ -120,7 +120,7 @@ export default function MediaList({
                             }
                         }));
                     } else {
-                        // Job is done, clean up active job tracker
+                        // Job is done or failed, clean up active job tracker
                         localStorage.removeItem('activeJob');
                     }
                 } else {
@@ -137,6 +137,10 @@ export default function MediaList({
 
     // Filter dubbing jobs for the current character
     const filteredDubbingJobs = dubbingJobs.filter(job => {
+        // Only show completed or failed jobs in the media list
+        // Processing jobs are handled by the ResumeJobModal/DubReviewModal flow
+        if (!['completed', 'failed'].includes(job.status)) return false;
+
         if (!mainCharacter) return true;
         // Check explicit character assignment (primary)
         if (job.characterId === mainCharacter.id) return true;
@@ -158,21 +162,23 @@ export default function MediaList({
         const job = dubbingJobs.find(j => j.id === jobId);
         if (!job) return;
 
-        if (job.status === 'completed') {
-            // Only completed jobs go to review
+        if (job.status === 'completed' || job.status === 'failed') {
+            // Both completed and failed jobs go to review
             window.dispatchEvent(new CustomEvent('open-dub-review', {
                 detail: {
                     jobId,
-                    mainCharacter: mainCharacter
+                    mainCharacter: mainCharacter,
+                    fileName: job.fileName
                 }
             }));
         } else {
-            // All other states (failed, processing, transcribing, etc.) handled by ResumeJobModal
+            // All other states (processing, transcribing, etc.) handled by ResumeJobModal
+            // Ensure fileName is explicitly passed to avoid "Untitled"
             window.dispatchEvent(new CustomEvent('open-resume-job-modal', {
                 detail: {
                     jobId,
                     type: 'dubbing',
-                    fileName: job.fileName,
+                    fileName: job.fileName || 'Dubbed Video',
                     status: job.status
                 }
             }));

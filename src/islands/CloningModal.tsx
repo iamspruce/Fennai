@@ -83,6 +83,15 @@ export default function CloningModal() {
 
       setError(friendlyError);
       setIsCloning(false);
+
+      window.dispatchEvent(new CustomEvent('show-alert', {
+        detail: {
+          title: "Cloning Failed",
+          message: friendlyError,
+          type: "error",
+          details: `Error: ${err.name || 'Unknown'}\nMessage: ${err.message || 'No message'}\nStack: ${err.stack || 'No stack'}`
+        }
+      }));
     }
   };
 
@@ -135,8 +144,18 @@ export default function CloningModal() {
       }, 800);
     } catch (err: any) {
       console.error('Resume failed:', err);
-      setError(err.message || 'Failed to resume job');
+      const msg = err.message || 'Failed to resume job';
+      setError(msg);
       setIsCloning(false);
+
+      window.dispatchEvent(new CustomEvent('show-alert', {
+        detail: {
+          title: "Resume Failed",
+          message: msg,
+          type: "error",
+          details: `Error: ${err.name || 'Unknown'}\nMessage: ${err.message || 'No message'}\nStack: ${err.stack || 'No stack'}`
+        }
+      }));
     }
   };
 

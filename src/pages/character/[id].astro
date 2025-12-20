@@ -233,8 +233,15 @@ const userTier = user.isPro ? "pro" : "free";
 
     if (!pendingVoiceData) {
       console.error("[Voice] No pending voice data");
-      alert(
-        "Error: No voice data to save. This can happen if the page was refreshed or memory was cleared. Please try recording again."
+      window.dispatchEvent(
+        new CustomEvent("show-alert", {
+          detail: {
+            title: "Missing Data",
+            message:
+              "No voice data to save. This can happen if the page was refreshed or memory was cleared. Please try recording again.",
+            type: "error",
+          },
+        })
       );
       return;
     }
@@ -243,18 +250,32 @@ const userTier = user.isPro ? "pro" : "free";
 
     if (!blob || !(blob instanceof Blob)) {
       console.error("[Voice] Invalid audio blob", blob);
-      alert(
-        "Failed to save: Invalid audio data received. (Type: " +
-          typeof blob +
-          ")"
+      window.dispatchEvent(
+        new CustomEvent("show-alert", {
+          detail: {
+            title: "Invalid Data",
+            message:
+              "Failed to save: Invalid audio data received. (Type: " +
+              typeof blob +
+              ")",
+            type: "error",
+          },
+        })
       );
       return;
     }
 
     if (blob.size === 0) {
       console.error("[Voice] Empty audio blob");
-      alert(
-        "Failed to save: Audio file is empty. Please try trimming a larger section."
+      window.dispatchEvent(
+        new CustomEvent("show-alert", {
+          detail: {
+            title: "Empty Audio",
+            message:
+              "Failed to save: Audio file is empty. Please try trimming a larger section.",
+            type: "error",
+          },
+        })
       );
       return;
     }
@@ -268,8 +289,15 @@ const userTier = user.isPro ? "pro" : "free";
 
       if (!isValid) {
         console.error("[Voice] WAV validation failed");
-        alert(
-          "Validation Failed: The audio file is empty or corrupted. This often happens on Safari/iOS if the microphone permission was interrupted. Please reload and try again."
+        window.dispatchEvent(
+          new CustomEvent("show-alert", {
+            detail: {
+              title: "Validation Failed",
+              message:
+                "The audio file is empty or corrupted. This often happens on Safari/iOS if the microphone permission was interrupted. Please reload and try again.",
+              type: "error",
+            },
+          })
         );
         return;
       }
@@ -348,7 +376,15 @@ const userTier = user.isPro ? "pro" : "free";
         .catch(() => ({ error: "Invalid server response" }));
 
       if (!response.ok) {
-        alert(data.error || `Server returned ${response.status}`);
+        window.dispatchEvent(
+          new CustomEvent("show-alert", {
+            detail: {
+              title: "Server Error",
+              message: data.error || `Server returned ${response.status}`,
+              type: "error",
+            },
+          })
+        );
         throw new Error(data.error || `Server returned ${response.status}`);
       }
 
@@ -406,8 +442,15 @@ const userTier = user.isPro ? "pro" : "free";
           }
         } catch (idbError) {
           console.error("[Voice] IDB save failed:", idbError);
-          alert(
-            "Metadata saved, but failed to store audio locally. Refresh the page to see if it appears."
+          window.dispatchEvent(
+            new CustomEvent("show-alert", {
+              detail: {
+                title: "Storage Error",
+                message:
+                  "Metadata saved, but failed to store audio locally. Refresh the page to see if it appears.",
+                type: "warning",
+              },
+            })
           );
         }
       }
@@ -430,11 +473,16 @@ const userTier = user.isPro ? "pro" : "free";
         cause: error.cause ? JSON.stringify(error.cause) : undefined,
       };
 
-      alert(
-        `Save Failed!\n\n` +
-          `Error: ${errorDetails.name}\n` +
-          `Message: ${errorDetails.message}\n\n` +
-          `This helps us fix the issue. Please take a screenshot.`
+      window.dispatchEvent(
+        new CustomEvent("show-alert", {
+          detail: {
+            title: "Save Failed",
+            message:
+              "We encountered a critical error while saving. This helps us fix the issue. Please take a screenshot.",
+            type: "error",
+            details: `Error: ${errorDetails.name}\nMessage: ${errorDetails.message}\nStack: ${errorDetails.stack}`,
+          },
+        })
       );
     }
   });

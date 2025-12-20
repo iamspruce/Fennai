@@ -1,18 +1,18 @@
 ---
 interface Props {
-    title: string;
-    description?: string;
-    isPro?: boolean;
-    userName?: string;
-    image?: string; // Added for social sharing cards
+  title: string;
+  description?: string;
+  isPro?: boolean;
+  userName?: string;
+  image?: string; // Added for social sharing cards
 }
 
 const {
-    title,
-    description = "Voice cloning should not be rocket science. Create realistic text-to-speech models instantly.",
-    isPro,
-    userName,
-    image = "/og-image.png", // You should have a default image in your public folder
+  title,
+  description = "Voice cloning should not be rocket science. Create realistic text-to-speech models instantly.",
+  isPro,
+  userName,
+  image = "/og-image.png", // You should have a default image in your public folder
 } = Astro.props;
 
 // specific to Astro - generates the full URL for the current page
@@ -24,83 +24,82 @@ import PreviewEditModal from "@/islands/PreviewEditModal";
 import CreateCharacterModal from "@/islands/CreateCharacterModal";
 import RecordVoiceModal from "@/islands/RecordVoiceModal";
 import VoiceLibraryModal from "@/islands/VoiceLibraryModal";
+import AlertModal from "@/components/ui/AlertModal";
 ---
 
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-        <title>{title}</title>
-        <meta name="description" content={description} />
-        <meta
-            name="theme-color"
-            content="#eeeef0"
-            media="(prefers-color-scheme: dark)"
-        />
-        <meta
-            name="theme-color"
-            content="#211f26"
-            media="(prefers-color-scheme: light)"
-        />
-        <link rel="canonical" href={canonicalURL} />
-        <meta name="robots" content="index, follow" />
-        <meta name="author" content="Your App Name" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta
+      name="theme-color"
+      content="#eeeef0"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#211f26"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="canonical" href={canonicalURL} />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="Your App Name" />
 
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content={canonicalURL} />
-        <meta property="og:title" content={title} />
-        <meta property="og:description" content={description} />
-        <meta property="og:image" content={new URL(image, Astro.url)} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(image, Astro.url)} />
 
-        <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:url" content={canonicalURL} />
-        <meta property="twitter:title" content={title} />
-        <meta property="twitter:description" content={description} />
-        <meta property="twitter:image" content={new URL(image, Astro.url)} />
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content={canonicalURL} />
+    <meta property="twitter:title" content={title} />
+    <meta property="twitter:description" content={description} />
+    <meta property="twitter:image" content={new URL(image, Astro.url)} />
 
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ffffff" />
 
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-            name="apple-mobile-web-app-status-bar-style"
-            content="black-translucent"
-        />
-    </head>
-    <body>
-        <slot />
-        <StorageManager client:load />
-        <DeleteConfirmationModal client:load />
-        <PreviewEditModal client:load />
-        <CreateCharacterModal client:load />
-        <VoiceLibraryModal isPro={isPro!} client:load />
-        <RecordVoiceModal userName={userName || "Friend"} client:load />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+  </head>
+  <body>
+    <slot />
+    <StorageManager client:load />
+    <DeleteConfirmationModal client:load />
+    <PreviewEditModal client:load />
+    <CreateCharacterModal client:load />
+    <VoiceLibraryModal isPro={isPro!} client:load />
+    <RecordVoiceModal userName={userName || "Friend"} client:load />
 
-        <script is:inline>
-            if ("serviceWorker" in navigator) {
-                window.addEventListener("load", () => {
-                    navigator.serviceWorker
-                        .register("/sw.js")
-                        .then((registration) => {
-                            console.log("SW registered: ", registration);
-                        })
-                        .catch((registrationError) => {
-                            console.log(
-                                "SW registration failed: ",
-                                registrationError,
-                            );
-                        });
-                });
-            }
-        </script>
-    </body>
+    <script is:inline>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((registration) => {
+              console.log("SW registered: ", registration);
+            })
+            .catch((registrationError) => {
+              console.log("SW registration failed: ", registrationError);
+            });
+        });
+      }
+    </script>
+    <AlertModal client:load />
+  </body>
 </html>
 
 <style is:global>
-    @import "../styles/global.css";
-    @import "../styles/modal.css";
+  @import "../styles/global.css";
+  @import "../styles/modal.css";
 </style>
