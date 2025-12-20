@@ -1194,14 +1194,7 @@
 }
 
 /* Voice Cards */
-.voice-card {
-  background: var(--mauve-1);
-  border: 1px solid var(--mauve-6);
-  border-radius: 16px;
-  overflow: hidden;
-  margin-bottom: 12px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-}
+
 
 .voice-card-header {
   padding: 16px;
