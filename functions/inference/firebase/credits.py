@@ -8,6 +8,7 @@ from google.cloud.firestore import transactional, SERVER_TIMESTAMP, Increment
 from typing import Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
 import logging
+import math
 
 from config import config
 
@@ -26,9 +27,9 @@ def calculate_cost_from_duration(
     is_multi_character: bool = False
 ) -> int:
     """Calculate cost based on audio duration"""
-    base_cost = max(1, int(duration_seconds / config.SECONDS_PER_CREDIT))
+    base_cost = max(1, math.ceil(duration_seconds / config.SECONDS_PER_CREDIT))
     multiplier = config.MULTI_CHARACTER_MULTIPLIER if is_multi_character else 1.0
-    return max(1, int(base_cost * multiplier))
+    return max(1, math.ceil(base_cost * multiplier))
 
 
 def calculate_dubbing_cost(
@@ -37,10 +38,10 @@ def calculate_dubbing_cost(
     is_video: bool
 ) -> int:
     """Calculate dubbing cost with multipliers"""
-    base_credits = max(1, int(duration_seconds / config.SECONDS_PER_CREDIT))
+    base_credits = max(1, math.ceil(duration_seconds / config.SECONDS_PER_CREDIT))
     translation_mult = config.DUBBING_TRANSLATION_MULTIPLIER if has_translation else 1.0
     video_mult = config.DUBBING_VIDEO_MULTIPLIER if is_video else 1.0
-    return max(1, int(base_credits * translation_mult * video_mult))
+    return max(1, math.ceil(base_credits * translation_mult * video_mult))
 
 
 def reserve_credits(

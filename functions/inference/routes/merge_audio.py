@@ -66,6 +66,16 @@ def merge_audio_route():
         # Download all chunks using temp_files context manager
         chunk_count = len(cloned_chunks)
         
+        # Extract target durations from chunks (endTime - startTime)
+        target_durations = []
+        for chunk in cloned_chunks:
+            start_time = chunk.get("startTime", 0)
+            end_time = chunk.get("endTime", 0)
+            target_duration = end_time - start_time
+            target_durations.append(target_duration if target_duration > 0 else None)
+        
+        logger.info(f"Job {job_id}: Target durations for {chunk_count} segments: {[f'{d:.2f}s' if d else 'None' for d in target_durations]}")
+        
         with temp_files(chunk_count, ".wav") as chunk_file_paths:
             for i, chunk in enumerate(cloned_chunks):
                 if chunk["status"] != "completed":
@@ -77,8 +87,8 @@ def merge_audio_route():
                     chunk_file_paths[i]
                 )
             
-            # Concatenate
-            merged_audio_path = concatenate_audio_files(chunk_file_paths)
+            # Concatenate with per-segment time-stretching to match original timestamps
+            merged_audio_path = concatenate_audio_files(chunk_file_paths, target_durations)
             
             # Upload merged audio
             merged_blob_path = f"jobs/{job_id}/dubbed_audio.wav"
@@ -91,7 +101,7 @@ def merge_audio_route():
         
         merged_url = f"gs://{config.GCS_DUBBING_BUCKET}/{merged_blob_path}"
         
-        logger.info(f"Job {job_id}: Merged audio uploaded")
+        logger.info(f"Job {job_id}: Merged audio uploaded with per-segment time-stretching")
         
         job_ref.update({
             "clonedAudioPath": merged_blob_path,

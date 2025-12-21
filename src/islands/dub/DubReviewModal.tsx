@@ -4,7 +4,7 @@ import { Icon } from '@iconify/react';
 import { db } from '@/lib/firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 import type { DubbingJob } from '@/types/dubbing';
-import { getDubbingMedia } from '@/lib/db/indexdb';
+import { getDubbingMedia, saveDubbingResult } from '@/lib/db/indexdb';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 
 export default function DubReviewModal() {
@@ -217,14 +217,37 @@ export default function DubReviewModal() {
 
     const getFriendlyStatusMessage = (job: DubbingJob) => {
         const step = job.step || '';
+        const status = job.status;
 
-        // If explicitly cloning, give more detail
-        if (job.status === 'cloning' && job.totalChunks && job.totalChunks > 0) {
-            const current = job.completedChunks || 0;
-            const progress = Math.round((current / job.totalChunks) * 100);
-            return `Creating your custom voices... (${progress}%)`;
+        // Provide status-specific messages
+        if (status === 'transcribing') {
+            return 'Analyzing audio and detecting speakers...';
         }
 
+        if (status === 'transcribing_done') {
+            return 'Transcription complete! Setting up...';
+        }
+
+        // If explicitly cloning, give more detail
+        if (status === 'cloning' && job.totalChunks && job.totalChunks > 0) {
+            const current = job.completedChunks || 0;
+            const progress = Math.round((current / job.totalChunks) * 100);
+            return `Cloning voices with AI... (${current}/${job.totalChunks} segments)`;
+        }
+
+        if (status === 'cloning') {
+            return 'Creating your custom AI voices...';
+        }
+
+        if (status === 'translating') {
+            return 'Translating script to target language...';
+        }
+
+        if (status === 'merging') {
+            return 'Merging audio and video... Almost done!';
+        }
+
+        // Fallback to step-based messages
         if (step.includes('Cloning voices')) {
             return 'Creating your custom voices...';
         }
@@ -237,7 +260,7 @@ export default function DubReviewModal() {
             return 'Finalizing your video...';
         }
 
-        return step || 'Processing...';
+        return step || 'Processing your dubbing job...';
     };
 
     const getFriendlyErrorMessage = (error: string) => {
@@ -363,7 +386,8 @@ export default function DubReviewModal() {
                                             key={currentMediaUrl} // Force reload when switching
                                             controls
                                             src={currentMediaUrl || undefined}
-                                            className="media-player"
+                                            className="media-player video-player"
+                                            style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }}
                                         />
                                     ) : (
                                         <AudioPlayer
@@ -380,15 +404,21 @@ export default function DubReviewModal() {
                             {/* Action Buttons */}
                             <div className="action-buttons">
                                 <button
-                                    className="btn btn-secondary"
+                                    className="btn-secondary btn-full"
                                     onClick={handleDownloadAndDelete}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-xs)', padding: 'var(--space-s)', borderRadius: 'var(--radius-m)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--mauve-6)', background: 'var(--mauve-2)', color: 'var(--mauve-11)' }}
+                                    onMouseOver={(e) => { e.currentTarget.style.background = 'var(--mauve-3)'; e.currentTarget.style.borderColor = 'var(--mauve-7)'; }}
+                                    onMouseOut={(e) => { e.currentTarget.style.background = 'var(--mauve-2)'; e.currentTarget.style.borderColor = 'var(--mauve-6)'; }}
                                 >
                                     <Icon icon="lucide:download" width={18} />
                                     Download & Delete
                                 </button>
                                 <button
-                                    className="btn btn-primary"
+                                    className="btn-primary btn-full"
                                     onClick={handleDownloadAndSave}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-xs)', padding: 'var(--space-s)', borderRadius: 'var(--radius-m)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', border: 'none', background: 'var(--orange-9)', color: 'white' }}
+                                    onMouseOver={(e) => e.currentTarget.style.background = 'var(--orange-10)'}
+                                    onMouseOut={(e) => e.currentTarget.style.background = 'var(--orange-9)'}
                                 >
                                     <Icon icon="lucide:download" width={18} />
                                     Download & Save
@@ -451,14 +481,21 @@ export default function DubReviewModal() {
                     border-radius: var(--radius-m);
                     padding: var(--space-s);
                     min-height: 200px;
+                    max-height: 450px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    overflow: hidden;
                 }
 
                 .media-player {
                     width: 100%;
                     border-radius: var(--radius-m);
+                }
+
+                .video-player {
+                    max-height: 100%;
+                    object-fit: contain;
                 }
 
                

@@ -15,6 +15,7 @@ interface MediaListProps {
     mainCharacter: any;
     allCharacters: any[];
     userId: string;
+    isPro?: boolean; // NEW: User's pro status for empty state messaging
 }
 
 type MediaItem = {
@@ -29,7 +30,8 @@ export default function MediaList({
     localOnlyIds,
     mainCharacter,
     allCharacters,
-    userId
+    userId,
+    isPro
 }: MediaListProps) {
     const [availableLocalVoices, setAvailableLocalVoices] = useState<any[]>([]);
     const [dubbingJobs, setDubbingJobs] = useState<DubbingJob[]>([]);
@@ -281,7 +283,74 @@ export default function MediaList({
     }
 
     if (allMediaItems.length === 0) {
-        return <div className="no-media"><p>No media yet.</p></div>;
+        // Use isPro from props and saveAcrossBrowsers from character
+        const userIsPro = isPro || false;
+        const saveAcrossBrowsers = mainCharacter?.saveAcrossBrowsers === true;
+
+        return (
+            <div className="no-media">
+                <div className="empty-state-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                        <circle cx="9" cy="16" r="1" fill="currentColor" />
+                        <circle cx="15" cy="16" r="1" fill="currentColor" />
+                    </svg>
+                </div>
+                <h3>No media found on this device</h3>
+                {!userIsPro ? (
+                    <p className="empty-state-description">
+                        Your media is stored locally on each device. If you created voices or dubs on another device (like your Mac or iPhone), they won't appear here.
+                        <br /><br />
+                        <strong>Want to access your media everywhere?</strong> Upgrade to <a href="/pricing" className="pro-link">Fennai Pro</a> to save your voices and dubs across all your devices!
+                    </p>
+                ) : !saveAcrossBrowsers ? (
+                    <p className="empty-state-description">
+                        Your media is stored locally on each device. If you created voices or dubs on another device, they won't appear here.
+                        <br /><br />
+                        <strong>You're a Pro user!</strong> Enable "Save across browsers" when creating or editing this character to sync media across all your devices.
+                    </p>
+                ) : (
+                    <p className="empty-state-description">
+                        No voices or dubbed videos yet for this character. Create some media to get started!
+                    </p>
+                )}
+                <style>{`
+                    .no-media { 
+                        padding: 3rem 2rem; 
+                        text-align: center; 
+                        color: var(--mauve-11);
+                        max-width: 600px;
+                        margin: 2rem auto;
+                    }
+                    .empty-state-icon {
+                        color: var(--mauve-8);
+                        margin-bottom: 1.5rem;
+                        display: flex;
+                        justify-content: center;
+                    }
+                    .no-media h3 {
+                        font-size: var(--step-0);
+                        font-weight: 600;
+                        color: var(--mauve-12);
+                        margin-bottom: 1rem;
+                    }
+                    .empty-state-description {
+                        font-size: var(--step--1);
+                        line-height: 1.6;
+                        color: var(--mauve-11);
+                    }
+                    .pro-link {
+                        color: var(--orange-10);
+                        font-weight: 600;
+                        text-decoration: underline;
+                        transition: color 0.2s;
+                    }
+                    .pro-link:hover {
+                        color: var(--orange-11);
+                    }
+                `}</style>
+            </div>
+        );
     }
 
     return (

@@ -325,12 +325,13 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
 
                             <div className="voice-mapping-list">
                                 {derivedSpeakers.length === 0 && (
-                                    <div className="empty-state">
+                                    <div className="empty-state" style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--mauve-11)' }}>
+                                        <Icon icon="lucide:alert-circle" width={40} style={{ marginBottom: 'var(--space-s)', color: 'var(--mauve-9)' }} />
                                         <p>No speakers detected in the audio.</p>
                                     </div>
                                 )}
                                 {derivedSpeakers.map((speaker, idx) => (
-                                    <div key={speaker.id} className="voice-card">
+                                    <div key={speaker.id} className="voice-card" style={{ border: '1px solid var(--mauve-6)', borderRadius: 'var(--radius-m)', overflow: 'hidden', background: 'var(--mauve-1)' }}>
                                         <div className="voice-card-header">
                                             <div className="speaker-meta">
                                                 <div className="speaker-avatar-placeholder">S{idx + 1}</div>

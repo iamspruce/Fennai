@@ -82,8 +82,8 @@ const userTier = user.isPro ? "pro" : "free";
   <div class="page-modal">
     <CharacterHeader
       character={character}
-      voiceCount={character.voiceCount}
-      dubbedCount={character.dubbedVideoCount}
+      voiceCount={character.voiceCount || 0}
+      dubbedCount={character.dubbedVideoCount || 0}
     />
 
     <main class="character-main">
@@ -94,6 +94,7 @@ const userTier = user.isPro ? "pro" : "free";
         mainCharacter={character}
         allCharacters={allCharacters}
         userId={user.uid}
+        isPro={user.isPro}
       />
 
       <Pagination

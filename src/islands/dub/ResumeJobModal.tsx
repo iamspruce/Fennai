@@ -29,28 +29,37 @@ export default function ResumeJobModal() {
     const handleContinue = () => {
         if (!jobData) return;
 
-        // Depending on the job type, open the appropriate modal
-        if (jobData.type === 'dubbing') {
-            // If the job is already in a processing state beyond transcription, go straight to review
-            const processingStatuses = ['cloning', 'translating', 'merging', 'completed'];
-            if (processingStatuses.includes(jobData.status || '')) {
-                window.dispatchEvent(new CustomEvent('open-dub-review', {
-                    detail: { jobId: jobData.jobId }
-                }));
-            } else {
-                // Otherwise go to settings (which handles transcribing_done etc.)
-                window.dispatchEvent(new CustomEvent('open-dub-settings', {
+        console.log('[ResumeJobModal] Continuing job:', jobData);
+
+        // Close this modal first to prevent conflicts
+        setIsOpen(false);
+
+        // Small delay to ensure this modal is closed before opening another
+        setTimeout(() => {
+            // Depending on the job type, open the appropriate modal
+            if (jobData.type === 'dubbing') {
+                // If the job is already in a processing state beyond transcription, go straight to review
+                const processingStatuses = ['cloning', 'translating', 'merging', 'completed'];
+                if (processingStatuses.includes(jobData.status || '')) {
+                    console.log('[ResumeJobModal] Opening DubReviewModal for processing job');
+                    window.dispatchEvent(new CustomEvent('open-dub-review', {
+                        detail: { jobId: jobData.jobId }
+                    }));
+                } else {
+                    // Otherwise go to settings (which handles transcribing_done etc.)
+                    console.log('[ResumeJobModal] Opening DubSettingsModal for configuration');
+                    window.dispatchEvent(new CustomEvent('open-dub-settings', {
+                        detail: { jobId: jobData.jobId }
+                    }));
+                }
+            } else if (jobData.type === 'cloning') {
+                // For voice cloning, we might have a different modal
+                console.log('[ResumeJobModal] Opening cloning modal');
+                window.dispatchEvent(new CustomEvent('open-cloning-modal', {
                     detail: { jobId: jobData.jobId }
                 }));
             }
-        } else if (jobData.type === 'cloning') {
-            // For voice cloning, we might have a different modal
-            window.dispatchEvent(new CustomEvent('open-cloning-modal', {
-                detail: { jobId: jobData.jobId }
-            }));
-        }
-
-        setIsOpen(false);
+        }, 100); // 100ms delay to prevent modal conflicts
     };
 
     const handleStopAndDelete = async () => {
@@ -108,26 +117,34 @@ export default function ResumeJobModal() {
                             />
                         </div>
 
-                        <h4>{isFailed ? "Generation Failed" : `Found an active ${jobData.type} job`}</h4>
+                        <h4>{isFailed ? "Generation Failed" : `Resume ${jobData.type === 'dubbing' ? 'Dubbing' : 'Voice Cloning'}`}</h4>
                         <p>
                             {isFailed
-                                ? `The ${jobData.type} job for "${jobData.fileName || 'Untitled'}" encountered an error and could not complete.`
-                                : `It looks like you have a ${jobData.type} job for "${jobData.fileName || 'Untitled'}" still in progress. Would you like to continue where you left off?`
+                                ? `Your ${jobData.type === 'dubbing' ? 'dubbing' : 'voice cloning'} job for "${jobData.fileName || 'Untitled'}" encountered an error. You can retry or delete it.`
+                                : jobData.status === 'transcribing'
+                                    ? `Your dubbing job for "${jobData.fileName || 'Untitled'}" is being analyzed. Continue to see progress.`
+                                    : jobData.status === 'cloning'
+                                        ? `Your dubbing job for "${jobData.fileName || 'Untitled'}" is cloning voices. Continue to monitor progress.`
+                                        : `You have an active ${jobData.type === 'dubbing' ? 'dubbing' : 'voice cloning'} job for "${jobData.fileName || 'Untitled'}". Continue where you left off?`
                             }
                         </p>
 
                         <div className="resume-actions">
                             <button
-                                className="btn btn-primary btn-full"
+                                className="btn-primary btn-full"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-xs)', padding: 'var(--space-s)', borderRadius: 'var(--radius-m)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', border: 'none', background: 'var(--orange-9)', color: 'white' }}
                                 onClick={handleContinue}
                                 disabled={isProcessing}
+                                onMouseOver={(e) => !isProcessing && (e.currentTarget.style.background = 'var(--orange-10)')}
+                                onMouseOut={(e) => (e.currentTarget.style.background = 'var(--orange-9)')}
                             >
                                 <Icon icon={isFailed ? "lucide:rotate-ccw" : "lucide:play"} width={18} />
                                 {isFailed ? 'Retry Job' : `Continue ${jobData.type === 'dubbing' ? 'Dubbing' : 'Cloning'}`}
                             </button>
 
                             <button
-                                className="btn btn-outline btn-full btn-danger-hover"
+                                className="btn-outline btn-full btn-danger-hover"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-xs)', padding: 'var(--space-s)', borderRadius: 'var(--radius-m)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', background: 'var(--mauve-1)', border: '1px solid var(--mauve-6)', color: 'var(--mauve-11)' }}
                                 onClick={handleStopAndDelete}
                                 disabled={isProcessing}
                             >

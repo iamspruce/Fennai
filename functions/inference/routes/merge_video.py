@@ -60,7 +60,9 @@ def merge_video_route():
             download_to_file(config.GCS_DUBBING_BUCKET, original_media_path, video_path)
             download_to_file(config.GCS_DUBBING_BUCKET, cloned_audio_path, audio_path)
             
-            # FFmpeg command
+            logger.info(f"Job {job_id}: Running FFmpeg to merge audio and video")
+            
+            # Simple FFmpeg command - audio is already time-stretched to match video in merge_audio
             cmd = [
                 "ffmpeg",
                 "-i", video_path,
@@ -72,8 +74,6 @@ def merge_video_route():
                 "-y",
                 output_path
             ]
-            
-            logger.info(f"Job {job_id}: Running FFmpeg")
             
             result = subprocess.run(
                 cmd,

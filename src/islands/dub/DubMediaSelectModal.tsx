@@ -369,14 +369,20 @@ export default function DubMediaSelectModal({
                                 <Icon icon="lucide:loader-2" width={48} className="spin primary-color" />
                             </div>
                             <h4>Analyzing your media...</h4>
-                            <p>We're transcribing and identifying speakers. This usually takes a minute.</p>
+                            <p>We're transcribing the audio and identifying speakers. This usually takes 30-60 seconds.</p>
 
                             {jobStatus?.progress !== undefined && (
                                 <div className="processing-progress">
                                     <div className="progress-bar">
                                         <div className="progress-fill" style={{ width: `${jobStatus.progress}%` }} />
                                     </div>
-                                    <span className="progress-text">{jobStatus.step || 'Processing...'} ({jobStatus.progress}%)</span>
+                                    <span className="progress-text">
+                                        {jobStatus.step === 'Transcribing audio'
+                                            ? 'Converting speech to text...'
+                                            : jobStatus.step === 'Detecting speakers'
+                                                ? 'Identifying individual speakers...'
+                                                : jobStatus.step || 'Processing...'} ({jobStatus.progress}%)
+                                    </span>
                                 </div>
                             )}
 

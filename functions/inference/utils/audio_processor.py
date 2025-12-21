@@ -63,27 +63,132 @@ def split_audio_by_timestamps(audio_path: str, segments: List[dict]) -> List[str
     return chunk_paths
 
 
-def concatenate_audio_files(file_paths: List[str]) -> str:
+def time_stretch_segment(audio_path: str, target_duration: float) -> str:
     """
-    Concatenate multiple audio files using pydub
-    Returns path to merged audio file
+    Time-stretch audio file to match target duration using FFmpeg atempo filter.
+    
+    Args:
+        audio_path: Path to input audio file
+        target_duration: Target duration in seconds
+        
+    Returns:
+        Path to time-stretched audio file
+    """
+    # Get current duration
+    audio = AudioSegment.from_file(audio_path)
+    current_duration = len(audio) / 1000.0  # Convert ms to seconds
+    
+    # Calculate speed factor
+    speed_factor = current_duration / target_duration
+    
+    # If durations are very close (within 50ms), skip stretching
+    if abs(current_duration - target_duration) < 0.05:
+        logger.info(f"Duration difference negligible ({abs(current_duration - target_duration):.3f}s), skipping stretch")
+        return audio_path
+    
+    logger.info(f"Time-stretching segment: {current_duration:.2f}s → {target_duration:.2f}s (factor: {speed_factor:.3f})")
+    
+    output_path = tempfile.mktemp(suffix="_stretched.wav")
+    
+    # Build atempo filter chain (FFmpeg limits each atempo to 0.5-2.0 range)
+    atempo_filters = []
+    remaining_factor = speed_factor
+    
+    while remaining_factor > 2.0:
+        atempo_filters.append("atempo=2.0")
+        remaining_factor /= 2.0
+    
+    while remaining_factor < 0.5:
+        atempo_filters.append("atempo=0.5")
+        remaining_factor /= 0.5
+    
+    if abs(remaining_factor - 1.0) > 0.01:  # Only add if not essentially 1.0
+        atempo_filters.append(f"atempo={remaining_factor}")
+    
+    if not atempo_filters:
+        return audio_path
+    
+    filter_chain = ",".join(atempo_filters)
+    
+    cmd = [
+        "ffmpeg",
+        "-i", audio_path,
+        "-filter:a", filter_chain,
+        "-y",
+        output_path
+    ]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=60,
+            check=True
+        )
+        logger.info(f"Successfully time-stretched segment")
+        return output_path
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg time-stretch failed: {e.stderr.decode('utf-8')}")
+        # Return original if stretching fails
+        return audio_path
+
+
+def concatenate_audio_files(file_paths: List[str], target_durations: List[float] = None) -> str:
+    """
+    Concatenate multiple audio files using pydub with optional per-segment time-stretching.
+    
+    Args:
+        file_paths: List of paths to audio files
+        target_durations: Optional list of target durations (in seconds) for each segment.
+                         If provided, each segment will be time-stretched to match before concatenation.
+    
+    Returns:
+        Path to merged audio file
     """
     if not file_paths:
         raise ValueError("No audio files to concatenate")
     
-    # Load first file
-    merged = AudioSegment.from_wav(file_paths[0])
+    # Validate target_durations if provided
+    if target_durations and len(target_durations) != len(file_paths):
+        raise ValueError(f"Target durations count ({len(target_durations)}) must match file paths count ({len(file_paths)})")
     
-    # Append remaining files
-    for path in file_paths[1:]:
-        audio = AudioSegment.from_wav(path)
-        merged += audio
+    # Process each file (with optional time-stretching)
+    segments = []
+    temp_files_to_cleanup = []
+    
+    for i, path in enumerate(file_paths):
+        current_path = path
+        
+        # Time-stretch if target duration is specified
+        if target_durations and target_durations[i] is not None:
+            stretched_path = time_stretch_segment(path, target_durations[i])
+            if stretched_path != path:  # New file was created
+                temp_files_to_cleanup.append(stretched_path)
+                current_path = stretched_path
+        
+        # Load the audio segment
+        audio = AudioSegment.from_wav(current_path)
+        segments.append(audio)
+    
+    # Concatenate all segments
+    merged = segments[0]
+    for segment in segments[1:]:
+        merged += segment
     
     # Export merged audio
     output_path = tempfile.mktemp(suffix="_merged.wav")
     merged.export(output_path, format="wav")
     
-    logger.info(f"Concatenated {len(file_paths)} audio files")
+    # Cleanup temporary stretched files
+    for temp_file in temp_files_to_cleanup:
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temp file {temp_file}: {e}")
+    
+    logger.info(f"Concatenated {len(file_paths)} audio files (time-stretched: {len(temp_files_to_cleanup)})")
     return output_path
 
 
