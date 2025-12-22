@@ -6,7 +6,7 @@ import CharactersSection from "@/components/profile/CharactersSection.astro";
 import EmptyState from "@/components/profile/EmptyState.astro";
 import ErrorState from "@/components/profile/ErrorState.astro";
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { getCharacters } from "@/lib/firebase/firestore";
+import { getCharacters, getDubbingJobsForUser } from "@/lib/firebase/firestore";
 import { getTimeBasedGreeting } from "@/lib/utils/time";
 import { generateAvatarUrl } from "@/lib/utils/avatar";
 
@@ -16,13 +16,18 @@ if (!user) {
   return Astro.redirect("/");
 }
 
-let characters: string | any[] = [];
+let characters: any[] = [];
+let allUserDubs: any[] = [];
 let fetchError = null;
 const CHARACTER_LIMIT = 20;
 
 try {
-  const result = await getCharacters(user.uid, { limit: CHARACTER_LIMIT });
-  characters = result?.characters || [];
+  const [charResult, dubsResult] = await Promise.all([
+    getCharacters(user.uid, { limit: CHARACTER_LIMIT }),
+    getDubbingJobsForUser(user.uid),
+  ]);
+  characters = charResult?.characters || [];
+  allUserDubs = dubsResult || [];
 } catch (error) {
   console.error("Error fetching characters:", error);
   fetchError = "Failed to load your characters. Please try again.";
@@ -52,6 +57,7 @@ const userAvatarUrl =
         ) : (
           <CharactersSection
             characters={characters}
+            allUserDubs={allUserDubs}
             characterLimit={CHARACTER_LIMIT}
           />
         )

@@ -808,6 +808,32 @@ export async function updateDubbingJob(
     );
 }
 
+/**
+ * GET ALL DUBBING JOBS for a user (Admin SDK)
+ */
+export async function getDubbingJobsForUser(userId: string): Promise<any[]> {
+    return FirestoreMonitor.track(
+        'getDubbingJobsForUser',
+        async () => {
+            const snapshot = await adminDb.collection('dubbingJobs')
+                .where('uid', '==', userId)
+                .orderBy('createdAt', 'desc')
+                .get();
+
+            return snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    createdAt: data.createdAt?.toDate() || new Date(),
+                    updatedAt: data.updatedAt?.toDate() || new Date(),
+                };
+            });
+        },
+        { userId }
+    );
+}
+
 // Export the error class
 export { FirestoreError };
 /**
@@ -848,7 +874,7 @@ export async function getDubbingJobs(
             });
 
             if (options?.status) {
-                jobs = jobs.filter(j => options.status!.includes(j.status));
+                jobs = jobs.filter((j: any) => options.status!.includes(j.status));
             }
 
             return { jobs };

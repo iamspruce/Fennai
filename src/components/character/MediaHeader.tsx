@@ -128,7 +128,7 @@ export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHead
     setShowFilter(false);
   };
 
-  const visibleCount = document.querySelectorAll('.voice-card.visible').length;
+  const visibleCount = document.querySelectorAll('.voice-card.visible, .video-card.visible').length;
   const totalMedia = totalVoices + totalDubbing;
 
   return (

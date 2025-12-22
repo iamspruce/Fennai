@@ -13,6 +13,7 @@ from middleware import (
     get_retry_info,
     update_job_retry_status
 )
+from utils.audio_processor import time_stretch_segment
 from google.cloud.firestore import SERVER_TIMESTAMP, Increment
 
 logger = logging.getLogger(__name__)
@@ -60,20 +61,79 @@ def merge_video_route():
             download_to_file(config.GCS_DUBBING_BUCKET, original_media_path, video_path)
             download_to_file(config.GCS_DUBBING_BUCKET, cloned_audio_path, audio_path)
             
-            logger.info(f"Job {job_id}: Running FFmpeg to merge audio and video")
+            logger.info(f"Job {job_id}: Analyzing durations for sync")
+
+            def get_duration(path):
+                try:
+                    cmd = [
+                        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1", path
+                    ]
+                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+                    return float(result.stdout.strip())
+                except Exception as e:
+                    logger.warning(f"Failed to get duration for {path}: {e}")
+                    return 0.0
+
+            video_dur = get_duration(video_path)
+            audio_dur = get_duration(audio_path)
             
-            # Simple FFmpeg command - audio is already time-stretched to match video in merge_audio
-            cmd = [
-                "ffmpeg",
-                "-i", video_path,
-                "-i", audio_path,
-                "-c:v", "copy",
-                "-map", "0:v:0",
-                "-map", "1:a:0",
+            logger.info(f"Job {job_id}: Durations - Video: {video_dur:.2f}s, Audio: {audio_dur:.2f}s")
+            
+            cmd = ["ffmpeg", "-i", video_path, "-i", audio_path]
+            
+            # Logic: If one stream is longer, speed it up to match the shorter one.
+            # Tolerance of 0.1s
+            if video_dur > 0 and audio_dur > 0 and abs(video_dur - audio_dur) > 0.1:
+                if audio_dur > video_dur:
+                    # Audio is longer: Speed up audio to match video using Rubberband/Atempo
+                    logger.info(f"Job {job_id}: Audio is longer. Stretching audio to match video duration.")
+                    
+                    try:
+                        # Use helper to stretch audio
+                        new_audio_path = time_stretch_segment(audio_path, video_dur)
+                        
+                        # Re-initialize command with new audio source
+                        cmd = ["ffmpeg", "-i", video_path, "-i", new_audio_path]
+                        
+                        # Standard copy merge since durations now match
+                        cmd.extend([
+                            "-c:v", "copy",
+                            "-map", "0:v:0",
+                            "-map", "1:a:0"
+                        ])
+                    except Exception as e:
+                        logger.error(f"Failed to stretch audio: {e}")
+                        # Fallback to original audio (will be truncated by -shortest)
+                        cmd = ["ffmpeg", "-i", video_path, "-i", audio_path]
+                        cmd.extend(["-c:v", "copy", "-map", "0:v:0", "-map", "1:a:0"])
+                else:
+                    # Video is longer: Speed up video to match audio
+                    ratio = video_dur / audio_dur
+                    logger.info(f"Job {job_id}: Video is longer. Speeding up video by {ratio:.2f}x")
+                    
+                    # setpts=PTS/ratio speeds up video (shorter duration)
+                    filter_complex = f"[0:v]setpts=PTS/{ratio}[v]"
+                    cmd.extend([
+                        "-filter_complex", filter_complex,
+                        "-map", "[v]",
+                        "-map", "1:a:0",
+                        # Must re-encode video when changing speed
+                        "-c:v", "libx264", 
+                        "-preset", "fast",
+                        "-crf", "23" 
+                    ])
+            else:
+                 # Standard merge
+                 cmd.extend(["-c:v", "copy", "-map", "0:v:0", "-map", "1:a:0"])
+            
+            cmd.extend([
                 "-shortest",
                 "-y",
                 output_path
-            ]
+            ])
+            
+            logger.info(f"Job {job_id}: Running FFmpeg: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,

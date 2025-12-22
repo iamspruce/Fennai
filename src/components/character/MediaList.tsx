@@ -329,8 +329,8 @@ export default function MediaList({
     return (
         <div className="media-container">
             <MediaHeader
-                totalVoices={cloudVoices.length + availableLocalVoices.length}
-                totalDubbing={combinedDubbingJobs.length}
+                totalVoices={cloudVoices.length + availableLocalVoices.length + (combinedDubbingJobs.filter(j => (j as any).mediaType === 'audio').length)}
+                totalDubbing={combinedDubbingJobs.filter(j => (j as any).mediaType === 'video').length}
             />
             <div className="media-list">
                 {allMediaItems.map((item) => (

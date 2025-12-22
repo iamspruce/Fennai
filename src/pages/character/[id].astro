@@ -74,6 +74,14 @@ const localOnlyDubbingIds = allDubbingJobs
   )
   .map((j) => j.id);
 
+// NEW: Identify audio dubs to count them as voices
+const audioDubsCount = allDubbingJobs.filter(
+  (j) => j.mediaType === "audio"
+).length;
+const videoDubsCount = allDubbingJobs.filter(
+  (j) => j.mediaType === "video"
+).length;
+
 // Pagination based on total voices
 const hasMore = allVoices.length > limit;
 const voices = hasMore ? allVoices.slice(0, limit) : allVoices;
@@ -98,9 +106,9 @@ const userTier = user.isPro ? "pro" : "free";
   <div class="page-modal">
     <CharacterHeader
       character={character}
-      voiceCount={character.voiceCount || 0}
+      voiceCount={(character.voiceCount || 0) + audioDubsCount}
       syncedVoiceCount={cloudVoices.length}
-      dubbedCount={character.dubbedVideoCount || 0}
+      dubbedCount={videoDubsCount}
     />
 
     <main class="character-main">

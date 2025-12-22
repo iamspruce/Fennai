@@ -5,11 +5,12 @@ import CharacterCard from "./CharacterCard.astro";
 import Button from "@/components/ui/Button.astro";
 
 interface Props {
-    characters: any[];
-    characterLimit: number;
+  characters: any[];
+  allUserDubs?: any[];
+  characterLimit: number;
 }
 
-const { characters, characterLimit } = Astro.props;
+const { characters, allUserDubs = [], characterLimit } = Astro.props;
 const initialCharactersData = JSON.stringify(characters);
 ---
 
@@ -17,72 +18,78 @@ const initialCharactersData = JSON.stringify(characters);
 <SearchBar />
 
 <div
-    class="characters-grid"
-    id="characters-grid"
-    data-initial-characters={initialCharactersData}
+  class="characters-grid"
+  id="characters-grid"
+  data-initial-characters={initialCharactersData}
 >
-    {
-        characters.map((character, index) => (
-            <CharacterCard character={character} index={index} />
-        ))
-    }
+  {
+    characters.map((character, index) => (
+      <CharacterCard
+        character={character}
+        index={index}
+        characterDubs={allUserDubs.filter(
+          (d) => d.characterId === character.id
+        )}
+      />
+    ))
+  }
 </div>
 
 {
-    characters.length >= characterLimit && (
-        <div class="load-more">
-            <Button variant="secondary" id="load-more-btn" size="sm">
-                Load More
-            </Button>
-        </div>
-    )
+  characters.length >= characterLimit && (
+    <div class="load-more">
+      <Button variant="secondary" id="load-more-btn" size="sm">
+        Load More
+      </Button>
+    </div>
+  )
 }
 
 <script>
-    import { animate, stagger } from "motion";
-    const motionAnimate = animate as any;
-    import { setupSearch } from "@/lib/profile/search";
-    import { setupEditMode } from "@/lib/profile/editMode";
-    import { setupLoadMore } from "@/lib/profile/loadMore";
+  import { animate, stagger } from "motion";
+  const motionAnimate = animate as any;
+  import { setupSearch } from "@/lib/profile/search";
+  import { setupEditMode } from "@/lib/profile/editMode";
+  import { setupLoadMore } from "@/lib/profile/loadMore";
 
-    document.addEventListener("DOMContentLoaded", () => {
-        const cards = document.querySelectorAll(".character-card");
+  document.addEventListener("DOMContentLoaded", () => {
+    const cards = document.querySelectorAll(".character-card");
 
-        if (cards.length > 0) {
-            motionAnimate(
-                cards,
-                {
-                    opacity: [0, 1],
-                    y: [30, 0],
-                },
-                {
-                    duration: 0.5,
-                    delay: stagger(0.08),
-                    easing: "ease-out-cubic",
-                },
-            );
+    if (cards.length > 0) {
+      motionAnimate(
+        cards,
+        {
+          opacity: [0, 1],
+          y: [30, 0],
+        },
+        {
+          duration: 0.5,
+          delay: stagger(0.08),
+          easing: "ease-out-cubic",
         }
+      );
+    }
 
-        setupSearch();
-        setupEditMode();
-        setupLoadMore();
-    });
+    setupSearch();
+    setupEditMode();
+    setupLoadMore();
+  });
 </script>
 <style>
+  .characters-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-m);
+    margin-bottom: var(--space-xl);
+  }
+
+  .load-more {
+    text-align: center;
+  }
+
+  @media (max-width: 768px) {
     .characters-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: var(--space-m);
-        margin-bottom: var(--space-xl);
+      grid-template-columns: 1fr;
     }
-
-    .load-more {
-        text-align: center;
-    }
-
-    @media (max-width: 768px) {
-        .characters-grid {
-            grid-template-columns: 1fr;
-        }
-    }
+  }
 </style>

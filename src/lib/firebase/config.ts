@@ -9,6 +9,7 @@ import {
     persistentMultipleTabManager
 } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, type FirebaseStorage } from 'firebase/storage';
+import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
 const firebaseConfig = {
     apiKey: import.meta.env.PUBLIC_FIREBASE_API_KEY || 'demo-api-key',
@@ -17,6 +18,7 @@ const firebaseConfig = {
     storageBucket: import.meta.env.PUBLIC_FIREBASE_STORAGE_BUCKET || 'demo-project.appspot.com',
     messagingSenderId: import.meta.env.PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '123456789',
     appId: import.meta.env.PUBLIC_FIREBASE_APP_ID || '1:123456789:web:abcdef',
+    measurementId: import.meta.env.PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 const USE_EMULATORS = import.meta.env.PUBLIC_USE_FIREBASE_EMULATORS === 'true';
@@ -25,6 +27,7 @@ let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 let storage: FirebaseStorage;
+let analytics: Analytics | undefined;
 
 // Track if emulators are already connected
 let emulatorsConnected = false;
@@ -128,4 +131,13 @@ if (typeof window !== 'undefined') {
     });
 }
 
-export { app, auth, db, storage };
+// Initialize Analytics (only in browser)
+if (typeof window !== 'undefined') {
+    isSupported().then((supported) => {
+        if (supported && firebaseConfig.measurementId) {
+            analytics = getAnalytics(app);
+        }
+    });
+}
+
+export { app, auth, db, storage, analytics };
