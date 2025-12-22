@@ -6,6 +6,7 @@ import {
   getCharacter,
   getVoices,
   getCharacters,
+  getDubbingJobs,
 } from "@/lib/firebase/firestore";
 
 // UI Components
@@ -36,14 +37,19 @@ const limit = 20;
 
 // OPTIMIZATION: Run all queries in parallel
 const startTime = Date.now();
-const [character, { characters: allCharacters }, { voices: allVoices }] =
-  await Promise.all([
-    getCharacter(id, user.uid),
-    getCharacters(user.uid, { limit: 100 }),
-    getVoices(id, user.uid, {
-      limit: limit + 1, // Fetch limit + 1 to check if there are more
-    }),
-  ]);
+const [
+  character,
+  { characters: allCharacters },
+  { voices: allVoices },
+  { jobs: allDubbingJobs },
+] = await Promise.all([
+  getCharacter(id, user.uid),
+  getCharacters(user.uid, { limit: 100 }),
+  getVoices(id, user.uid, {
+    limit: limit + 1, // Fetch limit + 1 to check if there are more
+  }),
+  getDubbingJobs(id, user.uid, { limit: 100 }),
+]);
 
 console.log(
   `[Performance] Character page loaded in ${Date.now() - startTime}ms`
@@ -57,6 +63,16 @@ const localOnlyVoices = allVoices.filter((v) => v.storageType === "local-only");
 
 // Extract local-only IDs for client-side checking
 const localOnlyIds = localOnlyVoices.map((v) => v.id);
+
+// NEW: Handle dubbing jobs similar to voices
+const cloudDubbingJobs = allDubbingJobs.filter(
+  (j) => j.saveAcrossBrowsers === true || j.storageType === "cloud"
+);
+const localOnlyDubbingIds = allDubbingJobs
+  .filter(
+    (j) => j.saveAcrossBrowsers === false || j.storageType === "local-only"
+  )
+  .map((j) => j.id);
 
 // Pagination based on total voices
 const hasMore = allVoices.length > limit;
@@ -92,6 +108,8 @@ const userTier = user.isPro ? "pro" : "free";
         client:only="react"
         cloudVoices={cloudVoices}
         localOnlyIds={localOnlyIds}
+        cloudDubbingJobs={cloudDubbingJobs}
+        localOnlyDubbingIds={localOnlyDubbingIds}
         mainCharacter={character}
         allCharacters={allCharacters}
         userId={user.uid}

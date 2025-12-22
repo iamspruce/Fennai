@@ -810,3 +810,49 @@ export async function updateDubbingJob(
 
 // Export the error class
 export { FirestoreError };
+/**
+ * GET DUBBING JOBS (Admin SDK - runs server-side)
+ */
+export async function getDubbingJobs(
+    characterId: string,
+    userId: string,
+    options?: {
+        limit?: number;
+        status?: string[];
+    }
+): Promise<{ jobs: any[] }> {
+    return FirestoreMonitor.track(
+        'getDubbingJobs',
+        async () => {
+            let query = adminDb.collection('dubbingJobs')
+                .where('uid', '==', userId)
+                .where('characterId', '==', characterId);
+
+            // Always add orderBy after where clauses
+            query = query.orderBy('createdAt', 'desc');
+
+            if (options?.limit) {
+                query = query.limit(options.limit);
+            }
+
+            const snapshot = await query.get();
+
+            let jobs = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    createdAt: data.createdAt?.toDate() || new Date(),
+                    updatedAt: data.updatedAt?.toDate() || new Date(),
+                };
+            });
+
+            if (options?.status) {
+                jobs = jobs.filter(j => options.status!.includes(j.status));
+            }
+
+            return { jobs };
+        },
+        { characterId, userId, limit: options?.limit }
+    );
+}
