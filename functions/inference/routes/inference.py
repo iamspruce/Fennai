@@ -17,7 +17,7 @@ from google.cloud import tasks_v2
 import soundfile as sf
 from flask import request, jsonify, g
 from firebase_admin import firestore, storage
-from google.cloud.firestore import SERVER_TIMESTAMP
+from google.cloud.firestore import SERVER_TIMESTAMP, Increment
 from pydantic import ValidationError
 
 from config import config
@@ -64,6 +64,26 @@ def validate_text_length(text: str) -> None:
     
     if len(text) > MAX_TEXT_LENGTH:
         raise ValueError(f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters")
+
+
+def increment_voice_counts(uid: str, character_id: Optional[str]):
+    """Increment voice counts for user and character."""
+    try:
+        # Increment for user
+        db.collection("users").document(uid).update({
+            "voiceCount": Increment(1),
+            "updatedAt": SERVER_TIMESTAMP
+        })
+        
+        # Increment for character
+        if character_id:
+            db.collection("characters").document(character_id).update({
+                "voiceCount": Increment(1),
+                "updatedAt": SERVER_TIMESTAMP
+            })
+    except Exception as e:
+        logger.warning(f"Failed to increment voice counts: {e}")
+
 
 
 def download_voice_sample_from_firebase(character_id: str) -> bytes:
@@ -486,7 +506,8 @@ def inference_route(processor, model):
                 audio_duration,
                 reserved_cost,
                 is_multi_character,
-                job_type
+                job_type,
+                job_data.get("characterId")
             )
         else:
             return _handle_single_chunk_completion(
@@ -498,7 +519,8 @@ def inference_route(processor, model):
                 audio_duration,
                 total_time,
                 reserved_cost,
-                is_multi_character
+                is_multi_character,
+                job_data.get("characterId")
             )
     
     except torch.cuda.OutOfMemoryError:
@@ -554,7 +576,8 @@ def _handle_multi_chunk_completion(
     audio_duration: float,
     reserved_cost: int,
     is_multi_character: bool,
-    job_type: str = "voice"
+    job_type: str = "voice",
+    character_id: Optional[str] = None
 ):
     """Handle completion of multi-chunk job."""
     job_doc = job_ref.get()
@@ -704,6 +727,19 @@ def _handle_multi_chunk_completion(
             })
             release_credits(uid, job_id, reserved_cost, collection_name=f"{job_type}Jobs")
             return jsonify({"error": "Failed to merge chunks"}), 500
+            
+        # Increment counts if applicable (Audio Dubs or Voice Jobs)
+        # Video dubs are handled in merge_video.py
+        should_increment = False
+        if job_type == "voice":
+            should_increment = True
+        elif job_type == "dubbing":
+            media_type = job_data.get("mediaType", "audio")
+            if media_type == "audio":
+                should_increment = True
+        
+        if should_increment:
+            increment_voice_counts(uid, character_id)
     
     return jsonify({
         "status": "chunk_completed",
@@ -722,7 +758,9 @@ def _handle_single_chunk_completion(
     audio_duration: float,
     total_time: float,
     reserved_cost: int,
-    is_multi_character: bool
+
+    is_multi_character: bool,
+    character_id: Optional[str] = None
 ):
     """Handle single chunk completion."""
     actual_cost = calculate_cost_from_duration(audio_duration, is_multi_character)
@@ -744,6 +782,12 @@ def _handle_single_chunk_completion(
     })
     
     logger.info(f"🎉 Job {job_id}: Completed ({audio_duration:.2f}s, {actual_cost} credits)")
+    
+    # Single chunks are always voice jobs (currently dubbing uses multi-chunk)
+    # But if dubbing ever uses single chunk, we should check job_type/media_type conceptually.
+    # However, single chunk path here assumes standard voice generation usually.
+    # We'll just increment voice counts.
+    increment_voice_counts(uid, character_id)
     
     return jsonify({
         "status": "completed",

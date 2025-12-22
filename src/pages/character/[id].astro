@@ -106,9 +106,9 @@ const userTier = user.isPro ? "pro" : "free";
   <div class="page-modal">
     <CharacterHeader
       character={character}
-      voiceCount={(character.voiceCount || 0) + audioDubsCount}
+      voiceCount={character.voiceCount || 0}
       syncedVoiceCount={cloudVoices.length}
-      dubbedCount={videoDubsCount}
+      dubbedCount={character.dubbedVideoCount || 0}
     />
 
     <main class="character-main">

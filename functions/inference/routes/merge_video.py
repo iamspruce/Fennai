@@ -170,10 +170,13 @@ def merge_video_route():
             "completedAt": SERVER_TIMESTAMP
         })
 
-        # Increment dubbedVideoCount for user
+        # Increment dubbedVideoCount for user and character
         try:
+            batch = db.batch()
+            
+            # User increment
             user_ref = db.collection("users").document(uid)
-            user_ref.update({
+            batch.update(user_ref, {
                 "dubbedVideoCount": Increment(1),
                 "updatedAt": SERVER_TIMESTAMP
             })
@@ -182,10 +185,16 @@ def merge_video_route():
             char_id = job_data.get("characterId")
             if char_id:
                 char_ref = db.collection("characters").document(char_id)
-                char_ref.update({
+                batch.update(char_ref, {
                     "dubbedVideoCount": Increment(1),
                     "updatedAt": SERVER_TIMESTAMP
                 })
+            else:
+                logger.warning(f"Job {job_id}: No characterId found for dubbing count increment")
+                
+            batch.commit()
+            logger.info(f"Job {job_id}: Incremented dubbedVideoCount for user {uid}" + (f" and character {char_id}" if char_id else ""))
+            
         except Exception as count_err:
             logger.warning(f"Failed to increment dubbed counts: {count_err}")
         

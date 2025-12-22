@@ -5,21 +5,9 @@ import { formatDate } from "@/lib/utils/time";
 interface Props {
   character: any;
   index: number;
-  characterDubs?: any[];
 }
 
-const { character, index, characterDubs = [] } = Astro.props;
-
-// Adjust counts based on dub types
-const audioDubsCount = characterDubs.filter(
-  (d) => d.mediaType === "audio"
-).length;
-const videoDubsCount = characterDubs.filter(
-  (d) => d.mediaType === "video"
-).length;
-
-const adjustedVoiceCount = (character.voiceCount || 0) + audioDubsCount;
-const adjustedDubCount = videoDubsCount;
+const { character, index } = Astro.props;
 ---
 
 <a
@@ -40,11 +28,10 @@ const adjustedDubCount = videoDubsCount;
     <div class="character-info">
       <h3 class="character-name">{character.name}</h3>
       <p class="character-meta">
-        Created {formatDate(character.createdAt)} • {adjustedVoiceCount}
-        {adjustedVoiceCount === 1 ? "voice" : "voices"}
+        Created {formatDate(character.createdAt)} • {character.voiceCount}
+        {character.voiceCount === 1 ? "voice" : "voices"}
         {
-          adjustedDubCount > 0 &&
-            ` • ${adjustedDubCount} ${adjustedDubCount === 1 ? "dub" : "dubs"}`
+          ` • ${character.dubbedVideoCount} ${character.dubbedVideoCount === 1 ? "dubbed video" : "dubbed videos"}`
         }
       </p>
     </div>

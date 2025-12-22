@@ -6,11 +6,10 @@ import Button from "@/components/ui/Button.astro";
 
 interface Props {
   characters: any[];
-  allUserDubs?: any[];
   characterLimit: number;
 }
 
-const { characters, allUserDubs = [], characterLimit } = Astro.props;
+const { characters, characterLimit } = Astro.props;
 const initialCharactersData = JSON.stringify(characters);
 ---
 
@@ -24,13 +23,7 @@ const initialCharactersData = JSON.stringify(characters);
 >
   {
     characters.map((character, index) => (
-      <CharacterCard
-        character={character}
-        index={index}
-        characterDubs={allUserDubs.filter(
-          (d) => d.characterId === character.id
-        )}
-      />
+      <CharacterCard character={character} index={index} />
     ))
   }
 </div>
