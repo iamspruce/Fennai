@@ -557,15 +557,7 @@ const bannerStyles = `
         padding: 16px;
         animation: slideIn 0.3s ease-out;
         align-items: start;
-        margin-bottom: 24px;
-        background: linear-gradient(135deg, var(--mauve-3) 0%, var(--mauve-4) 100%);
-        border-radius: var(--radius-l);
-        border: 1px solid var(--mauve-5);
-    }
 
-    .migration-banner.success {
-        background: linear-gradient(135deg, var(--green-3) 0%, var(--green-4) 100%);
-        border-color: var(--green-6);
     }
 
     .banner-icon {
@@ -597,12 +589,12 @@ const bannerStyles = `
         font-size: 1rem;
         font-weight: 600;
         margin: 0 0 4px 0;
-        color: var(--mauve-12);
+        color: var(--mauve-1);
     }
 
     .banner-content p {
         font-size: 0.9rem;
-        color: var(--mauve-11);
+        color: var(--mauve-3);
         margin: 0;
         line-height: 1.5;
     }
