@@ -2,7 +2,7 @@
 import os
 import subprocess
 import tempfile
-from typing import List
+from typing import List, Optional
 from pydub import AudioSegment
 import logging
 
@@ -65,7 +65,10 @@ def split_audio_by_timestamps(audio_path: str, segments: List[dict]) -> List[str
 
 def time_stretch_segment(audio_path: str, target_duration: float) -> str:
     """
-    Time-stretch audio file to match target duration using FFmpeg atempo filter.
+    Time-stretch audio file to match target duration using Rubber Band library.
+    
+    Rubber Band is a professional-grade pitch-preserving time stretching library
+    that maintains audio quality much better than FFmpeg's atempo filter.
     
     Args:
         audio_path: Path to input audio file
@@ -74,19 +77,58 @@ def time_stretch_segment(audio_path: str, target_duration: float) -> str:
     Returns:
         Path to time-stretched audio file
     """
-    # Get current duration
-    audio = AudioSegment.from_file(audio_path)
-    current_duration = len(audio) / 1000.0  # Convert ms to seconds
+    import soundfile as sf
+    import numpy as np
     
-    # Calculate speed factor
-    speed_factor = current_duration / target_duration
+    # Load audio
+    audio_data, sample_rate = sf.read(audio_path)
+    current_duration = len(audio_data) / sample_rate
     
-    # If durations are very close (within 50ms), skip stretching
-    if abs(current_duration - target_duration) < 0.05:
+    # If durations are very close (within 100ms), skip stretching
+    if abs(current_duration - target_duration) < 0.1:
         logger.info(f"Duration difference negligible ({abs(current_duration - target_duration):.3f}s), skipping stretch")
         return audio_path
     
-    logger.info(f"Time-stretching segment: {current_duration:.2f}s → {target_duration:.2f}s (factor: {speed_factor:.3f})")
+    # Calculate time stretch ratio (how much to stretch/compress)
+    # ratio > 1 = slower (stretch), ratio < 1 = faster (compress)
+    time_stretch_ratio = target_duration / current_duration
+    
+    logger.info(f"Time-stretching segment: {current_duration:.2f}s → {target_duration:.2f}s (ratio: {time_stretch_ratio:.3f})")
+    
+    try:
+        # Try using pyrubberband (high quality)
+        import pyrubberband as pyrb
+        
+        # Ensure audio is float64 for pyrubberband
+        if audio_data.dtype != np.float64:
+            audio_data = audio_data.astype(np.float64)
+        
+        # Time stretch while preserving pitch
+        stretched_audio = pyrb.time_stretch(audio_data, sample_rate, time_stretch_ratio)
+        
+        output_path = tempfile.mktemp(suffix="_stretched.wav")
+        sf.write(output_path, stretched_audio, sample_rate)
+        
+        # Verify the output duration
+        actual_duration = len(stretched_audio) / sample_rate
+        logger.info(f"Successfully time-stretched segment using Rubber Band: {actual_duration:.2f}s (target: {target_duration:.2f}s)")
+        
+        return output_path
+        
+    except ImportError:
+        logger.warning("pyrubberband not available, falling back to FFmpeg atempo (lower quality)")
+        return _time_stretch_ffmpeg(audio_path, current_duration, target_duration)
+    except Exception as e:
+        logger.error(f"Rubber Band time-stretch failed: {e}, falling back to FFmpeg")
+        return _time_stretch_ffmpeg(audio_path, current_duration, target_duration)
+
+
+def _time_stretch_ffmpeg(audio_path: str, current_duration: float, target_duration: float) -> str:
+    """
+    Fallback time-stretching using FFmpeg atempo filter.
+    Lower quality than Rubber Band but works without additional dependencies.
+    """
+    speed_factor = current_duration / target_duration
     
     output_path = tempfile.mktemp(suffix="_stretched.wav")
     
@@ -102,7 +144,7 @@ def time_stretch_segment(audio_path: str, target_duration: float) -> str:
         atempo_filters.append("atempo=0.5")
         remaining_factor /= 0.5
     
-    if abs(remaining_factor - 1.0) > 0.01:  # Only add if not essentially 1.0
+    if abs(remaining_factor - 1.0) > 0.01:
         atempo_filters.append(f"atempo={remaining_factor}")
     
     if not atempo_filters:
@@ -126,15 +168,14 @@ def time_stretch_segment(audio_path: str, target_duration: float) -> str:
             timeout=60,
             check=True
         )
-        logger.info(f"Successfully time-stretched segment")
+        logger.info(f"Successfully time-stretched segment using FFmpeg")
         return output_path
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg time-stretch failed: {e.stderr.decode('utf-8')}")
-        # Return original if stretching fails
         return audio_path
 
 
-def concatenate_audio_files(file_paths: List[str], target_durations: List[float] = None) -> str:
+def concatenate_audio_files(file_paths: List[str], target_durations: Optional[List[float]] = None) -> str:
     """
     Concatenate multiple audio files using pydub with optional per-segment time-stretching.
     

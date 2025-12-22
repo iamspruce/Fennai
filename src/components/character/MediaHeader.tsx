@@ -137,13 +137,15 @@ export default function MediaHeader({ totalVoices, totalDubbing = 0 }: MediaHead
         <h2>
           Media <span className="count">({visibleCount > 0 ? visibleCount : totalMedia})</span>
         </h2>
-        {totalDubbing > 0 && (
-          <div className="media-breakdown">
-            <span className="breakdown-item">{totalVoices} voices</span>
-            <span className="breakdown-divider">•</span>
-            <span className="breakdown-item dubbed">{totalDubbing} dubbed</span>
-          </div>
-        )}
+        <div className="media-breakdown">
+          <span className="breakdown-item">{totalVoices} {totalVoices === 1 ? 'voice' : 'voices'}</span>
+          {totalDubbing > 0 && (
+            <>
+              <span className="breakdown-divider">•</span>
+              <span className="breakdown-item dubbed">{totalDubbing} {totalDubbing === 1 ? 'dub' : 'dubs'}</span>
+            </>
+          )}
+        </div>
         {selectedFilter !== 'all' && (
           <button className="clear-filter" onClick={() => applyFilter('all')}>
             Clear filter

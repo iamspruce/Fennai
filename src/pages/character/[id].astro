@@ -83,6 +83,7 @@ const userTier = user.isPro ? "pro" : "free";
     <CharacterHeader
       character={character}
       voiceCount={character.voiceCount || 0}
+      syncedVoiceCount={cloudVoices.length}
       dubbedCount={character.dubbedVideoCount || 0}
     />
 

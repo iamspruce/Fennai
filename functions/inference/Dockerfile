@@ -51,11 +51,12 @@ echo "✅ All models baked successfully (~60–90 sec thanks to hf-transfer!)"
 # ============= Runtime Stage =============
 FROM nvcr.io/nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
-# Install runtime dependencies including FFmpeg
+# Install runtime dependencies including FFmpeg and Rubberband for audio processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     ffmpeg \
     libsndfile1 \
+    rubberband-cli \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 RUN useradd -m appuser

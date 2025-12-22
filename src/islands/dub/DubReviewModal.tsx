@@ -132,7 +132,11 @@ export default function DubReviewModal() {
                         resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
                         resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
                         resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
-                        status: 'completed'
+                        status: 'completed',
+                        // Additional fields for cross-device saves
+                        mediaType: job.mediaType,
+                        characterId: mainCharacter?.id,
+                        fileName: job.fileName || initialFileName,
                     });
                     console.log('[DubReviewModal] Auto-save complete ✓');
                     window.dispatchEvent(new CustomEvent('local-media-updated'));
@@ -184,6 +188,10 @@ export default function DubReviewModal() {
                 resultAudioType: job.mediaType === 'audio' ? blob.type : undefined,
                 resultVideoData: job.mediaType === 'video' ? arrayBuffer : undefined,
                 resultVideoType: job.mediaType === 'video' ? blob.type : undefined,
+                // Additional fields for cross-device saves
+                mediaType: job.mediaType,
+                characterId: mainCharacter?.id,
+                fileName: job.fileName || initialFileName,
             });
 
             console.log('[DubReviewModal] Result saved to IndexedDB ✓');

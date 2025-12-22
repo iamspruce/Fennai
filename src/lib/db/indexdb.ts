@@ -425,12 +425,39 @@ export async function saveDubbingResult(result: {
     resultVideoData?: ArrayBuffer;
     resultVideoType?: string;
     status?: string;
+    // Optional fields for creating new records if they don't exist
+    mediaType?: 'audio' | 'video';
+    characterId?: string;
+    fileName?: string;
 }): Promise<void> {
     const db = await initDB();
     const record = await db.get(DUBBING_STORE, result.id);
 
     if (!record) {
-        console.warn(`[IndexDB] Cannot save result: Record ${result.id} not found`);
+        // Record doesn't exist - create a minimal one with the result data
+        // This happens when viewing a job from another device
+        console.log(`[IndexDB] Creating new record for ${result.id} (cross-device save)`);
+
+        const newRecord: DubbingMediaRecord = {
+            id: result.id,
+            mediaType: result.mediaType || (result.resultVideoData ? 'video' : 'audio'),
+            // We don't have original media data, just store empty placeholders
+            audioData: new ArrayBuffer(0),
+            audioType: '',
+            resultAudioData: result.resultAudioData,
+            resultAudioType: result.resultAudioType,
+            resultVideoData: result.resultVideoData,
+            resultVideoType: result.resultVideoType,
+            duration: 0, // Unknown
+            fileSize: (result.resultVideoData?.byteLength || 0) + (result.resultAudioData?.byteLength || 0),
+            createdAt: Date.now(),
+            lastAccessed: Date.now(),
+            fileName: result.fileName,
+            characterId: result.characterId,
+            status: result.status || 'completed',
+        };
+
+        await db.put(DUBBING_STORE, newRecord);
         return;
     }
 

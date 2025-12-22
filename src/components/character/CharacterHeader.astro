@@ -2,9 +2,22 @@
 interface Props {
   character: any;
   voiceCount: number;
+  syncedVoiceCount?: number;
   dubbedCount?: number;
+  hasLocalOnlyMedia?: boolean;
 }
-const { character, voiceCount, dubbedCount = 0 } = Astro.props;
+const {
+  character,
+  voiceCount,
+  syncedVoiceCount = 0,
+  dubbedCount = 0,
+  hasLocalOnlyMedia = false,
+} = Astro.props;
+
+// Calculate totals
+const totalMedia = voiceCount + dubbedCount;
+const totalSynced = syncedVoiceCount + (dubbedCount > 0 ? 0 : 0); // TODO: Add syncedDubCount when available
+const isFullySynced = totalMedia === totalSynced;
 ---
 
 <header class="character-header" data-character-id={character.id}>
@@ -17,13 +30,18 @@ const { character, voiceCount, dubbedCount = 0 } = Astro.props;
     <div>
       <h1 class="character-name-large">{character.name}</h1>
       <p class="character-stats">
-        {voiceCount}
-        {voiceCount === 1 ? "voice" : "voices"}
+        <span>{voiceCount} {voiceCount === 1 ? "voice" : "voices"}</span>
         {
-          dubbedCount > 0 &&
-            ` • ${dubbedCount} ${dubbedCount === 1 ? "video" : "videos"}`
+          dubbedCount > 0 && (
+            <span>
+              {" "}
+              • {dubbedCount} {dubbedCount === 1 ? "video" : "videos"}
+            </span>
+          )
         }
-        {" "}• {voiceCount + dubbedCount} total
+        <span style={{ opacity: 0.7 }}>
+          {" • "}{isFullySynced ? "Synced" : `${syncedVoiceCount} synced`}
+        </span>
       </p>
     </div>
   </div>

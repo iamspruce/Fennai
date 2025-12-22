@@ -1194,7 +1194,23 @@
 }
 
 /* Voice Cards */
+.voice-card {
+  background: var(--mauve-2);
+  border: 1px solid var(--mauve-6);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
 
+.voice-card:hover {
+  border-color: var(--mauve-8);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.voice-card.selected {
+  border-color: var(--orange-9);
+  border-width: 2px;
+}
 
 .voice-card-header {
   padding: 16px;

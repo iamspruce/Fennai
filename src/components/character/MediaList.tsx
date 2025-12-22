@@ -152,18 +152,22 @@ export default function MediaList({
     // Filter and merge dubbing jobs
     const combinedDubbingJobs = useMemo(() => {
         const cloudJobs = dubbingJobs.filter(job => {
+            // Only show completed or failed jobs in the list
             if (!['completed', 'failed'].includes(job.status)) return false;
             if (!mainCharacter) return true;
 
-            // Strict character ownership
+            // Must belong to this character
             if (job.characterId !== mainCharacter.id) return false;
 
-            // Sync filtering
+            // Sync logic:
+            // - If sync is enabled (saveAcrossBrowsers = true), show all cloud jobs for this character
+            // - If sync is disabled, only show jobs that also exist locally on this device
             const isSyncEnabled = mainCharacter.saveAcrossBrowsers === true;
-            const isLocal = localDubbingJobs.some(lj => lj.id === job.id);
-            if (!isSyncEnabled && !isLocal) return false;
+            if (isSyncEnabled) return true; // Show all cloud jobs when sync is on
 
-            return true;
+            // Sync is off - only show if we have a local copy
+            const isLocal = localDubbingJobs.some(lj => lj.id === job.id);
+            return isLocal;
         });
 
         // Find local jobs that are NOT in cloud (either deleted or local-only)

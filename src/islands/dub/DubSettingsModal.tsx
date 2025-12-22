@@ -1,88 +1,30 @@
 // src/islands/DubSettingsModal.tsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
 import { db } from '@/lib/firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 import type { Character } from '@/types/character';
 import type { DubbingJob, VoiceMapEntry } from '@/types/dubbing';
 import { SUPPORTED_LANGUAGES } from '@/types/dubbing';
-import { cloneDubbing } from '@/lib/api/apiClient';
+import { cloneDubbing, transcribeDubbing } from '@/lib/api/apiClient';
 import AudioPlayer from '@/components/ui/AudioPlayer';
 
 interface DubSettingsModalProps {
     allCharacters: Character[];
 }
 
-// Steps for the wizard flow
-type Step = 'language' | 'voices' | 'review';
-
 export default function DubSettingsModal({ allCharacters }: DubSettingsModalProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [jobId, setJobId] = useState('');
     const [job, setJob] = useState<DubbingJob | null>(null);
-
-    // Wizard State
-    const [currentStep, setCurrentStep] = useState<Step>('language');
-
-    // Form State
     const [targetLanguage, setTargetLanguage] = useState('');
     const [translateAll, setTranslateAll] = useState(false);
     const [voiceMapping, setVoiceMapping] = useState<Record<string, VoiceMapEntry>>({});
-
-    // UI State
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [defaultCharacterId, setDefaultCharacterId] = useState<string | null>(null);
     const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
-
-    // Derived State: Speakers
-    // We attempt to get speakers from the job. If empty, we derive them from transcript segments.
-    // This handles cases where clustering hasn't populated top-level speakers but transcript exists.
-    const derivedSpeakers = useMemo(() => {
-        if (!job) return [];
-
-        // Priority 1: Use pre-calculated speakers if they exist
-        if (job.speakers && job.speakers.length > 0) {
-            return job.speakers;
-        }
-
-        // Priority 2: Derive from transcript if available
-        if (job.transcript && job.transcript.length > 0) {
-            const speakerMap = new Map<string, { id: string, totalDuration: number, voiceSampleUrl: string }>();
-
-            job.transcript.forEach(segment => {
-                const sid = segment.speakerId;
-                const duration = segment.endTime - segment.startTime;
-
-                if (speakerMap.has(sid)) {
-                    const existing = speakerMap.get(sid)!;
-                    existing.totalDuration += duration;
-                } else {
-                    speakerMap.set(sid, {
-                        id: sid,
-                        totalDuration: duration,
-                        voiceSampleUrl: '', // No sample available if derived from transcript
-                    });
-                }
-            });
-
-            // Convert to array and sort
-            return Array.from(speakerMap.values()).sort((a, b) => {
-                // Try to sort by speaker number (speaker_1, speaker_2)
-                const numA = parseInt(a.id.replace(/[^0-9]/g, '') || '0');
-                const numB = parseInt(b.id.replace(/[^0-9]/g, '') || '0');
-                if (numA === numB) return a.id.localeCompare(b.id);
-                return numA - numB;
-            });
-        }
-
-        return [];
-    }, [job]);
-
-    // Derived State: Languages
-    const detectedLang = SUPPORTED_LANGUAGES.find(l => l.code === job?.detectedLanguageCode);
-    const targetLangObj = SUPPORTED_LANGUAGES.find(l => l.code === targetLanguage);
-    const totalDuration = derivedSpeakers.reduce((acc, curr) => acc + curr.totalDuration, 0) || 0;
+    const [showAllLanguages, setShowAllLanguages] = useState(false);
 
     // Listen to job status
     useEffect(() => {
@@ -95,403 +37,588 @@ export default function DubSettingsModal({ allCharacters }: DubSettingsModalProp
                     const data = snapshot.data() as DubbingJob;
                     setJob(data);
 
-                    // Restore settings
-                    if (data.targetLanguage && !targetLanguage) setTargetLanguage(data.targetLanguage);
-                    if (data.translateAll !== undefined && translateAll === false) setTranslateAll(data.translateAll);
+                    // Auto-initialize voice mapping if not already set
+                    if (data.status === 'transcribing_done') {
+                        if (data.voiceMapping && Object.keys(data.voiceMapping).length > 0 && Object.keys(voiceMapping).length === 0) {
+                            setVoiceMapping(data.voiceMapping);
+                        } else if (Object.keys(voiceMapping).length === 0) {
+                            initializeVoiceMapping(data);
+                        }
+                    }
 
-                    // Auto-redirect
-                    if (['cloning', 'translating', 'merging'].includes(data.status)) {
+                    // Restore language settings if available
+                    if (data.targetLanguage && !targetLanguage) {
+                        setTargetLanguage(data.targetLanguage);
+                    }
+                    if (data.translateAll !== undefined && translateAll === false) {
+                        setTranslateAll(data.translateAll);
+                    }
+
+                    // Auto-redirect to review modal when cloning starts
+                    if (data.status === 'cloning' || data.status === 'translating' || data.status === 'merging') {
                         setIsOpen(false);
-                        window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
+                        window.dispatchEvent(
+                            new CustomEvent('open-dub-review', {
+                                detail: { jobId }
+                            })
+                        );
                     }
                 }
             }
         );
+
         return () => unsubscribe();
-    }, [jobId, isOpen, targetLanguage, translateAll, defaultCharacterId]);
-
-    // Effect: Initialize voice mapping when speakers are available (native or derived)
-    useEffect(() => {
-        if (!job) return;
-
-        // If we have mapping from DB, use it
-        if (job.voiceMapping && Object.keys(job.voiceMapping).length > 0) {
-            // Only update if local is empty? Or always sync? 
-            // Better to sync initially. Here we check if local is empty.
-            if (Object.keys(voiceMapping).length === 0) {
-                setVoiceMapping(job.voiceMapping);
-            }
-            return;
-        }
-
-        // Otherwise, initialize if we have speakers and it's not set
-        if (derivedSpeakers.length > 0 && Object.keys(voiceMapping).length === 0) {
-            const mapping: Record<string, VoiceMapEntry> = {};
-            derivedSpeakers.forEach((speaker, idx) => {
-                // If we have a default character, assign to first speaker
-                if (idx === 0 && defaultCharacterId) {
-                    const char = allCharacters.find(c => c.id === defaultCharacterId);
-                    if (char) {
-                        mapping[speaker.id] = {
-                            type: 'character',
-                            characterId: char.id,
-                            characterName: char.name,
-                            characterAvatar: char.avatarUrl
-                        };
-                        return;
-                    }
-                }
-                mapping[speaker.id] = { type: 'original' };
-            });
-            setVoiceMapping(mapping);
-        }
-    }, [derivedSpeakers, job?.voiceMapping, defaultCharacterId, voiceMapping]); // Dependencies include derivedSpeakers
+    }, [jobId, isOpen, voiceMapping, targetLanguage, translateAll, defaultCharacterId]);
 
     // Open modal handler
     useEffect(() => {
         const handleOpen = (e: CustomEvent) => {
-            if (e.detail.defaultCharacterId) setDefaultCharacterId(e.detail.defaultCharacterId);
+            if (e.detail.defaultCharacterId) {
+                setDefaultCharacterId(e.detail.defaultCharacterId);
+            }
             setJobId(e.detail.jobId);
             setIsOpen(true);
-            setCurrentStep('language'); // Reset to first step
         };
         window.addEventListener('open-dub-settings', handleOpen as EventListener);
         return () => window.removeEventListener('open-dub-settings', handleOpen as EventListener);
     }, []);
 
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (openDropdownId && !(e.target as Element).closest('.ios-select-wrapper')) {
+                setOpenDropdownId(null);
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [openDropdownId]);
+
+    const initializeVoiceMapping = (jobData: DubbingJob) => {
+        const mapping: Record<string, VoiceMapEntry> = {};
+        jobData.speakers?.forEach((speaker, idx) => {
+            // Map first speaker to default character if available
+            if (idx === 0 && defaultCharacterId) {
+                const char = allCharacters.find(c => c.id === defaultCharacterId);
+                if (char) {
+                    mapping[speaker.id] = {
+                        type: 'character',
+                        characterId: char.id,
+                        characterName: char.name,
+                        characterAvatar: char.avatarUrl
+                    };
+                    return;
+                }
+            }
+
+            mapping[speaker.id] = {
+                type: 'original'
+            };
+        });
+        setVoiceMapping(mapping);
+    };
+
     const handleVoiceMappingChange = (speakerId: string, type: 'character' | 'original', characterId?: string) => {
         const character = allCharacters.find(c => c.id === characterId);
-        setVoiceMapping(prev => ({
-            ...prev,
+        setVoiceMapping({
+            ...voiceMapping,
             [speakerId]: {
                 type,
                 characterId,
                 characterName: character?.name,
                 characterAvatar: character?.avatarUrl
             }
-        }));
-        setOpenDropdownId(null);
+        });
     };
 
-    const handleEditScript = () => {
-        window.dispatchEvent(new CustomEvent('open-dub-edit-script', { detail: { jobId, job, editMode: true } }));
+    const handleLanguageSelect = (langCode: string) => {
+        // Toggle off if clicking same language
+        setTargetLanguage(targetLanguage === langCode ? '' : langCode);
     };
 
     const handleTranslateSelected = () => {
-        window.dispatchEvent(new CustomEvent('open-dub-segment-selector', { detail: { jobId, job } }));
+        window.dispatchEvent(
+            new CustomEvent('open-dub-segment-selector', {
+                detail: { jobId, job }
+            })
+        );
     };
 
-    const handleFinalSubmit = async () => {
+    const handleEditScript = () => {
+        window.dispatchEvent(
+            new CustomEvent('open-dub-edit-script', {
+                detail: { jobId, job, editMode: true }
+            })
+        );
+    };
+
+    const handleContinue = async () => {
         if (!job) return;
+
         setIsProcessing(true);
+
         try {
-            // Fallback to detected language if no target is selected (optional selection)
-            const finalTargetLanguage = targetLanguage || job.detectedLanguageCode;
+            // Update job settings in Firestore (you might have a separate function for this)
+            await updateJobSettings(jobId, {
+                targetLanguage,
+                translateAll,
+                voiceMapping
+            });
 
-            await updateJobSettings(jobId, { targetLanguage: finalTargetLanguage, translateAll, voiceMapping });
-            await cloneDubbing({ jobId });
+            // Start cloning via API
+            const result = await cloneDubbing({ jobId });
 
-            // Update local storage status so ResumeJobModal knows we're beyond transcribing
-            const activeJobStr = localStorage.getItem('activeJob');
-            if (activeJobStr) {
-                const activeJob = JSON.parse(activeJobStr);
-                if (activeJob.jobId === jobId) {
-                    localStorage.setItem('activeJob', JSON.stringify({
-                        ...activeJob,
-                        status: 'cloning'
-                    }));
-                }
-            }
+            // Modal will close automatically when Firestore status changes to 'cloning'
 
-            // Immediately trigger the review modal to avoid waiting for onSnapshot
-            // This ensures a snappy transition as soon as the API call succeeds
-            setIsOpen(false);
-            window.dispatchEvent(new CustomEvent('open-dub-review', { detail: { jobId } }));
         } catch (err: any) {
             console.error('Failed to start cloning:', err);
-            const msg = err.message || 'Failed to start voice cloning';
-            setError(msg);
+            setError(err.message || 'Failed to start voice cloning');
+        } finally {
             setIsProcessing(false);
-
-            window.dispatchEvent(new CustomEvent('show-alert', {
-                detail: {
-                    title: 'Cloning Failed',
-                    message: msg,
-                    type: 'error',
-                    details: `Error: ${err.name || 'Unknown'}\nMessage: ${err.message || 'No message'}\nStack: ${err.stack || 'No stack'}`
-                }
-            }));
         }
     };
 
-    const updateJobSettings = async (jobId: string, settings: any) => {
+    // Helper function to update job settings
+    const updateJobSettings = async (
+        jobId: string,
+        settings: { targetLanguage: string; translateAll: boolean; voiceMapping: any }
+    ) => {
         const response = await fetch(`/api/dubbing/${jobId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify(settings),
         });
-        if (!response.ok) throw new Error('Failed to update job settings');
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to update job settings');
+        }
     };
+
+    // Get count of characters assigned
+    const assignedCharacterCount = Object.values(voiceMapping).filter(v => v.type === 'character').length;
 
     if (!isOpen || !job) return null;
 
-    // Wizard Navigation Helpers
-    const goNext = () => {
-        if (currentStep === 'language') setCurrentStep('voices');
-        else if (currentStep === 'voices') setCurrentStep('review');
-    };
-    const goBack = () => {
-        if (currentStep === 'voices') setCurrentStep('language');
-        else if (currentStep === 'review') setCurrentStep('voices');
-    };
+    const detectedLang = SUPPORTED_LANGUAGES.find(l => l.code === job.detectedLanguageCode);
+    const selectedLang = SUPPORTED_LANGUAGES.find(l => l.code === targetLanguage);
+    const displayedLanguages = showAllLanguages ? SUPPORTED_LANGUAGES : SUPPORTED_LANGUAGES.slice(0, 12);
+    const needsTranslation = targetLanguage && targetLanguage !== job.detectedLanguageCode;
 
     return (
-        <div className="modal-overlay">
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setIsOpen(false)}>
             <div className="modal-content modal-wide">
-                <div className="modal-handle-bar"><div className="modal-handle-pill"></div></div>
+                <div className="modal-handle-bar">
+                    <div className="modal-handle-pill"></div>
+                </div>
 
-                {/* Header with Progress Steps */}
-                <div className="modal-header-wizard">
-                    <div className="wizard-step-indicator">
-                        <div className={`step-dot ${['language', 'voices', 'review'].includes(currentStep) ? 'active' : ''}`} />
-                        <div className={`step-line ${['voices', 'review'].includes(currentStep) ? 'active' : ''}`} />
-                        <div className={`step-dot ${['voices', 'review'].includes(currentStep) ? 'active' : ''}`} />
-                        <div className={`step-line ${['review'].includes(currentStep) ? 'active' : ''}`} />
-                        <div className={`step-dot ${currentStep === 'review' ? 'active' : ''}`} />
+                <div className="modal-header">
+                    <div className="modal-title-group">
+                        <Icon icon="lucide:wand-2" width={20} />
+                        <h3 className="modal-title">Dub Magic Settings ✨</h3>
                     </div>
-                    <button className="modal-close-simple" onClick={() => setIsOpen(false)}>
+                    <button className="modal-close" onClick={() => setIsOpen(false)}>
                         <Icon icon="lucide:x" width={20} />
                     </button>
                 </div>
 
                 <div className="modal-body">
-                    {/* --- STEP 1: LANGUAGE --- */}
-                    {currentStep === 'language' && (
-                        <div className="wizard-step fade-in">
-                            <div className="step-hero">
-                                <Icon icon="lucide:languages" width={32} className="hero-icon" />
-                                <h3>Target Language</h3>
-                                <p>Original language detected was <strong>{detectedLang?.name || 'Unknown'}</strong>. Do you want to translate it to another language?</p>
-                            </div>
+                    {/* Hero Audio/Video Preview */}
+                    <div className="preview-section" style={{
+                        background: 'var(--mauve-12)',
+                        borderRadius: 'var(--radius-m)',
+                        padding: 'var(--space-s)',
+                        marginBottom: 'var(--space-m)'
+                    }}>
+                        <AudioPlayer
+                            audioUrl={job.audioUrl}
+                            className="w-full"
+                            waveColor="#FFA07A"
+                            progressColor="#FF4500"
+                        />
+                    </div>
 
-                            <div className="preview-mini-wrapper">
-                                <AudioPlayer audioUrl={job.audioUrl} className="w-full" waveColor="#FFA07A" progressColor="#FF4500" />
+                    {/* Translation Settings */}
+                    <div className="settings-section">
+                        <div className="step-hero" style={{ marginBottom: 'var(--space-m)' }}>
+                            <div className="hero-icon">
+                                <Icon icon="lucide:languages" width={32} />
                             </div>
-
-                            <div className="language-grid-modern">
-                                {SUPPORTED_LANGUAGES.slice(0, 12).map(lang => {
-                                    const isDisabled = lang.code === detectedLang?.code;
-                                    const isSelected = targetLanguage === lang.code;
-                                    return (
-                                        <button
-                                            key={lang.code}
-                                            className={`lang-chip ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}`}
-                                            onClick={() => {
-                                                if (isDisabled) return;
-                                                // Toggle logic: if clicked again, deselect
-                                                setTargetLanguage(prev => prev === lang.code ? '' : lang.code);
-                                            }}
-                                            disabled={isDisabled}
-                                            style={isDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                                        >
-                                            <span className="lang-flag">{lang.flag || '🏳️'}</span>
-                                            {lang.name}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            {targetLanguage && (
-                                <div className="info-box clickable" onClick={handleTranslateSelected}>
-                                    <div className="info-icon"><Icon icon="lucide:split" /></div>
-                                    <div className="info-content">
-                                        <div className="info-title">Are you sure you want to translate the full audio to {targetLangObj?.name}?</div>
-                                        <div className="info-sub">Tap to translate segments</div>
-                                    </div>
-                                    <Icon icon="lucide:chevron-right" className="chevron" />
-                                </div>
-                            )}
+                            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 600, color: 'var(--mauve-12)' }}>
+                                {detectedLang?.flag} We heard <strong style={{ color: 'var(--orange-9)' }}>{detectedLang?.name || 'some language magic'}</strong>!
+                            </h3>
+                            <p style={{ color: 'var(--mauve-11)', fontSize: '14px', margin: 0 }}>
+                                Wanna remix it in another language? Pick one below, or skip this step to keep it original. 🎤
+                            </p>
                         </div>
-                    )}
 
-                    {/* --- STEP 2: VOICES --- */}
-                    {currentStep === 'voices' && (
-                        <div className="wizard-step fade-in">
-                            <div className="step-hero">
-                                <Icon icon="lucide:mic-2" width={32} className="hero-icon" />
-                                <h3>Voice Assignment</h3>
-                                <p>Found <strong>{derivedSpeakers.length} speakers</strong>. Assign AI voices or keep original.</p>
-                            </div>
+                        <div className="language-grid-modern">
+                            {displayedLanguages.map(lang => (
+                                <button
+                                    key={lang.code}
+                                    className={`lang-chip ${targetLanguage === lang.code ? 'selected' : ''}`}
+                                    onClick={() => handleLanguageSelect(lang.code)}
+                                    disabled={lang.code === job.detectedLanguageCode}
+                                    style={lang.code === job.detectedLanguageCode ? {
+                                        opacity: 0.5,
+                                        cursor: 'not-allowed',
+                                        background: 'var(--mauve-3)'
+                                    } : {}}
+                                >
+                                    <span className="lang-flag">{lang.flag}</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{lang.name}</span>
+                                    {lang.code === job.detectedLanguageCode && (
+                                        <span style={{
+                                            fontSize: '10px',
+                                            color: 'var(--mauve-10)',
+                                            marginTop: '-4px'
+                                        }}>
+                                            (Original)
+                                        </span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
 
-                            <div className="voice-mapping-list">
-                                {derivedSpeakers.length === 0 && (
-                                    <div className="empty-state" style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--mauve-11)' }}>
-                                        <Icon icon="lucide:alert-circle" width={40} style={{ marginBottom: 'var(--space-s)', color: 'var(--mauve-9)' }} />
-                                        <p>No speakers detected in the audio.</p>
+                        {SUPPORTED_LANGUAGES.length > 12 && (
+                            <button
+                                className="link-btn"
+                                onClick={() => setShowAllLanguages(!showAllLanguages)}
+                                style={{ marginTop: 'var(--space-s)', display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center', width: '100%' }}
+                            >
+                                <Icon icon={showAllLanguages ? "lucide:chevron-up" : "lucide:chevron-down"} width={14} />
+                                {showAllLanguages ? 'Show fewer languages' : `Show ${SUPPORTED_LANGUAGES.length - 12} more languages`}
+                            </button>
+                        )}
+
+                        {needsTranslation && (
+                            <div className="info-box clickable" style={{ marginTop: 'var(--space-m)' }} onClick={handleTranslateSelected}>
+                                <div className="info-icon">
+                                    <Icon icon="lucide:sparkles" width={18} />
+                                </div>
+                                <div className="info-content">
+                                    <div className="info-title">
+                                        Translating to {selectedLang?.flag} {selectedLang?.name}!
                                     </div>
-                                )}
-                                {derivedSpeakers.map((speaker, idx) => (
-                                    <div key={speaker.id} className="voice-card" style={{ border: '1px solid var(--mauve-6)', borderRadius: 'var(--radius-m)', overflow: 'hidden', background: 'var(--mauve-1)' }}>
+                                    <div className="info-sub">
+                                        Want to translate only specific parts? Tap here to pick segments.
+                                    </div>
+                                </div>
+                                <Icon icon="lucide:chevron-right" width={18} style={{ color: 'var(--blue-11)' }} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Voice Mapping - Redesigned */}
+                    <div className="settings-section">
+                        <div className="step-hero" style={{ marginBottom: 'var(--space-m)' }}>
+                            <div className="hero-icon">
+                                <Icon icon="lucide:mic-2" width={32} />
+                            </div>
+                            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 600, color: 'var(--mauve-12)' }}>
+                                {job.speakers?.length === 1 ? '1 voice detected!' : `${job.speakers?.length || 0} voices in the mix!`}
+                            </h3>
+                            <p style={{ color: 'var(--mauve-11)', fontSize: '14px', margin: 0 }}>
+                                Keep the original vibes or swap in your character's voice. It's your call! 🎭
+                            </p>
+                        </div>
+
+                        {/* Quick Stats */}
+                        {job.speakers && job.speakers.length > 1 && (
+                            <div style={{
+                                display: 'flex',
+                                gap: 'var(--space-xs)',
+                                marginBottom: 'var(--space-m)',
+                                flexWrap: 'wrap'
+                            }}>
+                                <div className="input-chip">
+                                    <Icon icon="lucide:users" width={12} />
+                                    {job.speakers?.length} speakers
+                                </div>
+                                <div className="input-chip">
+                                    <Icon icon="lucide:sparkles" width={12} />
+                                    {assignedCharacterCount} customized
+                                </div>
+                                <div className="input-chip">
+                                    <Icon icon="lucide:user" width={12} />
+                                    {(job.speakers?.length || 0) - assignedCharacterCount} original
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="voice-mapping-list">
+                            {job.speakers?.map((speaker, idx) => {
+                                const mapping = voiceMapping[speaker.id];
+                                const isCharacter = mapping?.type === 'character';
+                                const selectedChar = allCharacters.find(c => c.id === mapping?.characterId);
+
+                                return (
+                                    <div
+                                        key={speaker.id}
+                                        className="voice-card"
+                                        style={{
+                                            background: 'var(--mauve-2)',
+                                            border: isCharacter ? '2px solid var(--orange-9)' : '1px solid var(--mauve-6)',
+                                            borderRadius: 'var(--radius-m)',
+                                            overflow: 'hidden',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {/* Voice Card Header */}
                                         <div className="voice-card-header">
                                             <div className="speaker-meta">
-                                                <div className="speaker-avatar-placeholder">S{idx + 1}</div>
+                                                <div
+                                                    className="speaker-avatar-placeholder"
+                                                    style={isCharacter && selectedChar?.avatarUrl ? {
+                                                        backgroundImage: `url(${selectedChar.avatarUrl})`,
+                                                        backgroundSize: 'cover',
+                                                        backgroundPosition: 'center'
+                                                    } : {}}
+                                                >
+                                                    {!isCharacter && (idx + 1)}
+                                                </div>
                                                 <div className="speaker-details">
-                                                    <span className="speaker-name">Speaker {idx + 1}</span>
-                                                    <span className="speaker-time">{Math.round(speaker.totalDuration)}s duration</span>
+                                                    <div className="speaker-name">
+                                                        {isCharacter ? selectedChar?.name : `Speaker ${idx + 1}`}
+                                                    </div>
+                                                    <div className="speaker-time">
+                                                        {Math.round(speaker.totalDuration)}s speaking time • {speaker.segmentCount} segments
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            {/* Segmented Control for Mode */}
+                                            {/* Voice Mode Toggle */}
                                             <div className="mode-toggle">
                                                 <button
-                                                    className={`mode-btn ${voiceMapping[speaker.id]?.type === 'original' ? 'active' : ''}`}
+                                                    className={`mode-btn ${!isCharacter ? 'active' : ''}`}
                                                     onClick={() => handleVoiceMappingChange(speaker.id, 'original')}
                                                 >
                                                     Original
                                                 </button>
                                                 <button
-                                                    className={`mode-btn ${voiceMapping[speaker.id]?.type === 'character' ? 'active' : ''}`}
+                                                    className={`mode-btn ${isCharacter ? 'active' : ''}`}
                                                     onClick={() => {
-                                                        // Auto-select first char if none selected
-                                                        if (!voiceMapping[speaker.id]?.characterId && allCharacters.length > 0) {
-                                                            handleVoiceMappingChange(speaker.id, 'character', allCharacters[0].id);
-                                                        } else {
-                                                            handleVoiceMappingChange(speaker.id, 'character', voiceMapping[speaker.id]?.characterId);
+                                                        if (!isCharacter) {
+                                                            setOpenDropdownId(speaker.id);
                                                         }
                                                     }}
                                                 >
-                                                    Custom
+                                                    Clone
                                                 </button>
                                             </div>
                                         </div>
 
-                                        {/* Dropdown only appears if Custom is selected */}
-                                        {voiceMapping[speaker.id]?.type === 'character' && (
+                                        {/* Character Selector - Only shown when Clone is selected or dropdown is open */}
+                                        {(isCharacter || openDropdownId === speaker.id) && (
                                             <div className="voice-card-body">
                                                 <div className="ios-select-wrapper">
                                                     <button
                                                         className="ios-select-button dense"
-                                                        onClick={() => setOpenDropdownId(openDropdownId === speaker.id ? null : speaker.id)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenDropdownId(openDropdownId === speaker.id ? null : speaker.id);
+                                                        }}
                                                     >
                                                         <div className="ios-select-content">
-                                                            {voiceMapping[speaker.id]?.characterId ? (
+                                                            {selectedChar ? (
                                                                 <>
-                                                                    <div className="mini-avatar"
-                                                                        style={{ backgroundImage: `url(${voiceMapping[speaker.id]?.characterAvatar || ''})` }} />
-                                                                    {voiceMapping[speaker.id]?.characterName}
+                                                                    <div
+                                                                        className="mini-avatar"
+                                                                        style={{
+                                                                            backgroundImage: selectedChar.avatarUrl ? `url(${selectedChar.avatarUrl})` : 'none',
+                                                                        }}
+                                                                    />
+                                                                    <span>{selectedChar.name}</span>
                                                                 </>
-                                                            ) : <span>Select Character...</span>}
+                                                            ) : (
+                                                                <>
+                                                                    <Icon icon="lucide:user-plus" width={16} style={{ color: 'var(--mauve-11)' }} />
+                                                                    <span style={{ color: 'var(--mauve-11)' }}>Pick a character...</span>
+                                                                </>
+                                                            )}
                                                         </div>
-                                                        <Icon icon="lucide:chevron-down" width={16} />
+                                                        <Icon
+                                                            icon={openDropdownId === speaker.id ? "lucide:chevron-up" : "lucide:chevron-down"}
+                                                            width={16}
+                                                            style={{ color: 'var(--mauve-11)' }}
+                                                        />
                                                     </button>
 
                                                     {openDropdownId === speaker.id && (
                                                         <div className="ios-select-menu">
-                                                            {allCharacters.map(char => (
-                                                                <button
-                                                                    key={char.id}
-                                                                    className={`ios-select-item ${voiceMapping[speaker.id]?.characterId === char.id ? 'selected' : ''}`}
-                                                                    onClick={() => handleVoiceMappingChange(speaker.id, 'character', char.id)}
-                                                                >
-                                                                    <div className="ios-select-item-content">
-                                                                        <div className="mini-avatar" style={{ backgroundImage: `url(${char.avatarUrl})` }} />
-                                                                        {char.name}
-                                                                    </div>
-                                                                    {voiceMapping[speaker.id]?.characterId === char.id && <Icon icon="lucide:check" className="check-icon" />}
-                                                                </button>
-                                                            ))}
+                                                            {allCharacters.length === 0 ? (
+                                                                <div style={{
+                                                                    padding: '16px',
+                                                                    textAlign: 'center',
+                                                                    color: 'var(--mauve-11)',
+                                                                    fontSize: '14px'
+                                                                }}>
+                                                                    <Icon icon="lucide:ghost" width={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                                                                    <p style={{ margin: 0 }}>No characters yet!</p>
+                                                                    <p style={{ margin: '4px 0 0', fontSize: '12px' }}>Create some to use their voices here.</p>
+                                                                </div>
+                                                            ) : (
+                                                                allCharacters.map(char => (
+                                                                    <button
+                                                                        key={char.id}
+                                                                        className={`ios-select-item ${mapping?.characterId === char.id ? 'selected' : ''}`}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleVoiceMappingChange(speaker.id, 'character', char.id);
+                                                                            setOpenDropdownId(null);
+                                                                        }}
+                                                                    >
+                                                                        <div className="ios-select-item-content">
+                                                                            <div
+                                                                                style={{
+                                                                                    width: 32,
+                                                                                    height: 32,
+                                                                                    borderRadius: '8px',
+                                                                                    background: 'var(--mauve-5)',
+                                                                                    backgroundImage: char.avatarUrl ? `url(${char.avatarUrl})` : 'none',
+                                                                                    backgroundSize: 'cover',
+                                                                                    backgroundPosition: 'center'
+                                                                                }}
+                                                                            />
+                                                                            <div>
+                                                                                <div style={{ fontWeight: 500 }}>{char.name}</div>
+                                                                                {char.voiceCount && char.voiceCount > 0 && (
+                                                                                    <div style={{ fontSize: '12px', color: 'var(--mauve-11)' }}>
+                                                                                        {char.voiceCount} voice{char.voiceCount > 1 ? 's' : ''} saved
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        {mapping?.characterId === char.id && (
+                                                                            <Icon icon="lucide:check" width={18} className="check-icon" />
+                                                                        )}
+                                                                    </button>
+                                                                ))
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
                                             </div>
                                         )}
                                     </div>
-                                ))}
+                                );
+                            })}
+                        </div>
+
+                        {/* Empty state if no speakers */}
+                        {(!job.speakers || job.speakers.length === 0) && (
+                            <div style={{
+                                textAlign: 'center',
+                                padding: 'var(--space-xl)',
+                                color: 'var(--mauve-11)',
+                                background: 'var(--mauve-2)',
+                                borderRadius: 'var(--radius-m)',
+                                border: '1px dashed var(--mauve-6)'
+                            }}>
+                                <Icon icon="lucide:user-search" width={32} style={{ marginBottom: 'var(--space-s)', opacity: 0.5 }} />
+                                <p style={{ margin: 0 }}>No speakers detected yet.</p>
+                                <p style={{ margin: '4px 0 0', fontSize: '13px' }}>This usually happens during processing - hang tight!</p>
                             </div>
+                        )}
+                    </div>
+
+                    {/* Script Editing Card */}
+                    <div className="settings-section" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                        <div
+                            className="action-card"
+                            onClick={handleEditScript}
+                            style={{ marginBottom: 'var(--space-m)' }}
+                        >
+                            <div className="action-icon bg-blue">
+                                <Icon icon="lucide:pen-line" width={20} />
+                            </div>
+                            <div className="action-text" style={{ flex: 1 }}>
+                                <h4>Wanna tweak the script? ✏️</h4>
+                                <p>Change what anyone says before we work our magic.</p>
+                            </div>
+                            <Icon icon="lucide:chevron-right" width={18} style={{ color: 'var(--mauve-11)' }} />
+                        </div>
+                    </div>
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="error-message">
+                            <Icon icon="lucide:alert-circle" width={18} />
+                            <span>{error}</span>
+                            <button
+                                onClick={() => setError(null)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    marginLeft: 'auto',
+                                    padding: '4px'
+                                }}
+                            >
+                                <Icon icon="lucide:x" width={14} style={{ color: 'var(--red-11)' }} />
+                            </button>
                         </div>
                     )}
 
-                    {/* --- STEP 3: REVIEW --- */}
-                    {currentStep === 'review' && (
-                        <div className="wizard-step fade-in">
-                            <div className="step-hero">
-                                <Icon icon="lucide:check-circle-2" width={32} className="hero-icon" />
-                                <h3>Ready to Clone?</h3>
-                                <p>Are you ready to dub this video to <strong>{targetLangObj?.name || detectedLang?.name || 'Original Language'}</strong>?</p>
-                            </div>
-
-                            <div className="review-summary">
-                                <div className="summary-item">
-                                    <label>Language</label>
-                                    <div className="value">
-                                        {targetLangObj ? (
-                                            <>
-                                                {targetLangObj.flag} {targetLangObj.name}
-                                            </>
-                                        ) : (
-                                            <>
-                                                {detectedLang?.flag} {detectedLang?.name || 'Original'}
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="summary-item">
-                                    <label>Duration</label>
-                                    <div className="value">{Math.round(totalDuration)} seconds</div>
-                                </div>
-                                <div className="summary-item">
-                                    <label>Voices</label>
-                                    <div className="value">
-                                        {Object.values(voiceMapping).filter(v => v.type === 'character').length} Custom,
-                                        {' '}{Object.values(voiceMapping).filter(v => v.type === 'original').length} Original
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="action-card" onClick={handleEditScript}>
-                                <div className="action-icon bg-blue"><Icon icon="lucide:file-edit" /></div>
-                                <div className="action-text">
-                                    <h4>Do you want to change what any of the speaker said?</h4>
-                                    <p>Tap to edit script</p>
-                                </div>
-                                <Icon icon="lucide:chevron-right" className="chevron" />
-                            </div>
-
-                            {error && (
-                                <div className="error-message">
-                                    <Icon icon="lucide:alert-circle" width={18} />
-                                    <span>{error}</span>
-                                </div>
-                            )}
+                    {/* Summary Review */}
+                    <div className="review-summary" style={{ marginBottom: 'var(--space-m)' }}>
+                        <div className="summary-item">
+                            <label>Media Type</label>
+                            <span className="value">
+                                {job.mediaType === 'video' ? '🎬 Video' : '🎵 Audio'}
+                            </span>
                         </div>
-                    )}
-                </div>
+                        <div className="summary-item">
+                            <label>Duration</label>
+                            <span className="value">{Math.round(job.duration)}s</span>
+                        </div>
+                        <div className="summary-item">
+                            <label>Translation</label>
+                            <span className="value" style={{ color: needsTranslation ? 'var(--orange-9)' : 'var(--mauve-11)' }}>
+                                {needsTranslation ? `${detectedLang?.flag} → ${selectedLang?.flag}` : 'No translation'}
+                            </span>
+                        </div>
+                        <div className="summary-item">
+                            <label>Voice Cloning</label>
+                            <span className="value">
+                                {assignedCharacterCount > 0
+                                    ? `${assignedCharacterCount} character${assignedCharacterCount > 1 ? 's' : ''}`
+                                    : 'Original voices only'
+                                }
+                            </span>
+                        </div>
+                    </div>
 
-                {/* Footer Actions */}
-                <div className="modal-footer-wizard">
-                    {currentStep !== 'language' && (
-                        <button className="btn-ghost" onClick={goBack}>
-                            Back
-                        </button>
-                    )}
-
-                    {currentStep !== 'review' ? (
-                        <button
-                            className="btn-primary-wizard"
-                            onClick={goNext}
-                            disabled={false}
-                        >
-                            Next Step
-                        </button>
-                    ) : (
-                        <button
-                            className="btn-primary-wizard finish"
-                            onClick={handleFinalSubmit}
-                            disabled={isProcessing}
-                        >
-                            {isProcessing ? <Icon icon="lucide:loader-2" className="spin" /> : 'Start Dubbing'}
-                        </button>
-                    )}
+                    {/* Continue Button */}
+                    <button
+                        className="btn btn-primary btn-full"
+                        onClick={handleContinue}
+                        disabled={isProcessing}
+                        style={{
+                            padding: '14px 24px',
+                            fontSize: '16px',
+                            fontWeight: 600,
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                        }}
+                    >
+                        {isProcessing ? (
+                            <>
+                                <Icon icon="lucide:loader-2" width={20} className="spin" />
+                                Warming up the magic...
+                            </>
+                        ) : (
+                            <>
+                                <Icon icon="lucide:sparkles" width={20} />
+                                Let's make some magic! ✨
+                            </>
+                        )}
+                    </button>
                 </div>
             </div>
         </div>
