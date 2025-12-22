@@ -168,15 +168,18 @@ export default function MediaList({
             // Sync is off - only show if we have a local copy
             const isLocal = localDubbingJobs.some(lj => lj.id === job.id);
             return isLocal;
-        });
+        }).map(job => ({ ...job, storageType: 'cloud' }));
 
         // Find local jobs that are NOT in cloud (either deleted or local-only)
         const localOnlyJobs = localDubbingJobs
             .filter(lj => {
-                // Only if for this character
-                // If it has a characterId, it must match. 
-                // If it doesn't, we show it as a fallback (legacy data)
-                if (mainCharacter && lj.characterId && lj.characterId !== mainCharacter.id) return false;
+                // Strictly filter by characterId if we are on a character page
+                if (mainCharacter) {
+                    // Must have a characterId and it must match
+                    if (!lj.characterId || lj.characterId !== mainCharacter.id) {
+                        return false;
+                    }
+                }
 
                 // Only if not already in cloudJobs
                 return !dubbingJobs.some(cj => cj.id === lj.id);
@@ -203,6 +206,7 @@ export default function MediaList({
                     // These will be played from IndexedDB by the card
                     originalMediaUrl: '',
                     finalMediaUrl: '',
+                    storageType: 'local-only',
                 } as any;
             });
 

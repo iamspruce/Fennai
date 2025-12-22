@@ -137,6 +137,7 @@ export default function DubReviewModal() {
                         mediaType: job.mediaType,
                         characterId: mainCharacter?.id,
                         fileName: job.fileName || initialFileName,
+                        isInCloudStorage: mainCharacter?.saveAcrossBrowsers ?? false,
                     });
                     console.log('[DubReviewModal] Auto-save complete ✓');
                     window.dispatchEvent(new CustomEvent('local-media-updated'));
@@ -192,6 +193,7 @@ export default function DubReviewModal() {
                 mediaType: job.mediaType,
                 characterId: mainCharacter?.id,
                 fileName: job.fileName || initialFileName,
+                isInCloudStorage: mainCharacter?.saveAcrossBrowsers ?? false,
             });
 
             console.log('[DubReviewModal] Result saved to IndexedDB ✓');

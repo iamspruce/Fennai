@@ -3,7 +3,7 @@ import type { DialogueSegment } from '@/types/voice';
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'fennai-voices';
-const DB_VERSION = 5; // ← Bumped for dubbing support
+const DB_VERSION = 7; // ← Bumped for dubbing support
 const VOICE_STORE = 'voices';
 const METADATA_STORE = 'metadata';
 const DUBBING_STORE = 'dubbing_media'; // ← NEW STORE
@@ -52,6 +52,7 @@ export interface DubbingMediaRecord {
     fileName?: string;
     characterId?: string;
     status?: string;
+    isInCloudStorage?: boolean; // ← NEW: Cloud sync status
 }
 
 interface StorageMetadata {
@@ -137,6 +138,13 @@ export async function initDB(): Promise<IDBPDatabase> {
                     const dubbingStore = db.createObjectStore(DUBBING_STORE, { keyPath: 'id' });
                     dubbingStore.createIndex('createdAt', 'createdAt', { unique: false });
                     dubbingStore.createIndex('lastAccessed', 'lastAccessed', { unique: false });
+                    dubbingStore.createIndex('isInCloudStorage', 'isInCloudStorage', { unique: false });
+                } else {
+                    // Version 7 upgrade: Add isInCloudStorage index if missing
+                    const dubbingStore = transaction.objectStore(DUBBING_STORE);
+                    if (!dubbingStore.indexNames.contains('isInCloudStorage')) {
+                        dubbingStore.createIndex('isInCloudStorage', 'isInCloudStorage', { unique: false });
+                    }
                 }
             },
             blocked() {
@@ -388,6 +396,10 @@ export async function saveDubbingMedia(media: {
     duration: number;
     fileSize: number;
     createdAt: number;
+    characterId?: string; // Explicitly typed
+    fileName?: string;
+    status?: string;
+    isInCloudStorage?: boolean;
 }): Promise<void> {
     const db = await initDB();
 
@@ -410,9 +422,10 @@ export async function saveDubbingMedia(media: {
         fileSize: media.fileSize,
         createdAt: media.createdAt,
         lastAccessed: Date.now(),
-        fileName: (media as any).fileName,
-        characterId: (media as any).characterId,
-        status: (media as any).status,
+        fileName: media.fileName,
+        characterId: media.characterId,
+        status: media.status,
+        isInCloudStorage: media.isInCloudStorage ?? false,
     };
 
     await db.put(DUBBING_STORE, record);
@@ -429,6 +442,7 @@ export async function saveDubbingResult(result: {
     mediaType?: 'audio' | 'video';
     characterId?: string;
     fileName?: string;
+    isInCloudStorage?: boolean;
 }): Promise<void> {
     const db = await initDB();
     const record = await db.get(DUBBING_STORE, result.id);
@@ -455,6 +469,7 @@ export async function saveDubbingResult(result: {
             fileName: result.fileName,
             characterId: result.characterId,
             status: result.status || 'completed',
+            isInCloudStorage: result.isInCloudStorage ?? false,
         };
 
         await db.put(DUBBING_STORE, newRecord);
@@ -469,6 +484,7 @@ export async function saveDubbingResult(result: {
         resultVideoType: result.resultVideoType || record.resultVideoType,
         status: result.status || record.status || 'completed',
         lastAccessed: Date.now(),
+        isInCloudStorage: result.isInCloudStorage !== undefined ? result.isInCloudStorage : record.isInCloudStorage,
     };
 
     await db.put(DUBBING_STORE, updated);
@@ -509,7 +525,13 @@ export async function autoCleanupDubbingMedia(): Promise<CleanupResult> {
     const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const oldOnes = all
         .filter(m => m.createdAt < threshold)
-        .sort((a, b) => a.createdAt - b.createdAt);
+        .sort((a, b) => {
+            // Prioritize retaining cloud items: delete local-only (false) first
+            if (a.isInCloudStorage === b.isInCloudStorage) {
+                return a.createdAt - b.createdAt;
+            }
+            return a.isInCloudStorage ? 1 : -1;
+        });
 
     const toDelete = oldOnes.slice(0, all.length - 5);
 
@@ -549,9 +571,12 @@ export async function getDubbingMediaForCleanup(): Promise<{
     const medianSize = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)] || 0 : 0;
     const largeSizeThreshold = Math.max(medianSize * 1.5, 2 * 1024 * 1024); // 1.5x median or 2MB
 
-    const old = all.filter(m => m.createdAt < ageThreshold);
-    const unused = all.filter(m => !old.includes(m) && (m.lastAccessed || m.createdAt) < unusedThreshold);
-    const large = all.filter(m => !old.includes(m) && !unused.includes(m) && (m.fileSize || 0) > largeSizeThreshold);
+    // Exclude cloud-synced media from cleanup suggestions to prioritize retention
+    const localOnly = all.filter(m => !m.isInCloudStorage);
+
+    const old = localOnly.filter(m => m.createdAt < ageThreshold);
+    const unused = localOnly.filter(m => !old.includes(m) && (m.lastAccessed || m.createdAt) < unusedThreshold);
+    const large = localOnly.filter(m => !old.includes(m) && !unused.includes(m) && (m.fileSize || 0) > largeSizeThreshold);
 
     const usedIds = new Set([...old, ...unused, ...large].map(m => m.id));
     const remaining = all.filter(m => !usedIds.has(m.id));
@@ -638,7 +663,7 @@ export async function getStorageStats() {
         oldestVoice: timestamps.length ? new Date(Math.min(...timestamps)) : null,
         newestVoice: timestamps.length ? new Date(Math.max(...timestamps)) : null,
         quota,
-        cloudStorageCount: voices.filter(v => v.isInCloudStorage).length,
+        cloudStorageCount: voices.filter(v => v.isInCloudStorage).length + dubbingMedia.filter(m => m.isInCloudStorage).length,
     };
 }
 

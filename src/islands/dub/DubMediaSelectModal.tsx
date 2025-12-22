@@ -297,8 +297,9 @@ export default function DubMediaSelectModal({
                 createdAt: Date.now(),
                 fileName: file.name,
                 characterId: character.id,
-                status: 'transcribing'
-            } as any);
+                status: 'transcribing',
+                isInCloudStorage: character.saveAcrossBrowsers ?? false
+            });
             window.dispatchEvent(new CustomEvent('local-media-updated'));
 
             // 4. Persistence
