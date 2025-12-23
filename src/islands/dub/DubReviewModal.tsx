@@ -16,6 +16,7 @@ export default function DubReviewModal() {
     const [showOriginal, setShowOriginal] = useState(false);
     const [originalMediaUrl, setOriginalMediaUrl] = useState<string | null>(null);
     const originalUrlRef = useRef<string | null>(null);
+    const resultUrlRef = useRef<string | null>(null);
     const hasAutoSavedRef = useRef(false);
 
     // Reset auto-save flag when jobId changes
@@ -72,38 +73,89 @@ export default function DubReviewModal() {
         return () => unsubscribe();
     }, [jobId]);
 
-    // Fetch original media from IndexedDB
+    // Fetch media (Original & Result) from IndexedDB
     useEffect(() => {
         if (!jobId || !isOpen) return;
 
-        const loadOriginalMedia = async () => {
+        const loadMediaFromIDB = async () => {
             try {
                 const media = await getDubbingMedia(jobId);
                 if (media) {
-                    // Clean up previous URL
-                    if (originalUrlRef.current) {
-                        URL.revokeObjectURL(originalUrlRef.current);
+                    // --- 1. Load Original Media ---
+                    if (originalUrlRef.current) URL.revokeObjectURL(originalUrlRef.current);
+
+                    let originalBlob: Blob | null = null;
+                    if (media.mediaType === 'video' && media.videoData && media.videoData.byteLength > 0) {
+                        originalBlob = new Blob([media.videoData], { type: media.videoType || 'video/mp4' });
+                    } else if (media.audioData && media.audioData.byteLength > 0) {
+                        originalBlob = new Blob([media.audioData], { type: media.audioType || 'audio/wav' });
                     }
 
-                    // Create blob from stored data
-                    const blob = new Blob([media.audioData], { type: media.audioType });
-                    const url = URL.createObjectURL(blob);
+                    if (originalBlob) {
+                        const url = URL.createObjectURL(originalBlob);
+                        originalUrlRef.current = url;
+                        setOriginalMediaUrl(url);
+                    }
 
-                    originalUrlRef.current = url;
-                    setOriginalMediaUrl(url);
+                    // --- 2. Load Result Media (for Local-Only jobs) ---
+                    // If we found a result in IDB, we should be prepared to use it
+                    if (media.resultVideoData || media.resultAudioData) {
+                        if (resultUrlRef.current) URL.revokeObjectURL(resultUrlRef.current);
+
+                        let resultBlob: Blob | null = null;
+                        if (media.mediaType === 'video' && media.resultVideoData && media.resultVideoData.byteLength > 0) {
+                            resultBlob = new Blob([media.resultVideoData], { type: media.resultVideoType || 'video/mp4' });
+                        } else if (media.resultAudioData && media.resultAudioData.byteLength > 0) {
+                            resultBlob = new Blob([media.resultAudioData], { type: media.resultAudioType || 'audio/wav' });
+                        }
+
+                        if (resultBlob) {
+                            const resultUrl = URL.createObjectURL(resultBlob);
+                            resultUrlRef.current = resultUrl;
+
+                            // If job state is missing (local-only), populate it
+                            setJob(prev => {
+                                if (prev) return prev; // Don't override cloud data if present
+
+                                // Create synthetic job for local playback
+                                return {
+                                    id: media.id,
+                                    uid: '',
+                                    status: (media.status as any) || 'completed',
+                                    step: 'Completed',
+                                    progress: 100,
+                                    mediaType: media.mediaType,
+                                    fileName: media.fileName,
+                                    createdAt: new Date(media.createdAt),
+                                    updatedAt: new Date(media.createdAt),
+                                    finalMediaUrl: resultUrl,
+                                    characterId: media.characterId || '',
+                                    originalMediaUrl: '',
+                                    originalMediaPath: '',
+                                    duration: media.duration || 0,
+                                    fileSize: media.fileSize || 0,
+                                    cost: 0,
+                                    retryCount: 0
+                                };
+                            });
+                        }
+                    }
                 }
             } catch (error) {
-                console.error('[DubReviewModal] Failed to load original media:', error);
+                console.error('[DubReviewModal] Failed to load local media:', error);
             }
         };
 
-        loadOriginalMedia();
+        loadMediaFromIDB();
 
         return () => {
-            // Cleanup on unmount
             if (originalUrlRef.current) {
                 URL.revokeObjectURL(originalUrlRef.current);
                 originalUrlRef.current = null;
+            }
+            if (resultUrlRef.current) {
+                URL.revokeObjectURL(resultUrlRef.current);
+                resultUrlRef.current = null;
             }
         };
     }, [jobId, isOpen]);

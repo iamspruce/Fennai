@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '@iconify/react';
+import { getDubbingMedia } from '@/lib/db/indexdb';
 
 // --- ICONS ---
 const DownloadIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>;
@@ -45,11 +46,71 @@ export default function DubbingVideoCard({ job, mainCharacter, onPlay, onDelete 
         }
     }, [isCompleted, hasAutoSwitched]);
 
-    // Mock media loading
+
+
+    // Manage local media URLs
     useEffect(() => {
-        setLocalOriginalUrl(job.originalMediaUrl || null);
-        setLocalResultUrl(job.finalMediaUrl || job.clonedAudioUrl || null);
-    }, [job.id]);
+        let active = true;
+        const createdUrls: string[] = [];
+
+        const loadMedia = async () => {
+            // 1. Logic for Cloud/Provided URLs
+            let original = job.originalMediaUrl || null;
+            let result = job.finalMediaUrl || job.clonedAudioUrl || null;
+
+            // 2. If URLs are missing (Local-only), fetch from DB
+            if (!original || !result) {
+                try {
+                    const media = await getDubbingMedia(job.id);
+                    if (media && active) {
+                        // A. Original Media
+                        if (!original) {
+                            let blob: Blob | null = null;
+                            if (media.mediaType === 'video' && media.videoData) {
+                                blob = new Blob([media.videoData], { type: media.videoType || 'video/mp4' });
+                            } else if (media.audioData) {
+                                blob = new Blob([media.audioData], { type: media.audioType || 'audio/wav' });
+                            }
+
+                            if (blob) {
+                                original = URL.createObjectURL(blob);
+                                createdUrls.push(original);
+                            }
+                        }
+
+                        // B. Result Media (Dubbed)
+                        if (!result) {
+                            let blob: Blob | null = null;
+                            if (media.resultVideoData) {
+                                blob = new Blob([media.resultVideoData], { type: media.resultVideoType || 'video/mp4' });
+                            } else if (media.resultAudioData) {
+                                blob = new Blob([media.resultAudioData], { type: media.resultAudioType || 'audio/wav' });
+                            }
+
+                            if (blob) {
+                                result = URL.createObjectURL(blob);
+                                createdUrls.push(result);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('[DubbingVideoCard] Failed to load local media:', err);
+                }
+            }
+
+            if (active) {
+                setLocalOriginalUrl(original);
+                setLocalResultUrl(result);
+            }
+        };
+
+        loadMedia();
+
+        return () => {
+            active = false;
+            createdUrls.forEach(url => URL.revokeObjectURL(url));
+        };
+    }, [job.id, job.originalMediaUrl, job.finalMediaUrl, job.clonedAudioUrl]);
 
     const handleLayerClick = (layer: 'original' | 'dubbed', e: React.MouseEvent) => {
         e.stopPropagation();
@@ -244,7 +305,7 @@ export default function DubbingVideoCard({ job, mainCharacter, onPlay, onDelete 
                 .video-card.back {
                     z-index: 1;
                     /* Move up so it peeks from the top */
-                    transform: translateY(-34px) scale(0.96);
+                    transform: translateY(-28px) scale(0.96);
                     opacity: 0.9;
                     border-color: rgba(255,255,255,0.15);
                     /* Add top shadow to show depth */

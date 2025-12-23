@@ -89,11 +89,11 @@ def time_stretch_segment(audio_path: str, target_duration: float) -> str:
         logger.info(f"Duration difference negligible ({abs(current_duration - target_duration):.3f}s), skipping stretch")
         return audio_path
     
-    # Calculate time stretch ratio (how much to stretch/compress)
-    # ratio > 1 = slower (stretch), ratio < 1 = faster (compress)
-    time_stretch_ratio = target_duration / current_duration
+    # Calculate time stretch ratio (speed rate)
+    # ratio > 1 = faster (compress/shorter), ratio < 1 = slower (stretch/longer)
+    time_stretch_ratio = current_duration / target_duration
     
-    logger.info(f"Time-stretching segment: {current_duration:.2f}s → {target_duration:.2f}s (ratio: {time_stretch_ratio:.3f})")
+    logger.info(f"Time-stretching segment: {current_duration:.2f}s -> {target_duration:.2f}s (speed rate: {time_stretch_ratio:.3f})")
     
     try:
         # Try using pyrubberband (high quality)

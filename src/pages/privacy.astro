@@ -1,0 +1,200 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Logo from "@/components/ui/Logo.astro";
+---
+
+<BaseLayout title="Privacy Policy - Fennai">
+  <div class="page-container">
+    <header class="page-header">
+      <div class="header-logo">
+        <Logo size={40} />
+        <h4 class="logo-text">Fennai</h4>
+      </div>
+    </header>
+
+    <main class="legal-content">
+      <h1>Privacy Policy</h1>
+      <p class="last-updated">Last Updated: December 23, 2025</p>
+
+      <section>
+        <h2>1. Introduction</h2>
+        <p>
+          At Fennai, we take your privacy seriously. This Privacy Policy
+          explains how we collect, use, disclose, and safeguard your information
+          when you use our website and services.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Information We Collect</h2>
+        <p>
+          We collect information that you provide directly to us, such as when
+          you create an account, upload audio files, or contact our support
+          team.
+        </p>
+        <ul>
+          <li>
+            <strong>Account Information:</strong> Name, email address, and authentication
+            data.
+          </li>
+          <li>
+            <strong>Media Data:</strong> Audio recordings and video files you upload
+            for processing.
+          </li>
+          <li>
+            <strong>Usage Data:</strong> Information about how you use our service,
+            including logs and device information.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. How We Use Your Information</h2>
+        <p>We use the information we collect to:</p>
+        <ul>
+          <li>Provide, maintain, and improve our services.</li>
+          <li>Process your voice cloning and dubbing requests.</li>
+          <li>Send you technical notices, updates, and support messages.</li>
+          <li>Protect Fennai and our users from fraud and abuse.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Data Storage and Retention</h2>
+        <p>
+          Your media files are processed securely. Depending on your settings
+          and subscription plan, some data may be stored locally on your device
+          (IndexedDB) or synced with our cloud storage.
+        </p>
+        <p>
+          We retain your personal information for as long as necessary to
+          provide the services you have requested, or for other essential
+          purposes such as complying with legal obligations.
+        </p>
+      </section>
+
+      <section>
+        <h2>5. Sharing of Information</h2>
+        <p>
+          We do not sell your personal information. We may share information
+          with third-party service providers who perform services on our behalf,
+          such as cloud hosting or analytics, provided they adhere to our
+          privacy standards.
+        </p>
+      </section>
+
+      <section>
+        <h2>6. Your Rights</h2>
+        <p>
+          You have the right to access, update, or delete your personal
+          information at any time through your account settings. You may also
+          contact us to exercise these rights.
+        </p>
+      </section>
+
+      <section>
+        <h2>7. Security</h2>
+        <p>
+          We implement a variety of security measures to maintain the safety of
+          your personal information. However, no method of transmission over the
+          Internet is 100% secure.
+        </p>
+      </section>
+
+      <section>
+        <h2>8. Contact Us</h2>
+        <p>
+          If you have any questions about this Privacy Policy, please contact us
+          at privacy@fennai.com.
+        </p>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p>© 2025 Fennai. All rights reserved.</p>
+    </footer>
+  </div>
+</BaseLayout>
+
+<style>
+  .page-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: var(--space-m);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page-header {
+    padding: var(--space-m) 0;
+    border-bottom: 1px solid var(--mauve-4);
+    margin-bottom: var(--space-xl);
+  }
+
+  .header-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+  }
+
+  .logo-text {
+    font-size: var(--step-1);
+    font-weight: 700;
+    color: var(--mauve-1);
+    transform: translateY(-2px);
+  }
+
+  .legal-content {
+    flex: 1;
+    color: var(--mauve-3);
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: var(--step-4);
+    margin-bottom: var(--space-3xs);
+    color: var(--mauve-1);
+  }
+
+  .last-updated {
+    color: var(--mauve-11);
+    font-size: var(--step--1);
+    margin-bottom: var(--space-xl);
+  }
+
+  section {
+    margin-bottom: var(--space-l);
+  }
+
+  h2 {
+    font-size: var(--step-2);
+    margin-bottom: var(--space-xs);
+    color: var(--mauve-2);
+  }
+
+  p {
+    margin-bottom: var(--space-s);
+  }
+
+  ul {
+    margin-bottom: var(--space-s);
+    padding-left: var(--space-m);
+  }
+
+  li {
+    margin-bottom: var(--space-2xs);
+  }
+
+  strong {
+    color: var(--orange-9);
+  }
+
+  .page-footer {
+    padding: var(--space-xl) 0 var(--space-m);
+    border-top: 1px solid var(--mauve-4);
+    text-align: center;
+    color: var(--mauve-11);
+    font-size: var(--step--1);
+  }
+</style>
