@@ -117,6 +117,15 @@ import Logo from "@/components/ui/Logo.astro";
 </BaseLayout>
 
 <style>
+  body {
+    background-color: var(--mauve-1);
+    color: var(--mauve-12);
+  }
+  p,
+  ol,
+  ul {
+    color: var(--mauve-11);
+  }
   .page-container {
     max-width: 800px;
     margin: 0 auto;
@@ -128,7 +137,7 @@ import Logo from "@/components/ui/Logo.astro";
 
   .page-header {
     padding: var(--space-m) 0;
-    border-bottom: 1px solid var(--mauve-4);
+    border-bottom: 1px solid var(--mauve-6);
     margin-bottom: var(--space-xl);
   }
 
@@ -141,7 +150,7 @@ import Logo from "@/components/ui/Logo.astro";
   .logo-text {
     font-size: var(--step-1);
     font-weight: 700;
-    color: var(--mauve-1);
+    color: var(--mauve-12);
     transform: translateY(-2px);
   }
 
@@ -154,12 +163,12 @@ import Logo from "@/components/ui/Logo.astro";
   h1 {
     font-size: var(--step-4);
     margin-bottom: var(--space-3xs);
-    color: var(--mauve-1);
+    color: var(--mauve-12);
   }
 
   .last-updated {
     color: var(--mauve-11);
-    font-size: var(--step--1);
+    font-size: calc(var(--step-0) * 0.8);
     margin-bottom: var(--space-xl);
   }
 
@@ -170,7 +179,7 @@ import Logo from "@/components/ui/Logo.astro";
   h2 {
     font-size: var(--step-2);
     margin-bottom: var(--space-xs);
-    color: var(--mauve-2);
+    color: var(--mauve-12);
   }
 
   p {
@@ -192,7 +201,7 @@ import Logo from "@/components/ui/Logo.astro";
 
   .page-footer {
     padding: var(--space-xl) 0 var(--space-m);
-    border-top: 1px solid var(--mauve-4);
+    border-top: 1px solid var(--mauve-6);
     text-align: center;
     color: var(--mauve-11);
     font-size: var(--step--1);
